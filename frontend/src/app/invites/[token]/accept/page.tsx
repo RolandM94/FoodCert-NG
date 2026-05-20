@@ -1,0 +1,200 @@
+"use client";
+
+import { useState, useEffect } from "react";
+import { useParams, useRouter } from "next/navigation";
+import { CheckCircle, Loader2, ShieldCheck } from "lucide-react";
+import { acceptInvite } from "@/lib/api/organizations";
+import { ROLE_LABELS } from "@/lib/permissions/roles";
+import type { UserInvite } from "@/types/organizations";
+import type { UserRole } from "@/types/auth";
+
+export default function Page() {
+  const params = useParams<{ token: string }>();
+  const router = useRouter();
+  const [invite, setInvite] = useState<UserInvite | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState(false);
+  const [form, setForm] = useState({ username: "", password: "", first_name: "", last_name: "", phone: "" });
+
+  useEffect(() => {
+    if (!params.token) return;
+
+    // Try to accept without password if already logged in
+    const token = localStorage.getItem("foodcert_access_token");
+    if (token) {
+      acceptInvite(params.token)
+        .then((data) => {
+          setInvite(data.invite as UserInvite);
+          setSuccess(true);
+          setTimeout(() => {
+            const role = data.user?.role as UserRole;
+            const home: Record<UserRole, string> = {
+              food_handler: "/food-handler/dashboard",
+              employer: "/employer/dashboard",
+              facility_admin: "/facility/dashboard",
+              doctor: "/doctor/dashboard",
+              lab_staff: "/lab/dashboard",
+              state_admin: "/state/dashboard",
+              federal_admin: "/federal/dashboard",
+              inspector: "/inspector/dashboard",
+              super_admin: "/federal/dashboard",
+            } as Record<UserRole, string>;
+            router.push(home[role as UserRole] || "/login");
+          }, 2000);
+        })
+        .catch(() => {
+          setLoading(false);
+        });
+    } else {
+      setLoading(false);
+    }
+  }, [params.token, router]);
+
+  const handleAccept = async () => {
+    if (!params.token) return;
+    setError(null);
+    setLoading(true);
+    try {
+      const data = await acceptInvite(params.token, form);
+      setInvite(data.invite as UserInvite);
+      setSuccess(true);
+      setTimeout(() => {
+        const role = data.user?.role as UserRole;
+        const home: Record<string, string> = {
+          food_handler: "/food-handler/dashboard",
+          employer: "/employer/dashboard",
+          facility_admin: "/facility/dashboard",
+          doctor: "/doctor/dashboard",
+          lab_staff: "/lab/dashboard",
+          state_admin: "/state/dashboard",
+          inspector: "/inspector/dashboard",
+          federal_admin: "/federal/dashboard",
+          super_admin: "/federal/dashboard",
+        };
+        router.push(home[role] || "/login");
+      }, 2000);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Failed to accept invite.");
+      setLoading(false);
+    }
+  };
+
+  if (success) {
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-[#f7faf8] p-4">
+        <div className="flex flex-col items-center gap-4 rounded-lg border border-emerald-200 bg-white p-8 text-center shadow-lg max-w-md w-full">
+          <div className="flex h-16 w-16 items-center justify-center rounded-full bg-emerald-50 text-brand-green">
+            <CheckCircle size={36} />
+          </div>
+          <h1 className="text-xl font-bold text-slate-950">Invitation Accepted!</h1>
+          <p className="text-sm text-slate-600">
+            You have been added to <strong>{invite?.organization_name || invite?.organization}</strong>
+            {invite?.unit_name ? ` / ${invite.unit_name}` : ""} as{" "}
+            {ROLE_LABELS[invite?.role as UserRole] || invite?.role}.
+          </p>
+          <p className="text-xs text-slate-400">Redirecting to your dashboard...</p>
+        </div>
+      </main>
+    );
+  }
+
+  return (
+    <main className="flex min-h-screen items-center justify-center bg-[#f7faf8] p-4">
+      <div className="w-full max-w-md space-y-6 rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
+        <div className="flex items-center gap-3">
+          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-brand-green text-white">
+            <ShieldCheck size={20} />
+          </div>
+          <div>
+            <p className="text-sm font-bold text-slate-950">FoodCert NG</p>
+            <p className="text-xs text-slate-500">Invitation</p>
+          </div>
+        </div>
+
+        {invite && (
+          <div className="rounded bg-slate-50 p-4 text-sm">
+            <p className="text-slate-600">
+              You have been invited to join <strong>{invite.organization_name || invite.organization}</strong>
+              {invite.unit_name ? ` / ${invite.unit_name}` : ""}
+            </p>
+            <p className="mt-1 text-slate-600">
+              Role: <strong>{ROLE_LABELS[invite.role as UserRole] || invite.role}</strong>
+            </p>
+          </div>
+        )}
+
+        {!loading && (
+          <form
+            className="grid gap-3"
+            onSubmit={(e) => {
+              e.preventDefault();
+              handleAccept();
+            }}
+          >
+            <label className="grid gap-1 text-sm font-semibold text-slate-700">
+              Email
+              <input
+                className="h-10 rounded border border-slate-200 bg-slate-50 px-3 text-slate-500"
+                disabled
+                value={invite?.email || ""}
+              />
+            </label>
+            <label className="grid gap-1 text-sm font-semibold text-slate-700">
+              Username
+              <input
+                className="h-10 rounded border border-slate-200 bg-white px-3"
+                required
+                value={form.username}
+                onChange={(e) => setForm((p) => ({ ...p, username: e.target.value }))}
+              />
+            </label>
+            <label className="grid gap-1 text-sm font-semibold text-slate-700">
+              Password
+              <input
+                className="h-10 rounded border border-slate-200 bg-white px-3"
+                type="password"
+                required
+                value={form.password}
+                onChange={(e) => setForm((p) => ({ ...p, password: e.target.value }))}
+              />
+            </label>
+            <label className="grid gap-1 text-sm font-semibold text-slate-700">
+              Full name
+              <input
+                className="h-10 rounded border border-slate-200 bg-white px-3"
+                value={form.first_name}
+                onChange={(e) => setForm((p) => ({ ...p, first_name: e.target.value }))}
+                placeholder="First name"
+              />
+            </label>
+            <input
+              className="h-10 rounded border border-slate-200 bg-white px-3"
+              value={form.last_name}
+              onChange={(e) => setForm((p) => ({ ...p, last_name: e.target.value }))}
+              placeholder="Last name"
+            />
+
+            {error && (
+              <p className="rounded bg-red-50 px-3 py-2 text-sm font-semibold text-red-700">{error}</p>
+            )}
+
+            <button
+              type="submit"
+              className="inline-flex h-10 w-full items-center justify-center gap-2 rounded bg-brand-green text-sm font-bold text-white hover:bg-brand-deep"
+            >
+              Accept Invitation
+            </button>
+          </form>
+        )}
+
+        {loading && (
+          <div className="flex items-center justify-center gap-3 py-6 text-slate-500">
+            <Loader2 size={18} className="animate-spin" />
+            <span className="text-sm">Processing invitation...</span>
+          </div>
+        )}
+      </div>
+    </main>
+  );
+}

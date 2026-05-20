@@ -1,0 +1,56 @@
+import { CheckCircle2 } from "lucide-react";
+
+export function SubscriptionPlanCard({
+  name,
+  price,
+  description,
+  features,
+  selected = false,
+  current = false,
+  actionLabel,
+  onAction,
+  disabled = false
+}: {
+  name: string;
+  price: string;
+  description?: string;
+  features: string[];
+  selected?: boolean;
+  current?: boolean;
+  actionLabel?: string;
+  onAction?: () => void;
+  disabled?: boolean;
+}) {
+  return (
+    <div className={`rounded-lg border bg-white p-5 shadow-sm ${selected ? "border-brand-green ring-2 ring-emerald-100" : "border-slate-200"}`}>
+      <div className="flex items-start justify-between gap-3">
+        <h3 className="text-base font-bold text-slate-950">{name}</h3>
+        {current ? (
+          <span className="rounded bg-emerald-50 px-2 py-1 text-xs font-bold uppercase tracking-wide text-brand-deep">
+            Current
+          </span>
+        ) : null}
+      </div>
+      <p className="mt-2 text-2xl font-bold text-brand-deep">{price}</p>
+      {description ? <p className="mt-2 text-sm leading-5 text-slate-600">{description}</p> : null}
+      <ul className="mt-4 grid gap-2 text-sm text-slate-600">
+        {features.map((feature) => (
+          <li key={feature} className="flex items-center gap-2">
+            <CheckCircle2 aria-hidden="true" className="text-brand-deep" size={16} />
+            {feature}
+          </li>
+        ))}
+      </ul>
+      {actionLabel && onAction ? (
+        <button
+          className="mt-5 w-full rounded bg-brand-green px-4 py-2 text-sm font-bold text-white disabled:cursor-not-allowed disabled:bg-slate-300"
+          disabled={disabled || current}
+          onClick={onAction}
+          type="button"
+        >
+          {current ? "Current Plan" : actionLabel}
+        </button>
+      ) : null}
+    </div>
+  );
+}

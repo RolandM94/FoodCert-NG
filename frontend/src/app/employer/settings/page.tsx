@@ -1,0 +1,169 @@
+"use client";
+
+import Link from "next/link";
+import { useMemo } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Bell, Building2, Save, Settings, ShieldCheck } from "lucide-react";
+import { PortalShell } from "@/components/layout/portal-shell";
+import { getEmployerSettings, updateEmployerSettings } from "@/lib/api/employer-management";
+import { listEmployers } from "@/lib/api/identity";
+
+const notificationTypes = [
+  ["certificate_expiry_reminder", "Certificate expiry reminders"],
+  ["vaccination_due", "Vaccination due"],
+  ["illness_reported", "Illness reported"],
+  ["inspection_assigned", "Inspection notices"],
+  ["compliance_notice", "Compliance notices"],
+  ["subscription_expiry", "Subscription expiry"],
+] as const;
+
+const channels = [
+  ["email", "Email"],
+  ["sms", "SMS"],
+  ["in_app", "In-app"],
+] as const;
+
+function settingValue(settings: Record<string, unknown>, key: string, fallback: string | number | boolean) {
+  const value = settings[key];
+  return value === undefined || value === null ? fallback : value;
+}
+
+export default function Page() {
+  const queryClient = useQueryClient();
+  const employersQuery = useQuery({ queryKey: ["employers", "me"], queryFn: listEmployers });
+  const employer = employersQuery.data?.[0];
+  const settingsQuery = useQuery({
+    queryKey: ["employer-settings", employer?.id],
+    queryFn: () => getEmployerSettings(employer!.id),
+    enabled: Boolean(employer?.id),
+  });
+
+  const settings = settingsQuery.data;
+  const notificationPreferences = useMemo(() => settings?.notification_preferences || {}, [settings]);
+  const businessSettings = useMemo(() => settings?.business_settings || {}, [settings]);
+
+  const mutation = useMutation({
+    mutationFn: (payload: Parameters<typeof updateEmployerSettings>[1]) => updateEmployerSettings(employer!.id, payload),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["employer-settings", employer?.id] }),
+  });
+
+  const togglePreference = (type: string, channel: string) => {
+    const next = {
+      ...notificationPreferences,
+      [type]: {
+        ...(notificationPreferences[type] || {}),
+        [channel]: !(notificationPreferences[type]?.[channel] ?? true),
+      },
+    };
+    mutation.mutate({ notification_preferences: next });
+  };
+
+  const updateBusinessSetting = (key: string, value: unknown) => {
+    mutation.mutate({ business_settings: { ...businessSettings, [key]: value } });
+  };
+
+  return (
+    <PortalShell role="employer" title="Employer Settings" description="Manage organization notification preferences, reminder cadence, and operational settings.">
+      <div className="grid gap-6">
+        {mutation.isError ? <p className="rounded-lg bg-rose-50 p-4 text-sm font-semibold text-rose-700">Could not save settings.</p> : null}
+        {mutation.isSuccess ? <p className="rounded-lg bg-emerald-50 p-4 text-sm font-semibold text-brand-deep">Settings saved.</p> : null}
+
+        <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+          <div className="mb-5 flex items-center gap-2">
+            <Bell className="text-brand-deep" size={18} />
+            <h2 className="text-base font-bold text-slate-950">Notification Preferences</h2>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[680px] text-left text-sm">
+              <thead className="text-xs font-bold uppercase tracking-wide text-slate-500">
+                <tr>
+                  <th className="border-b border-slate-100 py-2 pr-4">Notification</th>
+                  {channels.map(([, label]) => <th key={label} className="border-b border-slate-100 py-2 text-center">{label}</th>)}
+                </tr>
+              </thead>
+              <tbody>
+                {notificationTypes.map(([type, label]) => (
+                  <tr key={type}>
+                    <td className="border-b border-slate-50 py-4 pr-4 font-semibold text-slate-900">{label}</td>
+                    {channels.map(([channel, channelLabel]) => {
+                      const active = notificationPreferences[type]?.[channel] ?? true;
+                      return (
+                        <td key={`${type}-${channel}`} className="border-b border-slate-50 py-4 text-center">
+                          <button
+                            aria-label={`${active ? "Disable" : "Enable"} ${channelLabel} for ${label}`}
+                            className={`inline-flex h-8 w-14 items-center rounded-full border p-1 transition ${active ? "border-emerald-200 bg-emerald-100" : "border-slate-200 bg-slate-100"}`}
+                            disabled={mutation.isPending}
+                            onClick={() => togglePreference(type, channel)}
+                            type="button"
+                          >
+                            <span className={`h-6 w-6 rounded-full bg-white shadow-sm transition ${active ? "translate-x-6" : "translate-x-0"}`} />
+                          </button>
+                        </td>
+                      );
+                    })}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section className="grid gap-6 lg:grid-cols-2">
+          <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="mb-5 flex items-center gap-2">
+              <Settings className="text-brand-deep" size={18} />
+              <h2 className="text-base font-bold text-slate-950">Business Settings</h2>
+            </div>
+            <div className="grid gap-4">
+              <label className="grid gap-2 text-sm font-semibold text-slate-700">
+                Renewal reminder days
+                <input
+                  className="h-10 rounded border border-slate-200 px-3 text-sm"
+                  min={1}
+                  onBlur={(event) => updateBusinessSetting("renewal_reminder_days", Number(event.target.value))}
+                  type="number"
+                  defaultValue={String(settingValue(businessSettings, "renewal_reminder_days", 30))}
+                />
+              </label>
+              <label className="grid gap-2 text-sm font-semibold text-slate-700">
+                Default escalation email
+                <input
+                  className="h-10 rounded border border-slate-200 px-3 text-sm"
+                  onBlur={(event) => updateBusinessSetting("escalation_email", event.target.value)}
+                  type="email"
+                  defaultValue={String(settingValue(businessSettings, "escalation_email", employer?.contact_person_email || ""))}
+                />
+              </label>
+              <label className="flex items-center justify-between gap-4 rounded border border-slate-100 p-3 text-sm font-semibold text-slate-700">
+                Auto-assign invited handlers to selected branch
+                <input
+                  checked={Boolean(settingValue(businessSettings, "auto_assign_branch", true))}
+                  className="h-4 w-4 accent-brand-green"
+                  onChange={(event) => updateBusinessSetting("auto_assign_branch", event.target.checked)}
+                  type="checkbox"
+                />
+              </label>
+            </div>
+          </div>
+
+          <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="mb-5 flex items-center gap-2">
+              <ShieldCheck className="text-brand-deep" size={18} />
+              <h2 className="text-base font-bold text-slate-950">Account Shortcuts</h2>
+            </div>
+            <div className="grid gap-3">
+              <Link className="flex items-center justify-between rounded border border-slate-200 px-4 py-3 text-sm font-bold text-slate-700 hover:bg-slate-50" href="/employer/business-profile">
+                <span className="inline-flex items-center gap-2"><Building2 size={16} />Business profile</span>
+                <span>Open</span>
+              </Link>
+              <Link className="flex items-center justify-between rounded border border-slate-200 px-4 py-3 text-sm font-bold text-slate-700 hover:bg-slate-50" href="/employer/subscription">
+                <span className="inline-flex items-center gap-2"><Save size={16} />Subscription</span>
+                <span className="capitalize">{settings?.subscription_status?.replaceAll("_", " ") || "Open"}</span>
+              </Link>
+            </div>
+          </div>
+        </section>
+      </div>
+    </PortalShell>
+  );
+}
