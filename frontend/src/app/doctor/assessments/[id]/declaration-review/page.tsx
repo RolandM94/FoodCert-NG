@@ -1,5 +1,5 @@
-import { PortalPage } from "@/features/portal/portal-page";
+import { redirect } from "next/navigation";
 
-export default function Page() {
-  return <PortalPage role="doctor" title="Declaration review" description="Validate food handler health declarations and risk flags." mode="form" />;
+export default function Page({ params }: { params: { id: string } }) {
+  redirect(`/doctor/assessments/${params.id}`);
 }

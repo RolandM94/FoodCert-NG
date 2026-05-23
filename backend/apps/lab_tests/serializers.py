@@ -1,23 +1,40 @@
 from rest_framework import serializers
 
-from apps.lab_tests.models import LabTest, LabTestStatus
+from apps.common.security import validate_uploaded_file_security
+from apps.lab_tests.models import LabReviewRecommendation, LabTest, LabTestStatus
 
 
 class LabTestSerializer(serializers.ModelSerializer):
     requested_by_name = serializers.CharField(source="requested_by.get_full_name", read_only=True)
     resulted_by_name = serializers.CharField(source="resulted_by.get_full_name", read_only=True)
     reviewed_by_name = serializers.CharField(source="reviewed_by.get_full_name", read_only=True)
+    result_document_url = serializers.FileField(source="result_document", read_only=True)
+    assessment_status = serializers.CharField(source="assessment.status", read_only=True)
+    food_handler_name = serializers.CharField(source="assessment.food_handler.full_name", read_only=True)
+    facility_name = serializers.CharField(source="assessment.facility.facility_name", read_only=True)
 
     class Meta:
         model = LabTest
         fields = (
             "id",
             "assessment",
+            "parent_lab_test",
+            "assessment_status",
+            "food_handler_name",
+            "facility_name",
             "test_type",
             "test_name",
             "status",
+            "repeat_required",
+            "repeat_reason",
+            "is_flagged",
             "result_value",
             "result_notes",
+            "lab_staff_notes",
+            "doctor_review_notes",
+            "doctor_recommendation",
+            "result_document",
+            "result_document_url",
             "requested_by",
             "requested_by_name",
             "resulted_by",
@@ -25,7 +42,9 @@ class LabTestSerializer(serializers.ModelSerializer):
             "reviewed_by",
             "reviewed_by_name",
             "requested_at",
+            "sample_collected_at",
             "resulted_at",
+            "submitted_to_doctor_at",
             "reviewed_at",
             "created_at",
             "updated_at",
@@ -39,12 +58,18 @@ class LabTestRequestItemSerializer(serializers.Serializer):
 
 
 class LabTestRequestSerializer(serializers.Serializer):
-    tests = LabTestRequestItemSerializer(many=True)
+    tests = LabTestRequestItemSerializer(many=True, required=False, default=list)
+    include_required = serializers.BooleanField(required=False, default=True)
 
-    def validate_tests(self, value):
-        if not value:
-            raise serializers.ValidationError("At least one lab test is required.")
-        return value
+    def validate(self, attrs):
+        if not attrs.get("include_required", True) and not attrs.get("tests"):
+            raise serializers.ValidationError("At least one lab test is required when required tests are not included.")
+        return attrs
+
+
+class LabTestRepeatRequestSerializer(serializers.Serializer):
+    reason = serializers.CharField()
+    test_name = serializers.CharField(required=False, allow_blank=True)
 
 
 class LabTestResultSerializer(serializers.Serializer):
@@ -58,3 +83,25 @@ class LabTestResultSerializer(serializers.Serializer):
     )
     result_value = serializers.CharField(required=False, allow_blank=True)
     result_notes = serializers.CharField(required=False, allow_blank=True)
+    lab_staff_notes = serializers.CharField(required=False, allow_blank=True)
+
+
+class LabSampleCollectedSerializer(serializers.Serializer):
+    lab_staff_notes = serializers.CharField(required=False, allow_blank=True)
+
+
+class LabSubmitToDoctorSerializer(serializers.Serializer):
+    lab_staff_notes = serializers.CharField(required=False, allow_blank=True)
+
+
+class LabDoctorReviewSerializer(serializers.Serializer):
+    doctor_review_notes = serializers.CharField(required=False, allow_blank=True)
+    doctor_recommendation = serializers.ChoiceField(choices=LabReviewRecommendation.choices, required=False, allow_blank=True)
+
+
+class LabResultUploadSerializer(serializers.Serializer):
+    result_document = serializers.FileField()
+    lab_staff_notes = serializers.CharField(required=False, allow_blank=True)
+
+    def validate_result_document(self, value):
+        return validate_uploaded_file_security(value)

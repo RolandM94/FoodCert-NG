@@ -28,6 +28,10 @@ export type CertificateRequest = {
   request_notes: string;
   review_notes: string;
   reviewed_at?: string;
+  facility_response: string;
+  facility_responded_by?: string;
+  facility_responded_by_name?: string;
+  facility_responded_at?: string;
   created_at: string;
   updated_at: string;
 };

@@ -250,6 +250,17 @@ export type StateCertificateValidationRequest = {
   request_notes: string;
   review_notes: string;
   reviewed_at?: string;
+  facility_response?: string;
+  facility_responded_at?: string;
+  assessment_evidence_summary?: {
+    fit_signed: boolean;
+    payment_status: string;
+    declaration_status: string;
+    physical_exam_status: string;
+    lab_status: string;
+    vaccination_status: string;
+    medical_report_generated: boolean;
+  };
   created_at: string;
   updated_at: string;
 };

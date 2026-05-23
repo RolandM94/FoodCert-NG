@@ -14,6 +14,9 @@ class DashboardQuerySerializer(serializers.Serializer):
     date_to = serializers.DateField(required=False)
     employer_category = serializers.CharField(required=False, allow_blank=True)
     certificate_status = serializers.CharField(required=False, allow_blank=True)
+    doctor = serializers.UUIDField(required=False)
+    lab_status = serializers.CharField(required=False, allow_blank=True)
+    assessment_status = serializers.CharField(required=False, allow_blank=True)
 
 
 class ReportScheduleSerializer(serializers.ModelSerializer):

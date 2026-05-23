@@ -110,34 +110,107 @@ class DashboardService:
         }
 
     @classmethod
-    def facility_dashboard(cls, user, facility_id=None, department_id=None):
+    def facility_dashboard(
+        cls,
+        user,
+        facility_id=None,
+        department_id=None,
+        date_from=None,
+        date_to=None,
+        doctor_id=None,
+        lab_status="",
+        assessment_status="",
+        employer_category="",
+    ):
         facility = cls.facility_for_user(user, facility_id)
         if not facility:
             return {"facility": None, "cards": {}}
-        assessments = MedicalAssessment.objects.filter(facility=facility)
+        assessments = MedicalAssessment.objects.filter(facility=facility).select_related("doctor", "employer", "appointment")
         if user.unit_id:
             if getattr(user.unit, "unit_type", "") == "lab_department":
                 assessments = assessments.filter(lab_tests__isnull=False).distinct()
         if department_id:
             # Department filtering is advisory until assessment records carry department IDs.
             assessments = assessments
+        if date_from:
+            assessments = assessments.filter(created_at__date__gte=date_from)
+        if date_to:
+            assessments = assessments.filter(created_at__date__lte=date_to)
+        if doctor_id:
+            assessments = assessments.filter(doctor_id=doctor_id)
+        if lab_status:
+            assessments = assessments.filter(lab_status=lab_status)
+        if assessment_status:
+            assessments = assessments.filter(status=assessment_status)
+        if employer_category:
+            assessments = assessments.filter(employer__establishment_category=employer_category)
         today = timezone.localdate()
+        tomorrow = today + timezone.timedelta(days=1)
         expiry_countdown = (facility.accreditation_expiry_date - today).days if facility.accreditation_expiry_date else None
         pending_settlements = Settlement.objects.filter(facility=facility, settlement_status=SettlementStatus.PENDING)
         settled = Settlement.objects.filter(facility=facility, settlement_status=SettlementStatus.PAID)
+        appointments = facility.appointments.all()
+        if date_from:
+            appointments = appointments.filter(appointment_date__date__gte=date_from)
+        if date_to:
+            appointments = appointments.filter(appointment_date__date__lte=date_to)
+        certificate_requests = CertificateRequest.objects.filter(assessment__facility=facility)
         return {
             "facility": {"id": str(facility.id), "facility_name": facility.facility_name},
+            "filters": {
+                "date_from": str(date_from) if date_from else "",
+                "date_to": str(date_to) if date_to else "",
+                "department": str(department_id) if department_id else "",
+                "doctor": str(doctor_id) if doctor_id else "",
+                "lab_status": lab_status or "",
+                "assessment_status": assessment_status or "",
+                "employer_category": employer_category or "",
+            },
             "cards": {
+                "accreditation_status": facility.accreditation_status,
+                "reaccreditation_countdown_days": expiry_countdown,
+                "appointments_today": appointments.filter(appointment_date__date=today).count(),
+                "pending_appointments": appointments.filter(status__in=["pending", "rescheduled"], appointment_date__date__gte=today).count(),
+                "appointments_tomorrow": appointments.filter(appointment_date__date=tomorrow).count(),
+                "assessments_in_progress": assessments.exclude(signed_at__isnull=False).count(),
                 "assessments_conducted": assessments.count(),
+                "lab_requests_pending": assessments.filter(lab_status__in=[StepStatus.PENDING, StepStatus.SUBMITTED]).count(),
+                "lab_results_pending_doctor_review": assessments.filter(lab_status=StepStatus.SUBMITTED).count(),
+                "vaccination_reviews_pending": assessments.exclude(vaccination_status=StepStatus.REVIEWED).count(),
+                "doctor_decisions_pending": assessments.filter(final_decision=FitnessDecision.PENDING).count(),
+                "submitted_to_state": certificate_requests.filter(status=CertificateRequestStatus.PENDING_VALIDATION).count(),
+                "state_clarifications": certificate_requests.filter(status=CertificateRequestStatus.CORRECTION_REQUESTED).count(),
                 "certificates_issued": Certificate.objects.filter(facility=facility).count(),
                 "not_fit_reports": assessments.filter(final_decision__in=[FitnessDecision.NOT_FIT, FitnessDecision.TEMPORARILY_NOT_FIT]).count(),
                 "pending_lab_results": assessments.exclude(lab_status=StepStatus.REVIEWED).filter(lab_tests__status__in=[LabTestStatus.REQUESTED, LabTestStatus.IN_PROGRESS, LabTestStatus.SAMPLE_COLLECTED]).distinct().count(),
                 "pending_doctor_review": assessments.filter(Q(final_decision=FitnessDecision.PENDING) | Q(declaration_status=StepStatus.SUBMITTED)).count(),
                 "average_turnaround_hours": cls.average_turnaround_hours(assessments),
-                "accreditation_status": facility.accreditation_status,
-                "reaccreditation_countdown_days": expiry_countdown,
                 "pending_settlements": pending_settlements.count(),
                 "settled_amount": str(settled.aggregate(total=Sum("facility_amount"))["total"] or 0),
+            },
+            "charts": {
+                "assessment_status": list(assessments.values("status").annotate(total=Count("id")).order_by("status")),
+                "lab_status": list(assessments.values("lab_status").annotate(total=Count("id")).order_by("lab_status")),
+                "decision_distribution": list(assessments.values("final_decision").annotate(total=Count("id")).order_by("final_decision")),
+                "settlement_status": list(Settlement.objects.filter(facility=facility).values("settlement_status").annotate(total=Count("id")).order_by("settlement_status")),
+            },
+            "sections": {
+                "queue_summary": [
+                    {"name": "Appointments today", "count": appointments.filter(appointment_date__date=today).count(), "href": "/facility/appointments"},
+                    {"name": "Lab pending", "count": assessments.exclude(lab_status=StepStatus.REVIEWED).count(), "href": "/facility/lab-tests"},
+                    {"name": "State clarifications", "count": certificate_requests.filter(status=CertificateRequestStatus.CORRECTION_REQUESTED).count(), "href": "/facility/certificates"},
+                    {"name": "Pending settlements", "count": pending_settlements.count(), "href": "/facility/settlements"},
+                ],
+                "recent_assessments": [
+                    {
+                        "id": str(item.id),
+                        "food_handler": item.food_handler.full_name,
+                        "status": item.status,
+                        "decision": item.final_decision,
+                        "doctor": item.doctor.get_full_name() if item.doctor else "",
+                    }
+                    for item in assessments.select_related("food_handler", "doctor").order_by("-created_at")[:8]
+                ],
             },
         }
 
@@ -146,8 +219,10 @@ class DashboardService:
         completed = assessments.exclude(signed_at__isnull=True)
         total = 0
         count = 0
-        for assessment in completed.only("created_at", "signed_at"):
-            total += (assessment.signed_at - assessment.created_at).total_seconds() / 3600
+        for assessment in completed.values("created_at", "signed_at"):
+            if not assessment["signed_at"]:
+                continue
+            total += (assessment["signed_at"] - assessment["created_at"]).total_seconds() / 3600
             count += 1
         return round(total / count, 2) if count else 0
 
@@ -370,7 +445,17 @@ class ReportService:
         if report_type == ReportType.EMPLOYER_COMPLIANCE:
             return builder(user, employer_id=filters.get("employer"), branch_id=filters.get("branch"))
         if report_type == ReportType.FACILITY_PERFORMANCE:
-            return builder(user, facility_id=filters.get("facility"), department_id=filters.get("department"))
+            return builder(
+                user,
+                facility_id=filters.get("facility"),
+                department_id=filters.get("department"),
+                date_from=filters.get("date_from"),
+                date_to=filters.get("date_to"),
+                doctor_id=filters.get("doctor"),
+                lab_status=filters.get("lab_status", ""),
+                assessment_status=filters.get("assessment_status", ""),
+                employer_category=filters.get("employer_category", ""),
+            )
         if report_type in {ReportType.STATE_MONTHLY, ReportType.VACCINATION_COVERAGE, ReportType.ILLNESS_TRENDS, ReportType.INSPECTION_OUTCOMES}:
             return builder(user, state_id=filters.get("state"), lga_id=filters.get("lga"))
         return builder(user)

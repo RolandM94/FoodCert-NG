@@ -51,6 +51,15 @@ class CertificateRequest(BaseModel):
     request_notes = models.TextField(blank=True)
     review_notes = models.TextField(blank=True)
     reviewed_at = models.DateTimeField(null=True, blank=True)
+    facility_response = models.TextField(blank=True)
+    facility_responded_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="facility_certificate_request_responses",
+    )
+    facility_responded_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         ordering = ["-created_at"]

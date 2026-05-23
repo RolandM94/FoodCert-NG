@@ -5,6 +5,7 @@ from uuid import uuid4
 
 import qrcode
 from django.conf import settings
+from django.contrib.auth import get_user_model
 from django.db import transaction
 from django.utils import timezone
 from reportlab.lib.pagesizes import A4
@@ -23,8 +24,13 @@ from apps.certificates.models import (
     CertificateStatus,
     VerificationResult,
 )
+from apps.food_handlers.models import FoodHandlerStatus
 from apps.policy.models import StatePolicyConfig
 from apps.payments.models import PaymentStatus
+from apps.reports.models import GeneratedReport, ReportType
+from apps.notifications.models import Notification, NotificationChannel, NotificationType
+
+User = get_user_model()
 
 
 def _absolute_media_url(path: str) -> str:
@@ -32,6 +38,28 @@ def _absolute_media_url(path: str) -> str:
 
 
 class CertificateService:
+    @classmethod
+    def _notify_assessment_people(cls, *, assessment, notification_type, subject, body, context_data=None):
+        recipients = []
+        if assessment.doctor_id:
+            recipients.append(assessment.doctor)
+        if assessment.food_handler.user_id:
+            recipients.append(assessment.food_handler.user)
+        recipients.extend(User.objects.filter(role=UserRole.FACILITY_ADMIN, organization_id=assessment.facility.organization_id, is_active=True))
+        seen = set()
+        for recipient in recipients:
+            if not recipient or recipient.id in seen:
+                continue
+            seen.add(recipient.id)
+            Notification.objects.create(
+                recipient=recipient,
+                notification_type=notification_type,
+                channel=NotificationChannel.IN_APP,
+                subject=subject,
+                body=body,
+                context_data=context_data or {},
+            )
+
     @classmethod
     def policy_for_state(cls, state):
         config, _ = StatePolicyConfig.objects.get_or_create(state=state)
@@ -59,6 +87,18 @@ class CertificateService:
             raise ValidationError("Only fit, doctor-signed assessments can receive certificates.")
 
     @classmethod
+    def validate_state_submission_ready(cls, assessment):
+        cls.validate_assessment_eligible(assessment)
+        if not GeneratedReport.objects.filter(
+            filters__assessment_id=str(assessment.id),
+            report_type__in=[
+                ReportType.MEDICAL_EXAMINATION,
+                ReportType.ASSESSMENT_COMPLETION,
+            ],
+        ).exists():
+            raise ValidationError("A signed medical assessment report must be generated before State submission.")
+
+    @classmethod
     @transaction.atomic
     def request_certificate(cls, *, assessment, actor, notes=""):
         cls.validate_assessment_eligible(assessment)
@@ -77,13 +117,127 @@ class CertificateService:
             request.status = CertificateRequestStatus.PENDING_VALIDATION
             request.request_notes = notes
             request.review_notes = ""
-            request.save(update_fields=["status", "request_notes", "review_notes", "updated_at"])
+            request.facility_response = ""
+            request.facility_responded_by = None
+            request.facility_responded_at = None
+            request.save(update_fields=["status", "request_notes", "review_notes", "facility_response", "facility_responded_by", "facility_responded_at", "updated_at"])
         log_action(
             action=AuditAction.CERTIFICATE_EVENT,
             actor=actor,
             target=request,
             metadata={"event": "certificate_requested", "status": request.status},
         )
+        return request
+
+    @classmethod
+    @transaction.atomic
+    def submit_to_state(cls, *, assessment, actor, notes=""):
+        if actor.role != UserRole.FACILITY_ADMIN or actor.organization_id != assessment.facility.organization_id:
+            raise PermissionDenied("Only this facility's admin can submit assessments to State validation.")
+        cls.validate_state_submission_ready(assessment)
+        request, created = CertificateRequest.objects.get_or_create(
+            assessment=assessment,
+            defaults={"requested_by": actor, "request_notes": notes},
+        )
+        if not created:
+            if request.status == CertificateRequestStatus.CORRECTION_REQUESTED:
+                raise ValidationError("Respond to the State clarification request before resubmitting.")
+            if request.status == CertificateRequestStatus.REJECTED:
+                request.status = CertificateRequestStatus.PENDING_VALIDATION
+                request.requested_by = actor
+                request.request_notes = notes
+                request.review_notes = ""
+                request.facility_response = ""
+                request.facility_responded_by = None
+                request.facility_responded_at = None
+                request.save(update_fields=["status", "requested_by", "request_notes", "review_notes", "facility_response", "facility_responded_by", "facility_responded_at", "updated_at"])
+        assessment.status = AssessmentStatus.SUBMITTED_FOR_STATE_VALIDATION
+        assessment.save(update_fields=["status", "updated_at"])
+        cls._notify_assessment_people(
+            assessment=assessment,
+            notification_type=NotificationType.COMPLIANCE_NOTICE,
+            subject="Assessment submitted to State",
+            body="A fit assessment has been submitted for State certificate validation.",
+            context_data={"assessment_id": str(assessment.id), "certificate_request_id": str(request.id)},
+        )
+        log_action(
+            action=AuditAction.CERTIFICATE_EVENT,
+            actor=actor,
+            target=request,
+            metadata={"event": "facility_submitted_assessment_to_state", "assessment_id": str(assessment.id), "status": request.status},
+        )
+        return request
+
+    @classmethod
+    @transaction.atomic
+    def respond_to_clarification(cls, *, certificate_request, actor, response):
+        assessment = certificate_request.assessment
+        if actor.role != UserRole.FACILITY_ADMIN or actor.organization_id != assessment.facility.organization_id:
+            raise PermissionDenied("Only this facility's admin can respond to State clarification.")
+        if certificate_request.status != CertificateRequestStatus.CORRECTION_REQUESTED:
+            raise ValidationError("This certificate request is not awaiting facility clarification.")
+        if not response.strip():
+            raise ValidationError("Clarification response is required.")
+        cls.validate_state_submission_ready(assessment)
+        certificate_request.status = CertificateRequestStatus.PENDING_VALIDATION
+        certificate_request.facility_response = response
+        certificate_request.facility_responded_by = actor
+        certificate_request.facility_responded_at = timezone.now()
+        certificate_request.save(update_fields=["status", "facility_response", "facility_responded_by", "facility_responded_at", "updated_at"])
+        assessment.status = AssessmentStatus.STATE_CLARIFICATION_RESPONDED
+        assessment.save(update_fields=["status", "updated_at"])
+        log_action(
+            action=AuditAction.CERTIFICATE_EVENT,
+            actor=actor,
+            target=certificate_request,
+            metadata={"event": "facility_certificate_clarification_responded", "assessment_id": str(assessment.id)},
+        )
+        if certificate_request.reviewed_by:
+            Notification.objects.create(
+                recipient=certificate_request.reviewed_by,
+                notification_type=NotificationType.SYSTEM_ANNOUNCEMENT,
+                channel=NotificationChannel.IN_APP,
+                subject="Certificate clarification response received",
+                body="A facility has responded to a State certificate validation clarification request.",
+                context_data={
+                    "certificate_request_id": str(certificate_request.id),
+                    "assessment_id": str(assessment.id),
+                    "facility_id": str(assessment.facility_id),
+                },
+            )
+        return certificate_request
+
+    @classmethod
+    @transaction.atomic
+    def request_clarification(cls, *, request, reviewer, notes):
+        cls.ensure_state_reviewer(reviewer, request)
+        request.status = CertificateRequestStatus.CORRECTION_REQUESTED
+        request.reviewed_by = reviewer
+        request.review_notes = notes
+        request.reviewed_at = timezone.now()
+        request.save(update_fields=["status", "reviewed_by", "review_notes", "reviewed_at", "updated_at"])
+        request.assessment.status = AssessmentStatus.STATE_CLARIFICATION_REQUESTED
+        request.assessment.save(update_fields=["status", "updated_at"])
+        log_action(
+            action=AuditAction.CERTIFICATE_EVENT,
+            actor=reviewer,
+            target=request,
+            metadata={"event": "certificate_request_clarification_requested"},
+        )
+        facility_admins = User.objects.filter(role=UserRole.FACILITY_ADMIN, organization_id=request.assessment.facility.organization_id, is_active=True)
+        for admin in facility_admins:
+            Notification.objects.create(
+                recipient=admin,
+                notification_type=NotificationType.SYSTEM_ANNOUNCEMENT,
+                channel=NotificationChannel.IN_APP,
+                subject="State clarification requested",
+                body="State validation requested clarification on a certificate submission.",
+                context_data={
+                    "certificate_request_id": str(request.id),
+                    "assessment_id": str(request.assessment_id),
+                    "facility_id": str(request.assessment.facility_id),
+                },
+            )
         return request
 
     @classmethod
@@ -104,6 +258,15 @@ class CertificateService:
         request.review_notes = notes
         request.reviewed_at = timezone.now()
         request.save(update_fields=["status", "reviewed_by", "review_notes", "reviewed_at", "updated_at"])
+        request.assessment.status = AssessmentStatus.APPROVED_BY_STATE
+        request.assessment.save(update_fields=["status", "updated_at"])
+        cls._notify_assessment_people(
+            assessment=request.assessment,
+            notification_type=NotificationType.COMPLIANCE_NOTICE,
+            subject="Assessment approved by State",
+            body="State validation approved the certificate request.",
+            context_data={"assessment_id": str(request.assessment_id), "certificate_request_id": str(request.id)},
+        )
         log_action(action=AuditAction.CERTIFICATE_EVENT, actor=reviewer, target=request, metadata={"event": "certificate_request_approved"})
         return request
 
@@ -116,6 +279,15 @@ class CertificateService:
         request.review_notes = notes
         request.reviewed_at = timezone.now()
         request.save(update_fields=["status", "reviewed_by", "review_notes", "reviewed_at", "updated_at"])
+        request.assessment.status = AssessmentStatus.REJECTED_BY_STATE
+        request.assessment.save(update_fields=["status", "updated_at"])
+        cls._notify_assessment_people(
+            assessment=request.assessment,
+            notification_type=NotificationType.COMPLIANCE_NOTICE,
+            subject="Assessment rejected by State",
+            body="State validation rejected the certificate request.",
+            context_data={"assessment_id": str(request.assessment_id), "certificate_request_id": str(request.id)},
+        )
         log_action(action=AuditAction.CERTIFICATE_EVENT, actor=reviewer, target=request, metadata={"event": "certificate_request_rejected"})
         return request
 
@@ -219,6 +391,8 @@ class CertificateService:
         certificate.save(update_fields=["qr_code_url", "pdf_url", "updated_at"])
         assessment.status = AssessmentStatus.CERTIFICATE_ISSUED
         assessment.save(update_fields=["status", "updated_at"])
+        assessment.food_handler.current_status = FoodHandlerStatus.FIT
+        assessment.food_handler.save(update_fields=["current_status", "updated_at"])
         log_action(action=AuditAction.CERTIFICATE_EVENT, actor=actor or issued_by, target=certificate, metadata={"event": "certificate_issued"})
         return certificate
 

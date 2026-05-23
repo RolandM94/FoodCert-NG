@@ -1,7 +1,7 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { Activity, AlertTriangle, ClipboardList, ShieldCheck } from "lucide-react";
+import { Activity, AlertTriangle, ClipboardList, ShieldCheck, type LucideIcon } from "lucide-react";
 import { PortalShell } from "@/components/layout/portal-shell";
 import { DataTable, StatusCell } from "@/components/ui/data-table";
 import { fetchFederalIndicators, type FederalStatePerformanceRow } from "@/lib/api/federal";
@@ -11,21 +11,22 @@ export default function Page() {
   const cards = indicatorsQuery.data?.cards || {};
   const lowCoverage = indicatorsQuery.data?.sections.low_coverage_states || [];
   const qualityRisks = indicatorsQuery.data?.sections.top_data_quality_risks || [];
+  const metricCards: Array<[string, string | number | undefined, LucideIcon]> = [
+    ["States", cards.states_monitored, Activity],
+    ["Coverage", `${cards.national_certification_coverage || 0}%`, ShieldCheck],
+    ["Low coverage", cards.low_coverage_states, AlertTriangle],
+    ["Missing reports", cards.missing_reports, ClipboardList],
+    ["Cert validations", cards.open_certificate_validations, ClipboardList],
+    ["Facility apps", cards.open_facility_applications, ClipboardList],
+  ];
 
   return (
     <PortalShell role="federal_admin" title="Analytics" description="Monitor national M&E indicators, coverage risks, report gaps, and data quality trends.">
       <div className="grid gap-5">
         <section className="grid gap-3 md:grid-cols-3 xl:grid-cols-6">
-          {[
-            ["States", cards.states_monitored, Activity],
-            ["Coverage", `${cards.national_certification_coverage || 0}%`, ShieldCheck],
-            ["Low coverage", cards.low_coverage_states, AlertTriangle],
-            ["Missing reports", cards.missing_reports, ClipboardList],
-            ["Cert validations", cards.open_certificate_validations, ClipboardList],
-            ["Facility apps", cards.open_facility_applications, ClipboardList],
-          ].map(([label, value, Icon]) => (
-            <div key={label as string} className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-              <div className="mb-2 flex items-center gap-2 text-brand-deep"><Icon size={16} /><p className="text-xs font-bold uppercase text-slate-500">{label as string}</p></div>
+          {metricCards.map(([label, value, Icon]) => (
+            <div key={label} className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+              <div className="mb-2 flex items-center gap-2 text-brand-deep"><Icon size={16} /><p className="text-xs font-bold uppercase text-slate-500">{label}</p></div>
               <p className="text-xl font-bold text-slate-950">{String(value ?? 0)}</p>
             </div>
           ))}

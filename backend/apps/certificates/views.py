@@ -5,7 +5,7 @@ from drf_spectacular.utils import extend_schema
 from rest_framework import status, viewsets
 from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.decorators import throttle_classes
-from rest_framework.exceptions import NotFound, PermissionDenied
+from rest_framework.exceptions import NotFound, PermissionDenied, ValidationError
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -68,6 +68,21 @@ class CertificateRequestViewSet(viewsets.ReadOnlyModelViewSet):
             request=self.get_object(),
             reviewer=request.user,
             notes=serializer.validated_data.get("review_notes", ""),
+        )
+        return Response(CertificateRequestSerializer(certificate_request).data)
+
+    @extend_schema(request=ReviewCertificateRequestSerializer, responses=CertificateRequestSerializer)
+    @action(detail=True, methods=["patch"], url_path="request-clarification")
+    def request_clarification(self, request, pk=None):
+        serializer = ReviewCertificateRequestSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        notes = serializer.validated_data.get("review_notes", "")
+        if not notes.strip():
+            raise ValidationError("Review notes are required when requesting clarification.")
+        certificate_request = CertificateService.request_clarification(
+            request=self.get_object(),
+            reviewer=request.user,
+            notes=notes,
         )
         return Response(CertificateRequestSerializer(certificate_request).data)
 

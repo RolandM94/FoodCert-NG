@@ -143,7 +143,7 @@ export function UnitManagementPage({
             <>
               <OrganizationUnitDetail
                 unit={selectedUnit}
-                memberCount={0}
+                memberCount={selectedUnit.member_count ?? 0}
               />
               {canEdit && (
                 <div className="flex gap-2">

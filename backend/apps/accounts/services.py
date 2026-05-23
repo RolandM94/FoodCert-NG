@@ -139,6 +139,31 @@ class InviteService:
                 },
             )
 
+        if invite.facility_staff_type:
+            from apps.facilities.models import FacilityStaffProfile, MedicalFacility
+
+            try:
+                facility = invite.organization.medical_facility
+            except MedicalFacility.DoesNotExist:
+                facility = None
+
+            if facility:
+                profile, created = FacilityStaffProfile.objects.update_or_create(
+                    user=user,
+                    defaults={
+                        "facility": facility,
+                        "department": invite.unit,
+                        "staff_type": invite.facility_staff_type,
+                        "is_active": True,
+                    },
+                )
+                log_action(
+                    action=AuditAction.CREATE if created else AuditAction.UPDATE,
+                    actor=user,
+                    target=profile,
+                    metadata={"event": "facility_staff_profile_created_from_invite"},
+                )
+
         Notification.objects.create(
             recipient=invite.invited_by,
             notification_type=NotificationType.SYSTEM_ANNOUNCEMENT,

@@ -762,17 +762,10 @@ class StateCertificateValidationClarificationView(StateCertificateValidationMixi
         notes = self.action_notes()
         if not notes.strip():
             raise ValidationError("Review notes are required when requesting clarification.")
-        certificate_request = self.get_object(pk)
-        certificate_request.status = CertificateRequestStatus.CORRECTION_REQUESTED
-        certificate_request.reviewed_by = request.user
-        certificate_request.review_notes = notes
-        certificate_request.reviewed_at = timezone.now()
-        certificate_request.save(update_fields=["status", "reviewed_by", "review_notes", "reviewed_at", "updated_at"])
-        log_action(
-            action=AuditAction.CERTIFICATE_EVENT,
-            actor=request.user,
-            target=certificate_request,
-            metadata={"event": "certificate_request_clarification_requested"},
+        certificate_request = CertificateService.request_clarification(
+            request=self.get_object(pk),
+            reviewer=request.user,
+            notes=notes,
         )
         return Response(StateCertificateValidationSerializer(certificate_request).data)
 

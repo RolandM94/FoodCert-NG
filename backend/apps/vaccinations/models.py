@@ -17,6 +17,9 @@ class VaccinationStatus(models.TextChoices):
     VALID = "valid", "Valid"
     EXPIRED = "expired", "Expired"
     MISSING = "missing", "Missing"
+    INCOMPLETE = "incomplete", "Incomplete"
+    PRESCRIBED = "prescribed", "Prescribed"
+    ADMINISTERED = "administered", "Administered"
     DOCTOR_CLEARED = "doctor_cleared", "Doctor Cleared"
     SECOND_DOSE_DUE = "second_dose_due", "Second Dose Due"
 
@@ -32,11 +35,18 @@ class VaccinationRecord(BaseModel):
     )
     vaccine_type = models.CharField(max_length=32, choices=VaccineType.choices)
     vaccine_name = models.CharField(max_length=160, blank=True)
+    brand_name = models.CharField(max_length=160, blank=True)
+    batch_number = models.CharField(max_length=120, blank=True)
+    vaccinator_name = models.CharField(max_length=160, blank=True)
+    vaccination_facility_name = models.CharField(max_length=255, blank=True)
+    vaccination_facility_address = models.TextField(blank=True)
+    certificate_upload = models.FileField(upload_to="vaccination_certificates/", blank=True)
     dose_number = models.PositiveSmallIntegerField(default=1)
     date_administered = models.DateField(null=True, blank=True)
     expiry_date = models.DateField(null=True, blank=True)
     status = models.CharField(max_length=32, choices=VaccinationStatus.choices, default=VaccinationStatus.MISSING, db_index=True)
     doctor_clearance = models.BooleanField(default=False)
+    next_dose_date = models.DateField(null=True, blank=True)
     reminder_date = models.DateField(null=True, blank=True)
     notes = models.TextField(blank=True)
     recorded_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="recorded_vaccinations")
@@ -56,10 +66,13 @@ class VaccinationRecord(BaseModel):
         if self.vaccine_type == VaccineType.TYPHOID and self.date_administered and not self.expiry_date:
             self.expiry_date = self.date_administered + timedelta(days=365 * typhoid_validity_years)
         if self.vaccine_type == VaccineType.HEPATITIS_A and self.date_administered and self.dose_number == 1:
-            self.reminder_date = self.date_administered + timedelta(days=30 * hepatitis_a_second_dose_months)
+            self.next_dose_date = self.date_administered + timedelta(days=30 * hepatitis_a_second_dose_months)
+            self.reminder_date = self.next_dose_date
         today = timezone.localdate()
         if self.doctor_clearance:
             self.status = VaccinationStatus.DOCTOR_CLEARED
+        elif self.status in {VaccinationStatus.PRESCRIBED, VaccinationStatus.INCOMPLETE}:
+            return
         elif not self.date_administered:
             self.status = VaccinationStatus.MISSING
         elif self.expiry_date and self.expiry_date < today:
@@ -68,3 +81,13 @@ class VaccinationRecord(BaseModel):
             self.status = VaccinationStatus.SECOND_DOSE_DUE
         else:
             self.status = VaccinationStatus.VALID
+
+    @property
+    def compliance_status(self) -> str:
+        if self.status in {VaccinationStatus.VALID, VaccinationStatus.DOCTOR_CLEARED, VaccinationStatus.ADMINISTERED}:
+            return "compliant"
+        if self.status == VaccinationStatus.EXPIRED:
+            return "expired"
+        if self.status == VaccinationStatus.SECOND_DOSE_DUE:
+            return "second_dose_pending"
+        return "due"

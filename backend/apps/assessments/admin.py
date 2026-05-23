@@ -19,13 +19,13 @@ class MedicalAssessmentAdmin(admin.ModelAdmin):
 
 @admin.register(HealthDeclaration)
 class HealthDeclarationAdmin(admin.ModelAdmin):
-    list_display = ("assessment", "risk_flag", "submitted_at", "validated_by_doctor", "validated_at")
-    list_filter = ("risk_flag", "submitted_at", "validated_at")
+    list_display = ("assessment", "version", "risk_flag", "is_locked", "submitted_at", "validated_by_doctor", "validated_at")
+    list_filter = ("risk_flag", "is_locked", "submitted_at", "validated_at")
     search_fields = ("assessment__food_handler__full_name",)
 
 
 @admin.register(PhysicalExamination)
 class PhysicalExaminationAdmin(admin.ModelAdmin):
-    list_display = ("assessment", "examined_by", "examined_at")
-    list_filter = ("examined_at",)
+    list_display = ("assessment", "examined_by", "risk_flag", "is_completed", "completed_at", "examined_at")
+    list_filter = ("risk_flag", "is_completed", "examined_at")
     search_fields = ("assessment__food_handler__full_name", "examined_by__email")

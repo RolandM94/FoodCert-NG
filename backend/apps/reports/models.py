@@ -14,6 +14,12 @@ class ReportType(models.TextChoices):
     VACCINATION_COVERAGE = "vaccination_coverage", "Vaccination Coverage"
     ILLNESS_TRENDS = "illness_trends", "Illness Trends"
     INSPECTION_OUTCOMES = "inspection_outcomes", "Inspection Outcomes"
+    MEDICAL_EXAMINATION = "medical_examination", "Medical Examination Report"
+    TEMPORARILY_NOT_FIT = "temporarily_not_fit_report", "Temporarily Not Fit Report"
+    RETURN_TO_WORK = "return_to_work_report", "Return To Work Report"
+    ASSESSMENT_COMPLETION = "assessment_completion", "Assessment Completion Summary"
+    VACCINATION_REVIEW = "vaccination_review_report", "Vaccination Review Report"
+    RESTRICTED_LAB_SUMMARY = "restricted_lab_summary", "Restricted Lab Summary"
 
 
 class ReportFormat(models.TextChoices):

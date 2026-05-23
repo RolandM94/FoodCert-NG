@@ -1,11 +1,12 @@
 from rest_framework.routers import DefaultRouter
 
-from apps.assessments.views import AppointmentViewSet, HealthDeclarationViewSet, MedicalAssessmentViewSet
+from apps.assessments.views import AppointmentViewSet, DoctorAssessmentViewSet, HealthDeclarationViewSet, MedicalAssessmentViewSet
 
 
 router = DefaultRouter()
 router.register("appointments", AppointmentViewSet, basename="appointments")
 router.register("assessments", MedicalAssessmentViewSet, basename="assessments")
 router.register("declarations", HealthDeclarationViewSet, basename="declarations")
+router.register("doctor/assessments", DoctorAssessmentViewSet, basename="doctor-assessments")
 
 urlpatterns = router.urls

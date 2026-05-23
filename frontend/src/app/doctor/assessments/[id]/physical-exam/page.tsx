@@ -1,5 +1,5 @@
-import { PortalPage } from "@/features/portal/portal-page";
+import { redirect } from "next/navigation";
 
-export default function Page() {
-  return <PortalPage role="doctor" title="Physical examination" description="Record required physical examination checklist findings." mode="form" />;
+export default function Page({ params }: { params: { id: string } }) {
+  redirect(`/doctor/assessments/${params.id}`);
 }

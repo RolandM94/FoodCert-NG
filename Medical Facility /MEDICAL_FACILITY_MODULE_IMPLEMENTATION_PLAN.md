@@ -12,13 +12,13 @@
 | Department management through `OrganizationUnit` | Backend foundation exists, facility workflow missing |
 | Facility staff invites and staff profiles | Invite foundation exists, facility workflow missing |
 | Appointment model and base API | Partially done |
-| Appointment actions: confirm, reschedule, cancel, no-show, assign doctor | Missing |
+| Appointment actions: confirm, reschedule, cancel, no-show, assign doctor | Done |
 | Assessment model and base API | Partially done |
-| Assessment queue filters and facility aliases | Missing |
-| Health declaration review | Partially done |
-| Physical examination workflow | Partially done |
-| Lab test request/result/review workflow | Partially done |
-| Vaccination review workflow | Partially done |
+| Assessment queue filters and facility aliases | Done |
+| Health declaration review | Done |
+| Physical examination workflow | Done |
+| Lab test request/result/review workflow | Done |
+| Vaccination review workflow | Done |
 | Doctor final decision workflow | Partially done |
 | Submit fit assessment to State validation | Partially done through certificates/state work, facility handoff missing |
 | Facility clarification workflow | Missing |
@@ -26,7 +26,10 @@
 | Facility settlements dashboard and disputes | Partially done |
 | Facility reports | Missing |
 | Facility dashboard | Placeholder |
-| Facility profile/accreditation/departments/staff/appointments/assessments/lab/certificates/settlements/reports pages | Mostly placeholder |
+| Facility profile/accreditation/departments/staff/invites/appointments pages | Done |
+| Facility assessments queue/detail pages | Done |
+| Facility lab-tests page | Done |
+| Facility certificates/settlements/reports pages | Mostly placeholder |
 | Privacy and role-scoped medical access tests | Started — MF0 baseline added |
 
 ### Implementation Status
@@ -34,20 +37,20 @@
 | Chunk | Status |
 |-------|--------|
 | MF0 Baseline audit, routes, and facility scope inventory | Done |
-| MF1 Facility profile, registration, and accreditation readiness | Pending |
-| MF2 Accreditation documents and annual re-accreditation | Pending |
-| MF3 Departments using `OrganizationUnit` | Pending |
-| MF4 Facility staff, invites, and professional profiles | Pending |
-| MF5 Appointment management and payment gate | Pending |
-| MF6 Assessment queue and facility workflow detail | Pending |
-| MF7 Doctor declaration review and physical examination | Pending |
-| MF8 Laboratory requests, sample collection, results, and review | Pending |
-| MF9 Vaccination review and record workflow | Pending |
-| MF10 Doctor decision, medical reports, and immutable sign-off | Pending |
-| MF11 Submit to State validation and clarification workflow | Pending |
-| MF12 Settlements, finance dashboard, and disputes | Pending |
-| MF13 Facility dashboard, reports, notifications, and exports | Pending |
-| MF14 Security, privacy, QA, and product polish | Pending |
+| MF1 Facility profile, registration, and accreditation readiness | Done |
+| MF2 Accreditation documents and annual re-accreditation | Done |
+| MF3 Departments using `OrganizationUnit` | Done |
+| MF4 Facility staff, invites, and professional profiles | Done |
+| MF5 Appointment management and payment gate | Done |
+| MF6 Assessment queue and facility workflow detail | Done |
+| MF7 Doctor declaration review and physical examination | Done |
+| MF8 Laboratory requests, sample collection, results, and review | Done |
+| MF9 Vaccination review and record workflow | Done |
+| MF10 Doctor decision, medical reports, and immutable sign-off | Done |
+| MF11 Submit to State validation and clarification workflow | Done |
+| MF12 Settlements, finance dashboard, and disputes | Done |
+| MF13 Facility dashboard, reports, notifications, and exports | Done |
+| MF14 Security, privacy, QA, and product polish | Done |
 
 ## Existing Foundations To Reuse
 

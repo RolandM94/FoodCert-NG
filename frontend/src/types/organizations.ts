@@ -53,6 +53,10 @@ export type OrganizationUnit = {
   phone: string;
   email: string;
   is_active: boolean;
+  member_count: number;
+  open_assessment_count: number;
+  pending_lab_test_count: number;
+  records_ready_count: number;
   created_at: string;
   updated_at: string;
 };

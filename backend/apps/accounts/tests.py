@@ -4,6 +4,7 @@ from rest_framework.test import APITestCase
 
 from apps.accounts.models import InviteStatus, UserInvite, UserRole, UserStatus
 from apps.audit.models import AuditAction, AuditLog
+from apps.facilities.models import FacilityStaffProfile, FacilityStaffType, FacilityType, MedicalFacility, OwnershipType
 from apps.locations.models import State
 from apps.organizations.models import Organization, OrganizationType, OrganizationUnit, OrganizationUnitType
 
@@ -272,3 +273,63 @@ class UserInviteUnitWorkflowTests(APITestCase):
         self.assertEqual(response.status_code, 400)
         invite.refresh_from_db()
         self.assertEqual(invite.status, InviteStatus.EXPIRED)
+
+    def test_facility_invite_acceptance_creates_staff_profile(self):
+        facility_org = Organization.objects.create(
+            name="Lagos Diagnostic Centre",
+            organization_type=OrganizationType.MEDICAL_FACILITY,
+            state=self.state,
+        )
+        facility = MedicalFacility.objects.create(
+            organization=facility_org,
+            facility_name="Lagos Diagnostic Centre",
+            facility_type=FacilityType.DIAGNOSTIC_CENTRE,
+            ownership_type=OwnershipType.PRIVATE,
+            license_number="LDC-001",
+            address="1 Health Road",
+            state=self.state,
+            contact_person="Medical Director",
+            phone="08030000001",
+            email="facility@example.com",
+        )
+        records_department = OrganizationUnit.objects.create(
+            organization=facility_org,
+            name="Records",
+            unit_type=OrganizationUnitType.RECORDS_DEPARTMENT,
+            state=self.state,
+        )
+        facility_admin = User.objects.create_user(
+            username="facility-owner",
+            email="facility-owner@example.com",
+            password="StrongPass123!",
+            role=UserRole.FACILITY_ADMIN,
+            organization=facility_org,
+            state=self.state,
+        )
+        invite = UserInvite.objects.create(
+            organization=facility_org,
+            unit=records_department,
+            invited_by=facility_admin,
+            email="records@example.com",
+            role=UserRole.FACILITY_ADMIN,
+            facility_staff_type=FacilityStaffType.RECORDS_STAFF,
+            token="records-staff-token",
+            expires_at=timezone.now() + timezone.timedelta(days=7),
+        )
+
+        response = self.client.post(
+            f"/api/invites/{invite.token}/accept/",
+            {"username": "records-staff", "password": "StrongPass123!"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        invited = User.objects.get(email="records@example.com")
+        self.assertEqual(invited.organization, facility_org)
+        self.assertEqual(invited.unit, records_department)
+        self.assertTrue(invited.unit_restricted)
+        profile = FacilityStaffProfile.objects.get(user=invited)
+        self.assertEqual(profile.facility, facility)
+        self.assertEqual(profile.department, records_department)
+        self.assertEqual(profile.staff_type, FacilityStaffType.RECORDS_STAFF)
+        self.assertTrue(profile.is_active)

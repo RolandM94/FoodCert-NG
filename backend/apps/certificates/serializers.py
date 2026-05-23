@@ -12,6 +12,7 @@ class CertificateRequestSerializer(serializers.ModelSerializer):
     issuing_state_name = serializers.CharField(source="assessment.facility.state.name", read_only=True)
     requested_by_name = serializers.CharField(source="requested_by.get_full_name", read_only=True)
     reviewed_by_name = serializers.CharField(source="reviewed_by.get_full_name", read_only=True)
+    facility_responded_by_name = serializers.CharField(source="facility_responded_by.get_full_name", read_only=True)
 
     class Meta:
         model = CertificateRequest
@@ -29,6 +30,10 @@ class CertificateRequestSerializer(serializers.ModelSerializer):
             "request_notes",
             "review_notes",
             "reviewed_at",
+            "facility_response",
+            "facility_responded_by",
+            "facility_responded_by_name",
+            "facility_responded_at",
             "created_at",
             "updated_at",
         )
@@ -37,6 +42,10 @@ class CertificateRequestSerializer(serializers.ModelSerializer):
 
 class RequestCertificateSerializer(serializers.Serializer):
     request_notes = serializers.CharField(required=False, allow_blank=True)
+
+
+class CertificateClarificationResponseSerializer(serializers.Serializer):
+    response = serializers.CharField()
 
 
 class ReviewCertificateRequestSerializer(serializers.Serializer):

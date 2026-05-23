@@ -185,6 +185,7 @@ class UserInviteSerializer(serializers.ModelSerializer):
             "role",
             "employer_staff_role",
             "ministry_staff_role",
+            "facility_staff_type",
             "message",
             "status",
             "token",

@@ -101,6 +101,7 @@ class UserInvite(UUIDModel, TimestampedModel):
     role = models.CharField(max_length=32, choices=UserRole.choices, db_index=True)
     employer_staff_role = models.CharField(max_length=32, choices=EmployerStaffRole.choices, blank=True, db_index=True)
     ministry_staff_role = models.CharField(max_length=64, blank=True, db_index=True)
+    facility_staff_type = models.CharField(max_length=64, blank=True, db_index=True)
     message = models.TextField(blank=True)
     status = models.CharField(max_length=16, choices=InviteStatus.choices, default=InviteStatus.PENDING, db_index=True)
     token = models.CharField(max_length=128, unique=True, db_index=True)

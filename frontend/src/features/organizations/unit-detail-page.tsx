@@ -59,7 +59,7 @@ export function UnitDetailPage({
         </Link>
 
         {unitQuery.isError ? <p className="rounded-lg bg-rose-50 p-4 text-sm font-semibold text-rose-700">Could not load this unit.</p> : null}
-        {unit ? <OrganizationUnitDetail unit={unit} memberCount={0} /> : null}
+        {unit ? <OrganizationUnitDetail unit={unit} memberCount={unit.member_count ?? 0} /> : null}
 
         <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
           <div className="mb-4 flex flex-wrap gap-2">

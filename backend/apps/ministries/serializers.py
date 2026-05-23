@@ -13,6 +13,7 @@ from apps.inspections.models import Inspection
 from apps.inspections.serializers import InspectionResponseSerializer, InspectionSerializer
 from apps.ministries.models import FederalStateQuery, MinistryStaffProfile, StateReport
 from apps.organizations.models import OrganizationUnit
+from apps.reports.models import GeneratedReport, ReportType
 from apps.organizations.serializers import OrganizationUnitSerializer
 from apps.policy.serializers import NationalPolicyConfigSerializer, StatePolicyConfigSerializer
 from apps.reports.serializers import DashboardQuerySerializer
@@ -88,6 +89,8 @@ class StateCertificateValidationSerializer(serializers.ModelSerializer):
     certificate_number = serializers.CharField(source="assessment.certificate.certificate_number", read_only=True)
     requested_by_name = serializers.CharField(source="requested_by.get_full_name", read_only=True)
     reviewed_by_name = serializers.CharField(source="reviewed_by.get_full_name", read_only=True)
+    facility_responded_by_name = serializers.CharField(source="facility_responded_by.get_full_name", read_only=True)
+    assessment_evidence_summary = serializers.SerializerMethodField()
 
     class Meta:
         model = CertificateRequest
@@ -116,10 +119,30 @@ class StateCertificateValidationSerializer(serializers.ModelSerializer):
             "request_notes",
             "review_notes",
             "reviewed_at",
+            "facility_response",
+            "facility_responded_by",
+            "facility_responded_by_name",
+            "facility_responded_at",
+            "assessment_evidence_summary",
             "created_at",
             "updated_at",
         )
         read_only_fields = fields
+
+    def get_assessment_evidence_summary(self, obj):
+        assessment = obj.assessment
+        return {
+            "fit_signed": assessment.final_decision == "fit" and bool(assessment.signed_at),
+            "payment_status": assessment.payment_transaction.status if assessment.payment_transaction else "missing",
+            "declaration_status": assessment.declaration_status,
+            "physical_exam_status": assessment.physical_exam_status,
+            "lab_status": assessment.lab_status,
+            "vaccination_status": assessment.vaccination_status,
+            "medical_report_generated": GeneratedReport.objects.filter(
+                filters__assessment_id=str(assessment.id),
+                report_type__in=[ReportType.MEDICAL_EXAMINATION, ReportType.ASSESSMENT_COMPLETION],
+            ).exists(),
+        }
 
 
 class StateCertificateValidationActionSerializer(serializers.Serializer):

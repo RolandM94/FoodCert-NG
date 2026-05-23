@@ -9,8 +9,32 @@ export async function requestCertificate(assessmentId: string, request_notes = "
   return unwrap(response.data);
 }
 
-export async function listCertificateRequests(): Promise<CertificateRequest[]> {
-  const response = await apiClient.get<ApiEnvelope<CertificateRequest[]>>("/certificate-requests/");
+export async function submitFacilityAssessmentToState(facilityId: string, assessmentId: string, request_notes = ""): Promise<CertificateRequest> {
+  const response = await apiClient.post<ApiEnvelope<CertificateRequest>>(
+    `/facilities/${facilityId}/assessments/${assessmentId}/submit-to-state/`,
+    { request_notes }
+  );
+  return unwrap(response.data);
+}
+
+export async function submitAssessmentToState(assessmentId: string, request_notes = ""): Promise<CertificateRequest> {
+  const response = await apiClient.post<ApiEnvelope<CertificateRequest>>(
+    `/assessments/${assessmentId}/submit-to-state/`,
+    { request_notes }
+  );
+  return unwrap(response.data);
+}
+
+export async function respondFacilityCertificateClarification(facilityId: string, assessmentId: string, responseText: string): Promise<CertificateRequest> {
+  const response = await apiClient.post<ApiEnvelope<CertificateRequest>>(
+    `/facilities/${facilityId}/assessments/${assessmentId}/respond-to-clarification/`,
+    { response: responseText }
+  );
+  return unwrap(response.data);
+}
+
+export async function listCertificateRequests(params?: Record<string, string>): Promise<CertificateRequest[]> {
+  const response = await apiClient.get<ApiEnvelope<CertificateRequest[]>>("/certificate-requests/", { params });
   return unwrap(response.data);
 }
 
@@ -36,8 +60,8 @@ export async function generateCertificate(payload: {
   return unwrap(response.data);
 }
 
-export async function listCertificates(): Promise<Certificate[]> {
-  const response = await apiClient.get<ApiEnvelope<Certificate[]>>("/certificates/");
+export async function listCertificates(params?: Record<string, string>): Promise<Certificate[]> {
+  const response = await apiClient.get<ApiEnvelope<Certificate[]>>("/certificates/", { params });
   return unwrap(response.data);
 }
 

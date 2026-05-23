@@ -3,8 +3,8 @@ from django.utils import timezone
 from rest_framework.test import APITestCase
 
 from apps.accounts.models import UserRole
-from apps.assessments.models import FitnessDecision, MedicalAssessment
-from apps.certificates.models import Certificate, CertificateRequest, VerificationResult
+from apps.assessments.models import AssessmentStatus, FitnessDecision, MedicalAssessment
+from apps.certificates.models import Certificate, CertificateRequest, CertificateRequestStatus, VerificationResult
 from apps.employers.models import Employer, EstablishmentCategory
 from apps.facilities.models import AccreditationStatus, FacilityType, MedicalFacility, OwnershipType
 from apps.food_handlers.models import FoodHandlerCategory, FoodHandlerProfile, Gender
@@ -13,6 +13,7 @@ from apps.nin_verification.models import NINVerification, NINVerificationStatus
 from apps.organizations.models import Organization, OrganizationType
 from apps.payments.models import PaymentStatus, PaymentTransaction
 from apps.policy.models import StatePolicyConfig
+from apps.reports.models import GeneratedReport, GeneratedReportStatus, ReportFormat, ReportType
 
 User = get_user_model()
 
@@ -46,6 +47,14 @@ class CertificateIssuanceTests(APITestCase):
             email="doctor@example.com",
             password="StrongPass123!",
             role=UserRole.DOCTOR,
+            organization=self.facility_org,
+            state=self.state,
+        )
+        self.facility_admin = User.objects.create_user(
+            username="facility-admin",
+            email="facility-admin@example.com",
+            password="StrongPass123!",
+            role=UserRole.FACILITY_ADMIN,
             organization=self.facility_org,
             state=self.state,
         )
@@ -132,6 +141,82 @@ class CertificateIssuanceTests(APITestCase):
             status="fit",
             signed_at=timezone.now(),
         )
+        GeneratedReport.objects.create(
+            report_type=ReportType.MEDICAL_EXAMINATION,
+            file_format=ReportFormat.JSON,
+            filters={"assessment_id": str(self.assessment.id)},
+            generated_by=self.doctor,
+            status=GeneratedReportStatus.GENERATED,
+        )
+
+    def test_assessment_submit_to_state_alias_syncs_status_and_blocks_direct_issuance(self):
+        self.client.force_authenticate(self.facility_admin)
+
+        response = self.client.post(
+            f"/api/assessments/{self.assessment.id}/submit-to-state/",
+            {"request_notes": "Ready for State validation."},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(data(response)["status"], CertificateRequestStatus.PENDING_VALIDATION)
+        self.assessment.refresh_from_db()
+        self.assertEqual(self.assessment.status, AssessmentStatus.SUBMITTED_FOR_STATE_VALIDATION)
+
+        blocked = self.client.post(
+            "/api/certificates/generate/",
+            {"certificate_request": data(response)["id"]},
+            format="json",
+        )
+        self.assertEqual(blocked.status_code, 400)
+
+    def test_clarification_approval_and_issue_sync_assessment_statuses(self):
+        certificate_request = CertificateRequest.objects.create(
+            assessment=self.assessment,
+            requested_by=self.facility_admin,
+            status=CertificateRequestStatus.PENDING_VALIDATION,
+        )
+        self.client.force_authenticate(self.state_admin)
+
+        clarification = self.client.patch(
+            f"/api/certificate-requests/{certificate_request.id}/request-clarification/",
+            {"review_notes": "Confirm vaccination evidence."},
+            format="json",
+        )
+        self.assertEqual(clarification.status_code, 200)
+        self.assessment.refresh_from_db()
+        self.assertEqual(self.assessment.status, AssessmentStatus.STATE_CLARIFICATION_REQUESTED)
+
+        self.client.force_authenticate(self.facility_admin)
+        response = self.client.post(
+            f"/api/facilities/{self.facility.id}/assessments/{self.assessment.id}/respond-to-clarification/",
+            {"response": "Vaccination evidence confirmed."},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assessment.refresh_from_db()
+        self.assertEqual(self.assessment.status, AssessmentStatus.STATE_CLARIFICATION_RESPONDED)
+
+        self.client.force_authenticate(self.state_admin)
+        approve = self.client.patch(
+            f"/api/certificate-requests/{certificate_request.id}/approve/",
+            {"review_notes": "Approved."},
+            format="json",
+        )
+        self.assertEqual(approve.status_code, 200)
+        self.assessment.refresh_from_db()
+        self.assertEqual(self.assessment.status, AssessmentStatus.APPROVED_BY_STATE)
+
+        issue = self.client.post(
+            "/api/certificates/generate/",
+            {"certificate_request": str(certificate_request.id)},
+            format="json",
+        )
+        self.assertEqual(issue.status_code, 201)
+        self.assessment.refresh_from_db()
+        self.food_handler.refresh_from_db()
+        self.assertEqual(self.assessment.status, AssessmentStatus.CERTIFICATE_ISSUED)
+        self.assertEqual(self.food_handler.current_status, "fit")
 
     def test_certificate_request_requires_state_approval_before_generation(self):
         self.client.force_authenticate(self.doctor)

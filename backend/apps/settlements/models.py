@@ -12,6 +12,14 @@ class SettlementStatus(models.TextChoices):
     CANCELLED = "cancelled", "Cancelled"
 
 
+class SettlementDisputeStatus(models.TextChoices):
+    NONE = "none", "None"
+    OPEN = "open", "Open"
+    UNDER_REVIEW = "under_review", "Under Review"
+    RESOLVED = "resolved", "Resolved"
+    REJECTED = "rejected", "Rejected"
+
+
 class Settlement(BaseModel):
     facility = models.ForeignKey("facilities.MedicalFacility", on_delete=models.PROTECT, related_name="settlements")
     state = models.ForeignKey("locations.State", on_delete=models.PROTECT, related_name="settlements")
@@ -35,6 +43,22 @@ class Settlement(BaseModel):
     )
     settlement_reference = models.CharField(max_length=120, blank=True, db_index=True)
     settled_at = models.DateTimeField(null=True, blank=True)
+    dispute_status = models.CharField(
+        max_length=24,
+        choices=SettlementDisputeStatus.choices,
+        default=SettlementDisputeStatus.NONE,
+        db_index=True,
+    )
+    dispute_reason = models.TextField(blank=True)
+    disputed_by = models.ForeignKey(
+        "accounts.User",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="settlement_disputes",
+    )
+    disputed_at = models.DateTimeField(null=True, blank=True)
+    dispute_resolution = models.TextField(blank=True)
 
     class Meta:
         ordering = ["-created_at"]
@@ -43,6 +67,7 @@ class Settlement(BaseModel):
             models.Index(fields=["state"]),
             models.Index(fields=["payment_transaction"]),
             models.Index(fields=["settlement_status"]),
+            models.Index(fields=["dispute_status"], name="settlements_dispute_800255_idx"),
         ]
 
     def mark_paid(self, reference: str):

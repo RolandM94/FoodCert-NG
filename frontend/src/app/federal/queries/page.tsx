@@ -25,7 +25,7 @@ export default function Page() {
   const [responseText, setResponseText] = useState("");
   const queriesQuery = useQuery({ queryKey: ["federal-queries", status], queryFn: () => fetchFederalQueries({ status }) });
   const statesQuery = useQuery({ queryKey: ["federal-state-performance"], queryFn: fetchFederalStatePerformance });
-  const rows = queriesQuery.data || [];
+  const rows = useMemo(() => queriesQuery.data || [], [queriesQuery.data]);
   const selectedQuery = useMemo(() => rows.find((row) => row.status !== "closed") || rows[0], [rows]);
 
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ["federal-queries"] });

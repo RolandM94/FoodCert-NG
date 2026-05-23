@@ -328,6 +328,9 @@ class EmployerViewSet(viewsets.ModelViewSet):
         hepa_dose2_pending = sum(1 for h in handlers if h.vaccinations.filter(vaccine_type=VaccineType.HEPATITIS_A, dose_number=1, status=VaccinationStatus.SECOND_DOSE_DUE).exists())
 
         rows = []
+        def compliance(record):
+            return record.compliance_status if record else "due"
+
         for h in handlers.order_by("full_name")[:200]:
             typhoid = h.vaccinations.filter(vaccine_type=VaccineType.TYPHOID).order_by("-date_administered").first()
             hepa1 = h.vaccinations.filter(vaccine_type=VaccineType.HEPATITIS_A, dose_number=1).order_by("-date_administered").first()
@@ -337,12 +340,14 @@ class EmployerViewSet(viewsets.ModelViewSet):
                 "food_handler_name": h.full_name,
                 "branch_name": h.business_branch.name if h.business_branch else None,
                 "typhoid_status": typhoid.status if typhoid else "not_recorded",
+                "typhoid_compliance_status": compliance(typhoid),
                 "typhoid_expiry_date": typhoid.expiry_date.isoformat() if typhoid and typhoid.expiry_date else None,
                 "hepatitis_a_dose_1_date": hepa1.date_administered.isoformat() if hepa1 else None,
                 "hepatitis_a_dose_2_date": hepa2.date_administered.isoformat() if hepa2 else None,
                 "hepatitis_a_status": "complete" if hepa2 else ("dose_1_completed" if hepa1 else "not_recorded"),
+                "hepatitis_a_compliance_status": "compliant" if hepa2 else compliance(hepa1),
                 "next_due_date": (typhoid.expiry_date.isoformat() if typhoid and typhoid.status == VaccinationStatus.VALID and typhoid.expiry_date else (
-                    hepa1.date_administered.isoformat() if hepa1 and hepa1.status == VaccinationStatus.SECOND_DOSE_DUE else None
+                    hepa1.next_dose_date.isoformat() if hepa1 and hepa1.next_dose_date else None
                 )),
             })
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { Building2, MapPin, Mail, Phone, UsersRound, ListTree } from "lucide-react";
+import { Building2, ClipboardCheck, FlaskConical, FolderCheck, ListTree, Mail, MapPin, Phone, UsersRound } from "lucide-react";
 import type { OrganizationUnit } from "@/types/organizations";
 
 const UNIT_TYPE_LABELS: Record<string, string> = {
@@ -89,6 +89,24 @@ export function OrganizationUnitDetail({
             <span><span className="font-bold text-slate-800">{memberCount}</span> members</span>
           </div>
         )}
+      </div>
+
+      <div className="mt-5 grid gap-3 sm:grid-cols-3">
+        <div className="rounded border border-slate-100 bg-slate-50 p-3">
+          <ClipboardCheck className="text-brand-deep" size={16} />
+          <p className="mt-2 text-xs font-bold uppercase text-slate-500">Open assessments</p>
+          <p className="text-xl font-bold text-slate-950">{unit.open_assessment_count ?? 0}</p>
+        </div>
+        <div className="rounded border border-slate-100 bg-slate-50 p-3">
+          <FlaskConical className="text-brand-deep" size={16} />
+          <p className="mt-2 text-xs font-bold uppercase text-slate-500">Pending labs</p>
+          <p className="text-xl font-bold text-slate-950">{unit.pending_lab_test_count ?? 0}</p>
+        </div>
+        <div className="rounded border border-slate-100 bg-slate-50 p-3">
+          <FolderCheck className="text-brand-deep" size={16} />
+          <p className="mt-2 text-xs font-bold uppercase text-slate-500">Records ready</p>
+          <p className="text-xl font-bold text-slate-950">{unit.records_ready_count ?? 0}</p>
+        </div>
       </div>
     </div>
   );

@@ -75,10 +75,10 @@ class StateReport(BaseModel):
     class Meta:
         ordering = ["-reporting_period_end", "-created_at"]
         indexes = [
-            models.Index(fields=["state"]),
-            models.Index(fields=["report_type"]),
-            models.Index(fields=["status"]),
-            models.Index(fields=["reporting_period_start", "reporting_period_end"]),
+            models.Index(fields=["state"], name="ministries__state_i_a36f89_idx"),
+            models.Index(fields=["report_type"], name="ministries__report__268779_idx"),
+            models.Index(fields=["status"], name="ministries__status_3f7640_idx"),
+            models.Index(fields=["reporting_period_start", "reporting_period_end"], name="ministries__reporti_9284f0_idx"),
         ]
 
     def __str__(self) -> str:
@@ -117,11 +117,11 @@ class FederalStateQuery(BaseModel):
     class Meta:
         ordering = ["-created_at"]
         indexes = [
-            models.Index(fields=["state"]),
-            models.Index(fields=["category"]),
-            models.Index(fields=["priority"]),
-            models.Index(fields=["status"]),
-            models.Index(fields=["created_at"]),
+            models.Index(fields=["state"], name="ministries__state_i_652e24_idx"),
+            models.Index(fields=["category"], name="ministries__categor_c77222_idx"),
+            models.Index(fields=["priority"], name="ministries__priorit_07b82c_idx"),
+            models.Index(fields=["status"], name="ministries__status_513085_idx"),
+            models.Index(fields=["created_at"], name="ministries__created_dd00a4_idx"),
         ]
 
     def __str__(self) -> str:

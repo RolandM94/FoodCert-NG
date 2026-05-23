@@ -48,6 +48,12 @@ class FacilityDashboardView(APIView):
                 request.user,
                 facility_id=serializer.validated_data.get("facility"),
                 department_id=serializer.validated_data.get("department"),
+                date_from=serializer.validated_data.get("date_from"),
+                date_to=serializer.validated_data.get("date_to"),
+                doctor_id=serializer.validated_data.get("doctor"),
+                lab_status=serializer.validated_data.get("lab_status", ""),
+                assessment_status=serializer.validated_data.get("assessment_status", ""),
+                employer_category=serializer.validated_data.get("employer_category", ""),
             )
         )
 

@@ -26,8 +26,10 @@ class VaccinationRecordViewSet(viewsets.ReadOnlyModelViewSet):
         food_handler_id = self.kwargs.get("food_handler_id")
         if food_handler_id:
             queryset = queryset.filter(food_handler_id=food_handler_id)
-        if user.role in {UserRole.SUPER_ADMIN, UserRole.FEDERAL_ADMIN}:
+        if user.role == UserRole.SUPER_ADMIN:
             return queryset
+        if user.role == UserRole.FEDERAL_ADMIN:
+            return queryset.none()
         if user.role in {UserRole.STATE_ADMIN, UserRole.INSPECTOR}:
             return queryset.filter(food_handler__state=user.state)
         if user.role == UserRole.FOOD_HANDLER:
@@ -37,3 +39,8 @@ class VaccinationRecordViewSet(viewsets.ReadOnlyModelViewSet):
         if user.organization_id:
             return queryset.filter(assessment__facility__organization=user.organization)
         return queryset.none()
+
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        context["request"] = self.request
+        return context

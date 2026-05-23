@@ -29,6 +29,22 @@ export async function generateReport(
   return unwrap(response.data);
 }
 
+export async function generateFacilityPerformanceReport(
+  facilityId: string,
+  file_format: ReportFormat = "json",
+  filters: Record<string, string> = {}
+): Promise<GeneratedReport> {
+  const response = await apiClient.get<ApiEnvelope<GeneratedReport>>(`/facilities/${facilityId}/reports/performance/`, {
+    params: { file_format, filters: JSON.stringify(filters) }
+  });
+  return unwrap(response.data);
+}
+
+export async function listGeneratedReportsWithParams(params?: Record<string, string>): Promise<GeneratedReport[]> {
+  const response = await apiClient.get<ApiEnvelope<GeneratedReport[]>>("/reports/generated/", { params });
+  return unwrap(response.data);
+}
+
 export type EmployerReportFilters = {
   branch?: string;
   state?: string;
@@ -50,6 +66,18 @@ export async function generateEmployerReport(
   const response = await apiClient.get<ApiEnvelope<GeneratedReport>>(`/employers/${employerId}/reports/${report}/`, {
     params: { ...filters, format: file_format }
   });
+  return unwrap(response.data);
+}
+
+export type AssessmentReportKind = "summary" | "medical" | "return-to-work";
+
+export async function listAssessmentReports(assessmentId: string): Promise<{ available: string[]; generated: GeneratedReport[] }> {
+  const response = await apiClient.get<ApiEnvelope<{ available: string[]; generated: GeneratedReport[] }>>(`/assessments/${assessmentId}/reports/`);
+  return unwrap(response.data);
+}
+
+export async function getAssessmentReport(assessmentId: string, kind: AssessmentReportKind): Promise<GeneratedReport> {
+  const response = await apiClient.get<ApiEnvelope<GeneratedReport>>(`/assessments/${assessmentId}/reports/${kind}/`);
   return unwrap(response.data);
 }
 

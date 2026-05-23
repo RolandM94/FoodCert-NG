@@ -19,7 +19,13 @@ export type ReportType =
   | "national"
   | "vaccination_coverage"
   | "illness_trends"
-  | "inspection_outcomes";
+  | "inspection_outcomes"
+  | "medical_examination"
+  | "temporarily_not_fit_report"
+  | "return_to_work_report"
+  | "assessment_completion"
+  | "vaccination_review_report"
+  | "restricted_lab_summary";
 
 export type ReportFormat = "json" | "csv" | "pdf" | "excel";
 

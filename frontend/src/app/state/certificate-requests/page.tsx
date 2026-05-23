@@ -3,8 +3,10 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { FileCheck2 } from "lucide-react";
 import { useState } from "react";
+import { AssessmentAuditTimeline } from "@/components/assessments/assessment-audit-timeline";
 import { PortalShell } from "@/components/layout/portal-shell";
 import { DataTable, StatusCell } from "@/components/ui/data-table";
+import { getAssessmentAuditTimeline } from "@/lib/api/assessments";
 import {
   approveStateCertificateValidationRequest,
   fetchStateCertificateValidationQueue,
@@ -12,6 +14,7 @@ import {
   requestStateCertificateValidationClarification,
   type StateCertificateValidationRequest,
 } from "@/lib/api/state";
+import type { AssessmentAuditTimelineItem } from "@/types/assessments";
 
 const STATUS_OPTIONS = [
   ["", "All requests"],
@@ -29,15 +32,24 @@ function dateLabel(value?: string) {
 }
 
 function eligibilitySummary(row: StateCertificateValidationRequest) {
-  const checks = [
-    row.payment_status === "success",
-    row.declaration_status === "validated",
-    row.physical_exam_status === "completed",
-    row.lab_status === "reviewed",
-    row.vaccination_status === "reviewed",
-    row.final_decision === "fit",
+  const evidence = row.assessment_evidence_summary;
+  const checks = evidence ? [
+    ["Payment", evidence.payment_status === "success"],
+    ["Declaration", evidence.declaration_status === "validated"],
+    ["Exam", evidence.physical_exam_status === "completed"],
+    ["Lab", evidence.lab_status === "reviewed"],
+    ["Vaccination", evidence.vaccination_status === "reviewed"],
+    ["Signed fit", evidence.fit_signed],
+    ["Report", evidence.medical_report_generated],
+  ] : [
+    ["Payment", row.payment_status === "success"],
+    ["Declaration", row.declaration_status === "validated"],
+    ["Exam", row.physical_exam_status === "completed"],
+    ["Lab", row.lab_status === "reviewed"],
+    ["Vaccination", row.vaccination_status === "reviewed"],
+    ["Signed fit", row.final_decision === "fit"],
   ];
-  return `${checks.filter(Boolean).length}/${checks.length}`;
+  return `${checks.filter(([, ready]) => ready).length}/${checks.length}`;
 }
 
 function allowedActions(row: StateCertificateValidationRequest): ActionName[] {
@@ -51,6 +63,8 @@ export default function Page() {
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [actionTarget, setActionTarget] = useState<{ request: StateCertificateValidationRequest; action: ActionName } | null>(null);
+  const [timelineTarget, setTimelineTarget] = useState<StateCertificateValidationRequest | null>(null);
+  const [timeline, setTimeline] = useState<AssessmentAuditTimelineItem[]>([]);
   const [notes, setNotes] = useState("");
 
   const queueQuery = useQuery({
@@ -74,6 +88,11 @@ export default function Page() {
       queryClient.invalidateQueries({ queryKey: ["state-certificate-validation"] });
     },
   });
+
+  async function openTimeline(row: StateCertificateValidationRequest) {
+    setTimelineTarget(row);
+    setTimeline(await getAssessmentAuditTimeline(row.assessment));
+  }
 
   const rows = queueQuery.data || [];
   const requiresNotes = actionTarget?.action === "reject" || actionTarget?.action === "request-clarification";
@@ -110,7 +129,11 @@ export default function Page() {
             columns={[
               { key: "handler", header: "Handler", render: (row) => <div><p className="font-bold text-slate-950">{row.food_handler_name || "Unknown"}</p><p className="text-xs text-slate-500">{row.food_handler_category?.replaceAll("_", " ") || "No category"}</p></div> },
               { key: "facility", header: "Facility", render: (row) => row.facility_name || "Unknown" },
-              { key: "eligibility", header: "Eligibility", render: (row) => <span className={eligibilitySummary(row) === "6/6" ? "font-bold text-emerald-700" : "font-bold text-amber-700"}>{eligibilitySummary(row)}</span> },
+              { key: "eligibility", header: "Evidence", render: (row) => {
+                const score = eligibilitySummary(row);
+                const [ready, total] = score.split("/");
+                return <span className={ready === total ? "font-bold text-emerald-700" : "font-bold text-amber-700"}>{score}</span>;
+              } },
               { key: "status", header: "Status", render: (row) => <StatusCell status={row.status} /> },
               { key: "certificate", header: "Certificate", render: (row) => row.certificate_number || "Not issued" },
               { key: "created", header: "Created", render: (row) => dateLabel(row.created_at) },
@@ -129,6 +152,13 @@ export default function Page() {
                         {action.replace("-", " ")}
                       </button>
                     ))}
+                    <button
+                      className="h-8 rounded border border-slate-200 px-3 text-xs font-bold text-slate-700 hover:bg-slate-50"
+                      onClick={() => void openTimeline(row)}
+                      type="button"
+                    >
+                      Timeline
+                    </button>
                   </div>
                 ),
               },
@@ -163,6 +193,21 @@ export default function Page() {
                 <button className="h-10 rounded bg-brand-green px-4 text-sm font-bold capitalize text-white hover:bg-brand-deep disabled:opacity-60" disabled={actionMutation.isPending} type="submit">{actionTarget.action.replace("-", " ")}</button>
               </div>
             </form>
+          </div>
+        </div>
+      ) : null}
+
+      {timelineTarget ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4">
+          <div className="max-h-[85vh] w-full max-w-2xl overflow-auto rounded-lg bg-white p-4 shadow-xl">
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <div>
+                <h2 className="text-lg font-bold text-slate-950">Assessment timeline</h2>
+                <p className="text-sm text-slate-500">{timelineTarget.food_handler_name} at {timelineTarget.facility_name}</p>
+              </div>
+              <button className="h-9 rounded border border-slate-200 px-3 text-sm font-bold text-slate-700" onClick={() => setTimelineTarget(null)} type="button">Close</button>
+            </div>
+            <AssessmentAuditTimeline items={timeline} />
           </div>
         </div>
       ) : null}

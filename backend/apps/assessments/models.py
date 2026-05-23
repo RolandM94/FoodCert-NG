@@ -30,6 +30,10 @@ class AssessmentStatus(models.TextChoices):
     TEMPORARILY_NOT_FIT = "temporarily_not_fit", "Temporarily Not Fit"
     NOT_FIT = "not_fit", "Not Fit"
     SUBMITTED_FOR_STATE_VALIDATION = "submitted_for_state_validation", "Submitted For State Validation"
+    STATE_CLARIFICATION_REQUESTED = "state_clarification_requested", "State Clarification Requested"
+    STATE_CLARIFICATION_RESPONDED = "state_clarification_responded", "State Clarification Responded"
+    APPROVED_BY_STATE = "approved_by_state", "Approved By State"
+    REJECTED_BY_STATE = "rejected_by_state", "Rejected By State"
     CERTIFICATE_ISSUED = "certificate_issued", "Certificate Issued"
     CLOSED = "closed", "Closed"
 
@@ -58,6 +62,13 @@ class FitnessDecision(models.TextChoices):
 class Appointment(BaseModel):
     food_handler = models.ForeignKey("food_handlers.FoodHandlerProfile", on_delete=models.PROTECT, related_name="appointments")
     facility = models.ForeignKey("facilities.MedicalFacility", on_delete=models.PROTECT, related_name="appointments")
+    doctor = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="assigned_appointments",
+    )
     appointment_date = models.DateTimeField()
     status = models.CharField(max_length=32, choices=AppointmentStatus.choices, default=AppointmentStatus.PENDING, db_index=True)
     reason = models.TextField(blank=True)
@@ -68,6 +79,7 @@ class Appointment(BaseModel):
         indexes = [
             models.Index(fields=["food_handler"]),
             models.Index(fields=["facility"]),
+            models.Index(fields=["doctor"], name="assessments_doctor__00f435_idx"),
             models.Index(fields=["status"]),
             models.Index(fields=["appointment_date"]),
         ]
@@ -104,6 +116,18 @@ class MedicalAssessment(BaseModel):
     final_decision = models.CharField(max_length=64, choices=FitnessDecision.choices, default=FitnessDecision.PENDING, db_index=True)
     return_to_work_date = models.DateField(null=True, blank=True)
     doctor_notes = models.TextField(blank=True)
+    decision_draft = models.CharField(max_length=64, choices=FitnessDecision.choices, default=FitnessDecision.PENDING)
+    decision_draft_return_to_work_date = models.DateField(null=True, blank=True)
+    decision_draft_notes = models.TextField(blank=True)
+    decision_draft_saved_at = models.DateTimeField(null=True, blank=True)
+    digital_signature_hash = models.CharField(max_length=128, blank=True)
+    signed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="signed_medical_assessments",
+    )
     signed_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
@@ -115,6 +139,7 @@ class MedicalAssessment(BaseModel):
             models.Index(fields=["doctor"]),
             models.Index(fields=["status"]),
             models.Index(fields=["final_decision"]),
+            models.Index(fields=["signed_at"], name="assessments_signed__7338f5_idx"),
             models.Index(fields=["created_at"]),
         ]
 
@@ -142,6 +167,17 @@ class HealthDeclaration(BaseModel):
     previous_or_current_typhoid = models.BooleanField(default=False)
     certified_true = models.BooleanField(default=False)
     risk_flag = models.BooleanField(default=False, db_index=True)
+    version = models.PositiveIntegerField(default=1)
+    is_locked = models.BooleanField(default=False, db_index=True)
+    reopened_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="reopened_declarations",
+    )
+    reopened_at = models.DateTimeField(null=True, blank=True)
+    reopen_reason = models.TextField(blank=True)
     submitted_at = models.DateTimeField(null=True, blank=True)
     validated_by_doctor = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -151,10 +187,19 @@ class HealthDeclaration(BaseModel):
         related_name="validated_declarations",
     )
     validated_at = models.DateTimeField(null=True, blank=True)
+    clarification_requested_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="requested_declaration_clarifications",
+    )
+    clarification_requested_at = models.DateTimeField(null=True, blank=True)
+    clarification_reason = models.TextField(blank=True)
 
     class Meta:
         ordering = ["-created_at"]
-        indexes = [models.Index(fields=["risk_flag"]), models.Index(fields=["submitted_at"])]
+        indexes = [models.Index(fields=["risk_flag"]), models.Index(fields=["submitted_at"]), models.Index(fields=["is_locked"])]
 
     def calculate_risk_flag(self) -> bool:
         fields = [
@@ -187,9 +232,27 @@ class PhysicalExamination(BaseModel):
     cough_or_flu = models.BooleanField(default=False)
     known_typhoid_carrier_history = models.BooleanField(default=False)
     other_notes = models.TextField(blank=True)
+    risk_flag = models.BooleanField(default=False, db_index=True)
+    is_completed = models.BooleanField(default=False, db_index=True)
+    completed_at = models.DateTimeField(null=True, blank=True)
     examined_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="physical_examinations")
     examined_at = models.DateTimeField(default=timezone.now)
 
     class Meta:
         ordering = ["-examined_at"]
-        indexes = [models.Index(fields=["examined_by"]), models.Index(fields=["examined_at"])]
+        indexes = [models.Index(fields=["examined_by"]), models.Index(fields=["examined_at"]), models.Index(fields=["risk_flag"]), models.Index(fields=["is_completed"])]
+
+    def calculate_risk_flag(self) -> bool:
+        fields = [
+            "fever",
+            "jaundice",
+            "skin_infection",
+            "boils_styes_sepsis",
+            "discharge",
+            "diarrhoea",
+            "vomiting",
+            "sore_throat_with_fever",
+            "cough_or_flu",
+            "known_typhoid_carrier_history",
+        ]
+        return any(getattr(self, field) for field in fields)
