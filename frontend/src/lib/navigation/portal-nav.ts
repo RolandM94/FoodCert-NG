@@ -104,6 +104,7 @@ export const PORTAL_NAV: Record<UserRole, PortalNavItem[]> = {
     { label: "Accreditation", href: "/state/facilities/accreditation", icon: ShieldCheck },
     { label: "Certificate Queue", href: "/state/certificate-requests", icon: BadgeCheck },
     { label: "Certificates", href: "/state/certificates", icon: FileCheck2 },
+    { label: "Templates", href: "/state/certificate-templates", icon: Settings },
     { label: "Employers", href: "/state/employers", icon: UsersRound },
     { label: "Food Handlers", href: "/state/food-handlers", icon: IdCard },
     { label: "Illness", href: "/state/illness-reports", icon: HeartPulse },
@@ -125,7 +126,8 @@ export const PORTAL_NAV: Record<UserRole, PortalNavItem[]> = {
     { label: "Audit", href: "/federal/audit", icon: ClipboardCheck },
     { label: "Queries", href: "/federal/queries", icon: Bell },
     { label: "Reports", href: "/federal/reports", icon: ClipboardList },
-    { label: "Policy Config", href: "/federal/policy-config", icon: Landmark }
+    { label: "Policy Config", href: "/federal/policy-config", icon: Landmark },
+    { label: "Templates", href: "/admin/certificate-templates", icon: Settings }
   ],
   inspector: [
     { label: "Dashboard", href: "/inspector/dashboard", icon: Activity },

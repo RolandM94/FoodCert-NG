@@ -23,6 +23,7 @@ export default function Page() {
   const [paymentBeforeAssessment, setPaymentBeforeAssessment] = useState(true);
   const [stateValidationRequired, setStateValidationRequired] = useState(true);
   const [qrVerification, setQrVerification] = useState(true);
+  const [stateTemplateOverrides, setStateTemplateOverrides] = useState(true);
 
   useEffect(() => {
     if (!policyQuery.data) return;
@@ -33,6 +34,7 @@ export default function Page() {
     setPaymentBeforeAssessment(policyQuery.data.payment_before_assessment_required);
     setStateValidationRequired(policyQuery.data.state_validation_before_certificate_required);
     setQrVerification(policyQuery.data.public_qr_verification_enabled);
+    setStateTemplateOverrides(policyQuery.data.state_certificate_template_overrides_enabled);
   }, [policyQuery.data]);
 
   const updateMutation = useMutation({
@@ -45,6 +47,7 @@ export default function Page() {
         payment_before_assessment_required: paymentBeforeAssessment,
         state_validation_before_certificate_required: stateValidationRequired,
         public_qr_verification_enabled: qrVerification,
+        state_certificate_template_overrides_enabled: stateTemplateOverrides,
       }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["federal-policy"] }),
   });
@@ -65,6 +68,7 @@ export default function Page() {
               ["Payment before assessment", paymentBeforeAssessment, setPaymentBeforeAssessment],
               ["State validation before certificate", stateValidationRequired, setStateValidationRequired],
               ["Public QR verification", qrVerification, setQrVerification],
+              ["State certificate template overrides", stateTemplateOverrides, setStateTemplateOverrides],
             ].map(([label, checked, setChecked]) => (
               <label key={label as string} className="flex items-center justify-between rounded border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-700">
                 {label as string}

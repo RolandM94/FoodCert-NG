@@ -4,6 +4,7 @@ import type {
   EmployerInspectionSummary,
   Inspection,
   InspectionCertificateScan,
+  InspectorCertificateVerification,
   InspectionResponse,
   InspectionResponseType
 } from "@/types/inspections";
@@ -42,6 +43,25 @@ export async function scanInspectionCertificate(id: string, certificate_number: 
   const response = await apiClient.post<ApiEnvelope<InspectionCertificateScan>>(`/inspections/${id}/scan-certificate/`, {
     certificate_number
   });
+  return unwrap(response.data);
+}
+
+export async function inspectorVerifyCertificateByNumber(certificate_number: string): Promise<InspectorCertificateVerification> {
+  const response = await apiClient.post<ApiEnvelope<InspectorCertificateVerification>>("/inspector/certificates/verify-by-number/", {
+    certificate_number
+  });
+  return unwrap(response.data);
+}
+
+export async function inspectorSaveCertificateToInspection(certificateId: string, inspection: string): Promise<InspectionCertificateScan> {
+  const response = await apiClient.post<ApiEnvelope<InspectionCertificateScan>>(`/inspector/certificates/${certificateId}/save-to-inspection/`, {
+    inspection
+  });
+  return unwrap(response.data);
+}
+
+export async function inspectorFlagCertificate(certificateId: string, payload: { reason: string; details?: string }): Promise<{ status: string; report_id: string }> {
+  const response = await apiClient.post<ApiEnvelope<{ status: string; report_id: string }>>(`/inspector/certificates/${certificateId}/flag/`, payload);
   return unwrap(response.data);
 }
 

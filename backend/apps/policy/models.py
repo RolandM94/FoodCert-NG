@@ -13,6 +13,7 @@ class NationalPolicyConfig(BaseModel):
     payment_before_assessment_required = models.BooleanField(default=True)
     state_validation_before_certificate_required = models.BooleanField(default=True)
     public_qr_verification_enabled = models.BooleanField(default=True)
+    state_certificate_template_overrides_enabled = models.BooleanField(default=True)
     updated_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,

@@ -4,7 +4,7 @@ from rest_framework.test import APITestCase
 
 from apps.accounts.models import UserRole
 from apps.assessments.models import FitnessDecision, MedicalAssessment
-from apps.certificates.models import Certificate, CertificateRequest
+from apps.certificates.models import Certificate, CertificateRequest, SuspiciousCertificateReport
 from apps.certificates.services import CertificateService
 from apps.employers.models import Employer, EstablishmentCategory
 from apps.facilities.models import AccreditationStatus, FacilityType, MedicalFacility, OwnershipType
@@ -171,6 +171,37 @@ class InspectionWorkflowTests(APITestCase):
         )
         self.assertEqual(scan_response.status_code, 201)
         self.assertEqual(data(scan_response)["result"], "valid")
+
+    def test_inspector_can_verify_save_and_flag_certificate(self):
+        certificate = self._certificate()
+        inspection = Inspection.objects.create(inspector=self.inspector, employer=self.employer)
+        self.client.force_authenticate(self.inspector)
+
+        verify_response = self.client.post(
+            "/api/inspector/certificates/verify-by-number/",
+            {"certificate_number": certificate.certificate_number},
+            format="json",
+        )
+        self.assertEqual(verify_response.status_code, 200)
+        self.assertEqual(data(verify_response)["certificate_validity"], "valid")
+        self.assertNotIn("doctor_notes", str(data(verify_response)))
+        self.assertNotIn("lab_tests", str(data(verify_response)))
+
+        save_response = self.client.post(
+            f"/api/inspector/certificates/{certificate.id}/save-to-inspection/",
+            {"inspection": str(inspection.id)},
+            format="json",
+        )
+        self.assertEqual(save_response.status_code, 201)
+        self.assertEqual(data(save_response)["result"], "valid")
+
+        flag_response = self.client.post(
+            f"/api/inspector/certificates/{certificate.id}/flag/",
+            {"reason": "Photo mismatch", "details": "Handler photo does not match."},
+            format="json",
+        )
+        self.assertEqual(flag_response.status_code, 201)
+        self.assertEqual(SuspiciousCertificateReport.objects.count(), 1)
 
     def test_employer_can_view_own_inspection_report(self):
         Inspection.objects.create(inspector=self.inspector, employer=self.employer, status=InspectionStatus.SUBMITTED)

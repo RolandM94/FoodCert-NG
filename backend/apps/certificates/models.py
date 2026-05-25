@@ -28,8 +28,53 @@ class VerificationResult(models.TextChoices):
     EXPIRED = "expired", "Expired"
     REVOKED = "revoked", "Revoked"
     SUSPENDED = "suspended", "Suspended"
+    REPLACED = "replaced", "Replaced"
     INVALID = "invalid", "Invalid"
     NOT_FOUND = "not_found", "Not Found"
+
+
+class VerificationActorType(models.TextChoices):
+    PUBLIC = "public", "Public"
+    INSPECTOR = "inspector", "Inspector"
+    EMPLOYER = "employer", "Employer"
+    FOOD_HANDLER = "food_handler", "Food Handler"
+    STATE = "state", "State Ministry"
+    FEDERAL = "federal", "Federal Ministry"
+    SYSTEM = "system", "System"
+
+
+class CertificateTemplateScope(models.TextChoices):
+    NATIONAL = "national", "National"
+    STATE = "state", "State"
+
+
+class CertificateTemplate(BaseModel):
+    name = models.CharField(max_length=160)
+    scope = models.CharField(max_length=24, choices=CertificateTemplateScope.choices, default=CertificateTemplateScope.NATIONAL, db_index=True)
+    state = models.ForeignKey("locations.State", on_delete=models.CASCADE, null=True, blank=True, related_name="certificate_templates")
+    ministry_name = models.CharField(max_length=180, default="FoodCert NG")
+    subtitle = models.CharField(max_length=180, default="Official Food Handler Medical Fitness Certificate")
+    logo_url = models.URLField(blank=True)
+    accent_color = models.CharField(max_length=7, default="#0f5132")
+    signatory_name = models.CharField(max_length=160, blank=True)
+    signatory_title = models.CharField(max_length=160, default="Authorized Issuing Authority")
+    footer_note = models.TextField(
+        default="This certificate confirms fitness status only. It does not disclose lab results, diagnosis, clinical notes, or full NIN."
+    )
+    is_active = models.BooleanField(default=True, db_index=True)
+    is_default = models.BooleanField(default=False, db_index=True)
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="created_certificate_templates")
+
+    class Meta:
+        ordering = ["scope", "state__name", "-is_default", "name"]
+        indexes = [
+            models.Index(fields=["scope", "state", "is_default"]),
+            models.Index(fields=["is_active"]),
+        ]
+
+    def __str__(self) -> str:
+        scope = self.state.name if self.state_id else self.get_scope_display()
+        return f"{self.name} ({scope})"
 
 
 class CertificateRequest(BaseModel):
@@ -74,9 +119,18 @@ class CertificateRequest(BaseModel):
 
 class Certificate(BaseModel):
     certificate_number = models.CharField(max_length=64, unique=True, db_index=True)
+    public_id = models.UUIDField(unique=True, db_index=True, null=True, blank=True)
+    verification_token = models.CharField(max_length=96, unique=True, db_index=True, null=True, blank=True)
     food_handler = models.ForeignKey("food_handlers.FoodHandlerProfile", on_delete=models.PROTECT, related_name="certificates")
     assessment = models.OneToOneField("assessments.MedicalAssessment", on_delete=models.PROTECT, related_name="certificate")
     employer = models.ForeignKey("employers.Employer", on_delete=models.SET_NULL, null=True, blank=True, related_name="certificates")
+    business_branch = models.ForeignKey(
+        "organizations.OrganizationUnit",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="certificates",
+    )
     facility = models.ForeignKey("facilities.MedicalFacility", on_delete=models.PROTECT, related_name="certificates")
     doctor = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="doctor_certificates")
     issuing_state = models.ForeignKey("locations.State", on_delete=models.PROTECT, related_name="certificates")
@@ -87,6 +141,7 @@ class Certificate(BaseModel):
         blank=True,
         related_name="issued_certificates",
     )
+    template = models.ForeignKey(CertificateTemplate, on_delete=models.SET_NULL, null=True, blank=True, related_name="certificates")
     issue_date = models.DateField()
     expiry_date = models.DateField()
     status = models.CharField(max_length=32, choices=CertificateStatus.choices, default=CertificateStatus.ACTIVE, db_index=True)
@@ -94,6 +149,17 @@ class Certificate(BaseModel):
     verification_url = models.URLField()
     pdf_url = models.URLField(blank=True)
     digital_signature_hash = models.CharField(max_length=128)
+    replaced_by = models.ForeignKey("self", on_delete=models.SET_NULL, null=True, blank=True, related_name="replaces")
+    replacement_reason = models.TextField(blank=True)
+    suspended_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="suspended_certificates",
+    )
+    suspended_at = models.DateTimeField(null=True, blank=True)
+    suspension_reason = models.TextField(blank=True)
     revoked_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
@@ -108,6 +174,8 @@ class Certificate(BaseModel):
         ordering = ["-issue_date", "-created_at"]
         indexes = [
             models.Index(fields=["certificate_number"]),
+            models.Index(fields=["public_id"]),
+            models.Index(fields=["verification_token"]),
             models.Index(fields=["food_handler"]),
             models.Index(fields=["assessment"]),
             models.Index(fields=["status"]),
@@ -131,15 +199,51 @@ class Certificate(BaseModel):
 class CertificateVerificationLog(BaseModel):
     certificate = models.ForeignKey(Certificate, on_delete=models.SET_NULL, null=True, blank=True, related_name="verification_logs")
     certificate_number_submitted = models.CharField(max_length=64, db_index=True)
+    verification_token_submitted = models.CharField(max_length=96, blank=True, db_index=True)
     result = models.CharField(max_length=32, choices=VerificationResult.choices, db_index=True)
+    verifier_type = models.CharField(max_length=32, choices=VerificationActorType.choices, default=VerificationActorType.PUBLIC, db_index=True)
+    verifier_user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="certificate_verification_logs",
+    )
     ip_address = models.CharField(max_length=64, blank=True)
     user_agent = models.TextField(blank=True)
+    location_latitude = models.DecimalField(max_digits=10, decimal_places=7, null=True, blank=True)
+    location_longitude = models.DecimalField(max_digits=10, decimal_places=7, null=True, blank=True)
     verified_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         ordering = ["-verified_at"]
         indexes = [
             models.Index(fields=["certificate_number_submitted"]),
+            models.Index(fields=["verification_token_submitted"]),
             models.Index(fields=["result"]),
+            models.Index(fields=["verifier_type"]),
             models.Index(fields=["verified_at"]),
         ]
+
+
+class SuspiciousCertificateReport(BaseModel):
+    certificate = models.ForeignKey(Certificate, on_delete=models.SET_NULL, null=True, blank=True, related_name="suspicious_reports")
+    certificate_number_submitted = models.CharField(max_length=64, blank=True, db_index=True)
+    verification_token_submitted = models.CharField(max_length=96, blank=True, db_index=True)
+    reporter_name = models.CharField(max_length=255, blank=True)
+    reporter_contact = models.CharField(max_length=255, blank=True)
+    reason = models.CharField(max_length=255)
+    details = models.TextField(blank=True)
+    ip_address = models.CharField(max_length=64, blank=True)
+    user_agent = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["certificate_number_submitted"]),
+            models.Index(fields=["verification_token_submitted"]),
+            models.Index(fields=["created_at"]),
+        ]
+
+    def __str__(self) -> str:
+        return self.certificate_number_submitted or self.verification_token_submitted or str(self.id)

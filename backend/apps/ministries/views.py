@@ -1,4 +1,7 @@
+import csv
+
 from django.contrib.auth import get_user_model
+from django.http import HttpResponse
 from django.db.models import Count, Q
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
@@ -14,7 +17,7 @@ from apps.accounts.permissions import IsActiveUser
 from apps.accounts.services import InviteService
 from apps.audit.models import AuditAction, AuditLog
 from apps.audit.services import log_action
-from apps.certificates.models import Certificate, CertificateRequest, CertificateRequestStatus, CertificateStatus
+from apps.certificates.models import Certificate, CertificateRequest, CertificateRequestStatus, CertificateStatus, CertificateVerificationLog, SuspiciousCertificateReport, VerificationResult
 from apps.certificates.services import CertificateService
 from apps.facilities.models import AccreditationStatus, FacilityAccreditationApplication, MedicalFacility
 from apps.facilities.serializers import FacilityAccreditationApplicationSerializer, MedicalFacilitySerializer
@@ -117,13 +120,41 @@ class FederalCertificateRegistryView(APIView):
 
     @extend_schema(responses=FederalCertificateRegistrySerializer(many=True))
     def get(self, request):
-        queryset = Certificate.objects.select_related("food_handler", "employer", "facility", "issuing_state").order_by("-issue_date", "-created_at")
+        queryset = (
+            Certificate.objects.select_related("food_handler", "employer", "facility", "issuing_state")
+            .annotate(suspicious_report_count=Count("suspicious_reports", distinct=True))
+            .order_by("-issue_date", "-created_at")
+        )
         state = request.query_params.get("state")
         if state:
             queryset = queryset.filter(issuing_state_id=state)
         status_filter = request.query_params.get("status")
         if status_filter:
-            queryset = queryset.filter(status=status_filter)
+            if status_filter == CertificateStatus.EXPIRED:
+                queryset = queryset.filter(status=CertificateStatus.ACTIVE, expiry_date__lt=timezone.localdate())
+            else:
+                queryset = queryset.filter(status=status_filter)
+        facility = request.query_params.get("facility")
+        if facility:
+            queryset = queryset.filter(facility_id=facility)
+        employer = request.query_params.get("employer")
+        if employer:
+            queryset = queryset.filter(employer_id=employer)
+        issue_from = request.query_params.get("issue_from") or request.query_params.get("date_from")
+        if issue_from:
+            queryset = queryset.filter(issue_date__gte=issue_from)
+        issue_to = request.query_params.get("issue_to") or request.query_params.get("date_to")
+        if issue_to:
+            queryset = queryset.filter(issue_date__lte=issue_to)
+        expiry_from = request.query_params.get("expiry_from")
+        if expiry_from:
+            queryset = queryset.filter(expiry_date__gte=expiry_from)
+        expiry_to = request.query_params.get("expiry_to")
+        if expiry_to:
+            queryset = queryset.filter(expiry_date__lte=expiry_to)
+        flagged_filter = request.query_params.get("flagged") or request.query_params.get("suspicious")
+        if flagged_filter == "true":
+            queryset = queryset.filter(suspicious_reports__isnull=False).distinct()
         search = request.query_params.get("search")
         if search:
             queryset = queryset.filter(
@@ -133,6 +164,131 @@ class FederalCertificateRegistryView(APIView):
                 | Q(facility__facility_name__icontains=search)
             )
         return Response(FederalCertificateRegistrySerializer(queryset[:500], many=True).data)
+
+
+class FederalCertificateDetailView(APIView):
+    permission_classes = [IsAuthenticated, IsActiveUser, IsFederalMinistryUser]
+
+    @extend_schema(responses=FederalCertificateRegistrySerializer)
+    def get(self, request, pk):
+        certificate = get_object_or_404(
+            Certificate.objects.select_related("food_handler", "employer", "facility", "issuing_state").annotate(
+                suspicious_report_count=Count("suspicious_reports", distinct=True),
+            ),
+            pk=pk,
+        )
+        log_action(
+            action=AuditAction.CERTIFICATE_EVENT,
+            actor=request.user,
+            target=certificate,
+            metadata={"event": "federal_certificate_detail_viewed"},
+        )
+        return Response(FederalCertificateRegistrySerializer(certificate).data)
+
+
+class FederalCertificateAnalyticsView(APIView):
+    permission_classes = [IsAuthenticated, IsActiveUser, IsFederalMinistryUser]
+
+    @extend_schema(responses=dict)
+    def get(self, request):
+        today = timezone.localdate()
+        thirty_days = today + timezone.timedelta(days=30)
+        certificates = Certificate.objects.all()
+        by_state = list(
+            certificates.values("issuing_state__name")
+            .annotate(
+                total=Count("id"),
+                active=Count("id", filter=Q(status=CertificateStatus.ACTIVE, expiry_date__gte=today)),
+                expired=Count("id", filter=Q(expiry_date__lt=today) | Q(status=CertificateStatus.EXPIRED)),
+                suspended=Count("id", filter=Q(status=CertificateStatus.SUSPENDED)),
+                revoked=Count("id", filter=Q(status=CertificateStatus.REVOKED)),
+            )
+            .order_by("issuing_state__name")
+        )
+        status_distribution = list(certificates.values("status").annotate(total=Count("id")).order_by("status"))
+        high_risk_facilities = list(
+            certificates.values("facility__id", "facility__facility_name", "issuing_state__name")
+            .annotate(
+                total=Count("id"),
+                suspended=Count("id", filter=Q(status=CertificateStatus.SUSPENDED)),
+                revoked=Count("id", filter=Q(status=CertificateStatus.REVOKED)),
+                flagged=Count("suspicious_reports", distinct=True),
+            )
+            .filter(Q(suspended__gt=0) | Q(revoked__gt=0) | Q(flagged__gt=0))
+            .order_by("-flagged", "-revoked", "-suspended", "facility__facility_name")[:10]
+        )
+        invalid_trends = list(
+            CertificateVerificationLog.objects.filter(result__in=[VerificationResult.INVALID, VerificationResult.NOT_FOUND])
+            .extra(select={"day": "date(created_at)"})
+            .values("day")
+            .annotate(total=Count("id"))
+            .order_by("-day")[:14]
+        )
+        invalid_attempts = CertificateVerificationLog.objects.filter(result__in=[VerificationResult.INVALID, VerificationResult.NOT_FOUND]).count()
+        flagged_count = SuspiciousCertificateReport.objects.count()
+        return Response({
+            "cards": {
+                "total": certificates.count(),
+                "active": certificates.filter(status=CertificateStatus.ACTIVE, expiry_date__gte=today).count(),
+                "expired": certificates.filter(Q(status=CertificateStatus.EXPIRED) | Q(expiry_date__lt=today)).count(),
+                "expiring_30_days": certificates.filter(status=CertificateStatus.ACTIVE, expiry_date__gte=today, expiry_date__lte=thirty_days).count(),
+                "suspended": certificates.filter(status=CertificateStatus.SUSPENDED).count(),
+                "revoked": certificates.filter(status=CertificateStatus.REVOKED).count(),
+                "flagged": flagged_count,
+                "invalid_verification_attempts": invalid_attempts,
+            },
+            "by_state": [
+                {
+                    "state_name": row["issuing_state__name"] or "Unknown",
+                    "total": row["total"],
+                    "active": row["active"],
+                    "expired": row["expired"],
+                    "suspended": row["suspended"],
+                    "revoked": row["revoked"],
+                }
+                for row in by_state
+            ],
+            "status_distribution": [{"status": row["status"], "total": row["total"]} for row in status_distribution],
+            "invalid_verification_trends": [{"day": str(row["day"]), "total": row["total"]} for row in invalid_trends],
+            "high_risk_facilities": [
+                {
+                    "facility_id": str(row["facility__id"]) if row["facility__id"] else None,
+                    "facility_name": row["facility__facility_name"] or "Unknown facility",
+                    "state_name": row["issuing_state__name"] or "Unknown",
+                    "total": row["total"],
+                    "suspended": row["suspended"],
+                    "revoked": row["revoked"],
+                    "flagged": row["flagged"],
+                }
+                for row in high_risk_facilities
+            ],
+        })
+
+
+class FederalCertificateFlagView(APIView):
+    permission_classes = [IsAuthenticated, IsActiveUser, IsFederalMinistryUser]
+
+    def post(self, request, pk):
+        certificate = get_object_or_404(Certificate, pk=pk)
+        reason = request.data.get("reason", "").strip()
+        if not reason:
+            raise ValidationError("Reason is required.")
+        report = SuspiciousCertificateReport.objects.create(
+            certificate=certificate,
+            certificate_number_submitted=certificate.certificate_number,
+            verification_token_submitted=certificate.verification_token or "",
+            reporter_name=request.user.get_full_name() or request.user.email,
+            reporter_contact=request.user.email,
+            reason=reason,
+            details=request.data.get("details", ""),
+        )
+        log_action(
+            action=AuditAction.CERTIFICATE_EVENT,
+            actor=request.user,
+            target=certificate,
+            metadata={"event": "federal_certificate_flagged", "report_id": str(report.id), "reason": reason},
+        )
+        return Response({"status": "flagged", "report_id": str(report.id)}, status=status.HTTP_201_CREATED)
 
 
 class FederalFacilityRegistryView(APIView):
@@ -726,12 +882,11 @@ class StateCertificateValidationApproveView(StateCertificateValidationMixin, API
     @extend_schema(request=StateCertificateValidationActionSerializer, responses=StateCertificateValidationSerializer)
     def patch(self, request, pk):
         self.ensure_validator()
-        certificate_request = CertificateService.approve_request(
+        certificate_request, _certificate = CertificateService.approve_and_generate(
             request=self.get_object(pk),
             reviewer=request.user,
             notes=self.action_notes(),
         )
-        CertificateService.issue_certificate(assessment=certificate_request.assessment, actor=request.user)
         certificate_request.refresh_from_db()
         return Response(StateCertificateValidationSerializer(certificate_request).data)
 
@@ -857,6 +1012,65 @@ class StateCertificateRevokeView(StateCertificateRegistryMixin, APIView):
     def patch(self, request, pk):
         certificate = CertificateService.revoke(certificate=self.get_object(pk), actor=request.user, reason=self.lifecycle_reason())
         return Response(StateCertificateRegistrySerializer(certificate).data)
+
+
+class StateCertificateReinstateView(StateCertificateRegistryMixin, APIView):
+    permission_classes = [IsAuthenticated, IsActiveUser, IsStateMinistryUser]
+
+    @extend_schema(request=StateCertificateLifecycleActionSerializer, responses=StateCertificateRegistrySerializer)
+    def patch(self, request, pk):
+        certificate = CertificateService.reinstate(certificate=self.get_object(pk), actor=request.user, reason=self.lifecycle_reason())
+        return Response(StateCertificateRegistrySerializer(certificate).data)
+
+
+class StateCertificateReplaceView(StateCertificateRegistryMixin, APIView):
+    permission_classes = [IsAuthenticated, IsActiveUser, IsStateMinistryUser]
+
+    @extend_schema(request=StateCertificateLifecycleActionSerializer, responses=StateCertificateRegistrySerializer)
+    def post(self, request, pk):
+        certificate = CertificateService.replace(certificate=self.get_object(pk), actor=request.user, reason=self.lifecycle_reason())
+        return Response(StateCertificateRegistrySerializer(certificate).data)
+
+
+class StateCertificateAuditView(StateCertificateRegistryMixin, APIView):
+    permission_classes = [IsAuthenticated, IsActiveUser, IsStateMinistryUser]
+
+    def get(self, request, pk):
+        certificate = self.get_object(pk)
+        logs = AuditLog.objects.filter(target_type="Certificate", target_id=str(certificate.id)).select_related("actor").order_by("-created_at")[:100]
+        return Response([
+            {
+                "id": str(log.id),
+                "action": log.action,
+                "actor_name": log.actor.get_full_name() if log.actor else "",
+                "metadata": log.metadata,
+                "created_at": log.created_at,
+            }
+            for log in logs
+        ])
+
+
+class StateCertificateExportView(StateCertificateRegistryMixin, APIView):
+    permission_classes = [IsAuthenticated, IsActiveUser, IsStateMinistryUser]
+
+    def get(self, request):
+        response = HttpResponse(content_type="text/csv")
+        response["Content-Disposition"] = 'attachment; filename="state-certificates.csv"'
+        writer = csv.writer(response)
+        writer.writerow(["Certificate", "Food handler", "Employer", "Facility", "State", "Issue date", "Expiry date", "Status"])
+        for cert in self.get_queryset()[:2000]:
+            writer.writerow([
+                cert.certificate_number,
+                cert.food_handler.full_name,
+                cert.employer.business_name if cert.employer_id else "",
+                cert.facility.facility_name,
+                cert.issuing_state.name,
+                cert.issue_date.isoformat(),
+                cert.expiry_date.isoformat(),
+                cert.effective_status,
+            ])
+        log_action(action=AuditAction.CERTIFICATE_EVENT, actor=request.user, metadata={"event": "state_certificate_export"})
+        return response
 
 
 class StateMonitoringMixin:

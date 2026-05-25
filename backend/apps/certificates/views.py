@@ -1,5 +1,6 @@
 from django.http import FileResponse
 from django.conf import settings
+from django.db.models import Q
 from django.shortcuts import get_object_or_404
 from drf_spectacular.utils import extend_schema
 from rest_framework import status, viewsets
@@ -15,19 +16,25 @@ from apps.accounts.permissions import IsActiveUser
 from apps.assessments.models import MedicalAssessment
 from apps.audit.models import AuditAction
 from apps.audit.services import log_action
-from apps.common.throttles import PublicVerificationRateThrottle
-from apps.certificates.models import Certificate, CertificateRequest, CertificateVerificationLog, VerificationResult
+from apps.common.throttles import PublicVerificationRateThrottle, SuspiciousReportRateThrottle
+from apps.certificates.models import Certificate, CertificateRequest, CertificateTemplate, CertificateTemplateScope, CertificateVerificationLog, SuspiciousCertificateReport, VerificationActorType, VerificationResult
 from apps.certificates.serializers import (
     CertificatePublicVerificationSerializer,
     CertificateRequestSerializer,
     CertificateSerializer,
     CertificateStatusChangeSerializer,
+    CertificateTemplateSerializer,
     EmployerCertificateSerializer,
+    FoodHandlerCertificateSerializer,
     GenerateCertificateSerializer,
+    PublicCertificateNumberVerificationSerializer,
     RequestCertificateSerializer,
     ReviewCertificateRequestSerializer,
+    SuspiciousCertificateReportSerializer,
 )
 from apps.certificates.services import CertificateService
+from apps.notifications.models import Notification, NotificationChannel, NotificationType
+from apps.policy.models import NationalPolicyConfig
 
 
 class CertificateRequestViewSet(viewsets.ReadOnlyModelViewSet):
@@ -119,6 +126,8 @@ class CertificateViewSet(viewsets.ReadOnlyModelViewSet):
             return CertificateSerializer
         if self.request.user.role == UserRole.EMPLOYER:
             return EmployerCertificateSerializer
+        if self.request.user.role == UserRole.FOOD_HANDLER:
+            return FoodHandlerCertificateSerializer
         return CertificateSerializer
 
     def get_queryset(self):
@@ -154,6 +163,8 @@ class CertificateViewSet(viewsets.ReadOnlyModelViewSet):
         media_prefix = "http://localhost:8000/media/"
         relative_path = certificate.pdf_url.replace(media_prefix, "")
         file_path = str(settings.MEDIA_ROOT / relative_path)
+        event = "food_handler_certificate_download" if request.user.role == UserRole.FOOD_HANDLER else "certificate_download"
+        log_action(action=AuditAction.CERTIFICATE_EVENT, actor=request.user, target=certificate, metadata={"event": event})
         return FileResponse(open(file_path, "rb"), as_attachment=True, filename=f"{certificate.certificate_number}.pdf")
 
     @extend_schema(request=CertificateStatusChangeSerializer, responses=CertificateSerializer)
@@ -184,6 +195,106 @@ class CertificateViewSet(viewsets.ReadOnlyModelViewSet):
         )
         return Response(CertificateSerializer(certificate).data)
 
+    @extend_schema(responses=FoodHandlerCertificateSerializer)
+    @action(detail=True, methods=["post"], url_path="start-renewal")
+    def start_renewal(self, request, pk=None):
+        certificate = self.get_object()
+        if request.user.role != UserRole.FOOD_HANDLER or certificate.food_handler.user_id != request.user.id:
+            raise PermissionDenied("Only the certificate owner can start renewal.")
+        Notification.objects.create(
+            recipient=request.user,
+            notification_type=NotificationType.CERTIFICATE_RENEWAL,
+            channel=NotificationChannel.IN_APP,
+            subject="Certificate renewal started",
+            body="Start a fresh medical assessment to renew this certificate.",
+            context_data={
+                "certificate_id": str(certificate.id),
+                "certificate_number": certificate.certificate_number,
+                "next_url": "/food-handler/assessments",
+            },
+        )
+        log_action(
+            action=AuditAction.CERTIFICATE_EVENT,
+            actor=request.user,
+            target=certificate,
+            metadata={"event": "certificate_renewal_started", "next_url": "/food-handler/assessments"},
+        )
+        return Response(FoodHandlerCertificateSerializer(certificate).data)
+
+
+class CertificateTemplateViewSet(viewsets.ModelViewSet):
+    serializer_class = CertificateTemplateSerializer
+    permission_classes = [IsAuthenticated, IsActiveUser]
+
+    def get_queryset(self):
+        queryset = CertificateTemplate.objects.select_related("state", "created_by").order_by("scope", "state__name", "-is_default", "name")
+        if getattr(self, "swagger_fake_view", False):
+            return queryset
+        user = self.request.user
+        if user.role in {UserRole.SUPER_ADMIN, UserRole.FEDERAL_ADMIN}:
+            return queryset
+        if user.role == UserRole.STATE_ADMIN and user.state_id:
+            return queryset.filter(Q(scope=CertificateTemplateScope.NATIONAL) | Q(scope=CertificateTemplateScope.STATE, state=user.state))
+        return queryset.none()
+
+    def _state_templates_allowed(self):
+        policy = NationalPolicyConfig.objects.order_by("-updated_at").first()
+        return True if policy is None else policy.state_certificate_template_overrides_enabled
+
+    def _ensure_can_manage(self, template=None, attrs=None):
+        user = self.request.user
+        scope = (attrs or {}).get("scope") or getattr(template, "scope", CertificateTemplateScope.NATIONAL)
+        state = (attrs or {}).get("state") if attrs and "state" in attrs else getattr(template, "state", None)
+        if user.role == UserRole.SUPER_ADMIN:
+            return
+        if scope == CertificateTemplateScope.NATIONAL:
+            if user.role == UserRole.FEDERAL_ADMIN:
+                return
+            raise PermissionDenied("Only federal admins can manage national certificate templates.")
+        if user.role != UserRole.STATE_ADMIN:
+            raise PermissionDenied("Only state admins can manage state certificate templates.")
+        if not self._state_templates_allowed():
+            raise PermissionDenied("State certificate template overrides are disabled by national policy.")
+        if not user.state_id or not state or state.id != user.state_id:
+            raise PermissionDenied("State admins can only manage templates for their own state.")
+
+    def create(self, request, *args, **kwargs):
+        data = request.data.copy()
+        if request.user.role == UserRole.STATE_ADMIN and data.get("scope", CertificateTemplateScope.STATE) == CertificateTemplateScope.STATE:
+            data["scope"] = CertificateTemplateScope.STATE
+            data["state"] = str(request.user.state_id)
+        serializer = self.get_serializer(data=data)
+        serializer.is_valid(raise_exception=True)
+        self.perform_create(serializer)
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+    def perform_create(self, serializer):
+        self._ensure_can_manage(attrs=serializer.validated_data)
+        template = serializer.save(created_by=self.request.user)
+        log_action(action=AuditAction.CERTIFICATE_EVENT, actor=self.request.user, target=template, metadata={"event": "certificate_template_created"})
+
+    def perform_update(self, serializer):
+        self._ensure_can_manage(template=self.get_object(), attrs=serializer.validated_data)
+        template = serializer.save()
+        log_action(action=AuditAction.CERTIFICATE_EVENT, actor=self.request.user, target=template, metadata={"event": "certificate_template_updated"})
+
+    def perform_destroy(self, instance):
+        self._ensure_can_manage(template=instance)
+        log_action(action=AuditAction.CERTIFICATE_EVENT, actor=self.request.user, target=instance, metadata={"event": "certificate_template_deleted"})
+        instance.delete()
+
+    @action(detail=True, methods=["post"], url_path="set-default")
+    def set_default(self, request, pk=None):
+        template = self.get_object()
+        self._ensure_can_manage(template=template)
+        if not template.is_active:
+            raise ValidationError("Only active templates can be set as default.")
+        CertificateTemplate.objects.filter(scope=template.scope, state=template.state).exclude(id=template.id).update(is_default=False)
+        template.is_default = True
+        template.save(update_fields=["is_default", "updated_at"])
+        log_action(action=AuditAction.CERTIFICATE_EVENT, actor=request.user, target=template, metadata={"event": "certificate_template_set_default"})
+        return Response(CertificateTemplateSerializer(template).data)
+
 
 class RequestCertificateView(APIView):
     permission_classes = [IsAuthenticated, IsActiveUser]
@@ -210,7 +321,16 @@ class GenerateCertificateView(APIView):
         serializer.is_valid(raise_exception=True)
         certificate_request = serializer.validated_data.get("certificate_request")
         assessment = serializer.validated_data.get("assessment") or certificate_request.assessment
-        certificate = CertificateService.issue_certificate(assessment=assessment, actor=request.user)
+        try:
+            certificate = CertificateService.issue_certificate(assessment=assessment, actor=request.user)
+        except Exception as exc:
+            log_action(
+                action=AuditAction.CERTIFICATE_EVENT,
+                actor=request.user,
+                target=certificate_request or assessment,
+                metadata={"event": "certificate_generation_failed", "reason": str(exc)[:240]},
+            )
+            raise
         return Response(CertificateSerializer(certificate).data, status=status.HTTP_201_CREATED)
 
 
@@ -219,7 +339,11 @@ class GenerateCertificateView(APIView):
 @permission_classes([AllowAny])
 @throttle_classes([PublicVerificationRateThrottle])
 def public_verify_certificate(request, certificate_number):
-    certificate = Certificate.objects.filter(certificate_number=certificate_number).select_related(
+    return _public_verify_certificate_response(request, certificate_number)
+
+
+def _public_verify_certificate_response(request, certificate_number):
+    certificate = Certificate.objects.filter(Q(certificate_number=certificate_number) | Q(verification_token=certificate_number)).select_related(
         "food_handler",
         "assessment",
         "facility",
@@ -231,6 +355,7 @@ def public_verify_certificate(request, certificate_number):
     CertificateVerificationLog.objects.create(
         certificate=certificate,
         certificate_number_submitted=certificate_number,
+        verification_token_submitted=certificate_number if certificate and certificate.verification_token == certificate_number else "",
         result=result,
         ip_address=request.META.get("REMOTE_ADDR", ""),
         user_agent=request.META.get("HTTP_USER_AGENT", ""),
@@ -248,3 +373,61 @@ def public_verify_certificate(request, certificate_number):
     payload = CertificatePublicVerificationSerializer(certificate).data
     payload["certificate_validity"] = result
     return Response(payload)
+
+
+@extend_schema(request=PublicCertificateNumberVerificationSerializer, responses=CertificatePublicVerificationSerializer)
+@api_view(["POST"])
+@permission_classes([AllowAny])
+@throttle_classes([PublicVerificationRateThrottle])
+def public_verify_certificate_by_number(request):
+    serializer = PublicCertificateNumberVerificationSerializer(data=request.data)
+    serializer.is_valid(raise_exception=True)
+    certificate_number = serializer.validated_data["certificate_number"].strip()
+    return _public_verify_certificate_response(request, certificate_number)
+
+
+@extend_schema(request=SuspiciousCertificateReportSerializer, responses={201: SuspiciousCertificateReportSerializer})
+@api_view(["POST"])
+@permission_classes([AllowAny])
+@throttle_classes([SuspiciousReportRateThrottle])
+def public_report_suspicious_certificate(request):
+    serializer = SuspiciousCertificateReportSerializer(data=request.data)
+    serializer.is_valid(raise_exception=True)
+    certificate_number = serializer.validated_data.get("certificate_number", "").strip()
+    verification_token = serializer.validated_data.get("verification_token", "").strip()
+    certificate = Certificate.objects.filter(
+        Q(certificate_number=certificate_number) | Q(verification_token=verification_token)
+    ).first()
+    report = SuspiciousCertificateReport.objects.create(
+        certificate=certificate,
+        certificate_number_submitted=certificate_number,
+        verification_token_submitted=verification_token,
+        reporter_name=serializer.validated_data.get("reporter_name", ""),
+        reporter_contact=serializer.validated_data.get("reporter_contact", ""),
+        reason=serializer.validated_data["reason"],
+        details=serializer.validated_data.get("details", ""),
+        ip_address=request.META.get("REMOTE_ADDR", ""),
+        user_agent=request.META.get("HTTP_USER_AGENT", ""),
+    )
+    CertificateVerificationLog.objects.create(
+        certificate=certificate,
+        certificate_number_submitted=certificate_number,
+        verification_token_submitted=verification_token,
+        result=CertificateService.verification_result_for(certificate) if certificate else VerificationResult.NOT_FOUND,
+        verifier_type=VerificationActorType.PUBLIC,
+        ip_address=request.META.get("REMOTE_ADDR", ""),
+        user_agent=request.META.get("HTTP_USER_AGENT", ""),
+    )
+    log_action(
+        action=AuditAction.CERTIFICATE_EVENT,
+        target=certificate or report,
+        target_type="SuspiciousCertificateReport",
+        target_id=str(report.id),
+        request=request,
+        metadata={
+            "event": "suspicious_certificate_reported",
+            "certificate_number": certificate_number,
+            "verification_token_provided": bool(verification_token),
+        },
+    )
+    return Response(SuspiciousCertificateReportSerializer(report).data, status=status.HTTP_201_CREATED)

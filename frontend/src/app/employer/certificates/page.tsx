@@ -2,10 +2,12 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { BadgeCheck, AlertCircle, Clock } from "lucide-react";
+import { Download, ExternalLink, Send } from "lucide-react";
+import { CertificateAnalyticsCards, EmployerCertificateTable } from "@/components/certificates/certificate-widgets";
 import { PortalShell } from "@/components/layout/portal-shell";
 import { CertificateStatusBadge } from "@/components/ui/certificate-status-badge";
 import { apiClient, unwrap } from "@/lib/api/client";
+import { downloadCsv } from "@/lib/export/csv";
 
 type CertRow = {
   id: string;
@@ -17,6 +19,9 @@ type CertRow = {
   issue_date: string;
   expiry_date: string;
   status: string;
+  effective_status: string;
+  verification_url: string;
+  can_download: boolean;
 };
 
 type Metrics = {
@@ -35,7 +40,9 @@ export default function Page() {
   const [metrics, setMetrics] = useState<Metrics | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [actionMessage, setActionMessage] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
+  const [expiryWindow, setExpiryWindow] = useState("");
 
   useEffect(() => {
     const token = localStorage.getItem("foodcert_access_token");
@@ -48,6 +55,7 @@ export default function Page() {
     setLoading(true);
     const params = new URLSearchParams();
     if (statusFilter) params.set("status", statusFilter);
+    if (expiryWindow) params.set("expiry_window", expiryWindow);
     apiClient.get(`/employers/${employerId}/certificates/?${params.toString()}`)
       .then((res) => {
         const data = unwrap(res.data) as { metrics: Metrics; certificates: CertRow[] };
@@ -56,51 +64,102 @@ export default function Page() {
       })
       .catch(() => setError("Failed to load certificates."))
       .finally(() => setLoading(false));
-  }, [employerId, statusFilter]);
+  }, [employerId, statusFilter, expiryWindow]);
+
+  async function downloadCertificate(row: CertRow) {
+    if (!employerId) return;
+    setActionMessage("");
+    try {
+      const response = await apiClient.get(`/employers/${employerId}/certificates/${row.id}/download/`, { responseType: "blob" });
+      const url = window.URL.createObjectURL(response.data as Blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `${row.certificate_number}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    } catch {
+      setActionMessage("Could not download certificate.");
+    }
+  }
+
+  async function sendReminder(row: CertRow) {
+    if (!employerId) return;
+    setActionMessage("");
+    try {
+      await apiClient.post(`/employers/${employerId}/certificates/${row.id}/send-renewal-reminder/`);
+      setActionMessage(`Renewal reminder sent to ${row.food_handler_name}.`);
+    } catch {
+      setActionMessage("Could not send renewal reminder.");
+    }
+  }
 
   return (
     <PortalShell role="employer" title="Certificates" description="Monitor certificate status, expiry dates, and compliance across your food handlers.">
       {loading && <p className="text-slate-500 text-sm">Loading...</p>}
       {error && <div className="rounded-lg border border-rose-200 bg-rose-50 p-4 text-sm font-semibold text-rose-700">{error}</div>}
+      {actionMessage && <div className="mb-4 rounded-lg border border-slate-200 bg-white p-3 text-sm font-semibold text-slate-700 shadow-sm">{actionMessage}</div>}
 
       {metrics && (
         <>
-          <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-6 mb-5">
-            <div className="rounded-lg border border-slate-200 bg-white p-3 text-center"><BadgeCheck size={16} className="mx-auto text-slate-400 mb-1" /><p className="text-xl font-bold text-slate-950">{metrics.total}</p><p className="text-xs font-semibold text-slate-500">Total</p></div>
-            <div className="rounded-lg border border-slate-200 bg-white p-3 text-center"><BadgeCheck size={16} className="mx-auto text-slate-400 mb-1" /><p className="text-xl font-bold text-slate-950">{metrics.active}</p><p className="text-xs font-semibold text-slate-500">Active</p></div>
-            <div className="rounded-lg border border-slate-200 bg-white p-3 text-center"><AlertCircle size={16} className="mx-auto text-slate-400 mb-1" /><p className="text-xl font-bold text-slate-950">{metrics.expired}</p><p className="text-xs font-semibold text-slate-500">Expired</p></div>
-            <div className="rounded-lg border border-slate-200 bg-white p-3 text-center"><Clock size={16} className="mx-auto text-slate-400 mb-1" /><p className="text-xl font-bold text-slate-950">{metrics.expiring_30d}</p><p className="text-xs font-semibold text-slate-500">Expiring ≤30d</p></div>
-            <div className="rounded-lg border border-slate-200 bg-white p-3 text-center"><Clock size={16} className="mx-auto text-slate-400 mb-1" /><p className="text-xl font-bold text-slate-950">{metrics.expiring_7d}</p><p className="text-xs font-semibold text-slate-500">Expiring ≤7d</p></div>
-            <div className="rounded-lg border border-slate-200 bg-white p-3 text-center"><AlertCircle size={16} className="mx-auto text-slate-400 mb-1" /><p className="text-xl font-bold text-slate-950">{metrics.revoked}</p><p className="text-xs font-semibold text-slate-500">Revoked</p></div>
+          <div className="mb-5">
+            <CertificateAnalyticsCards cards={[
+              { label: "Total", value: metrics.total },
+              { label: "Active", value: metrics.active },
+              { label: "Expired", value: metrics.expired, tone: "warning" },
+              { label: "Expiring <=30d", value: metrics.expiring_30d, tone: "warning" },
+              { label: "Expiring <=7d", value: metrics.expiring_7d, tone: "warning" },
+              { label: "Revoked", value: metrics.revoked, tone: "danger" },
+            ]} />
           </div>
 
-          <div className="flex items-center gap-3 mb-4">
+          <div className="mb-4 grid gap-3 md:grid-cols-[180px_180px_auto]">
             <select className="h-10 rounded border border-slate-200 bg-white px-3 text-sm" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
               <option value="">All statuses</option>
               <option value="active">Active</option>
               <option value="expired">Expired</option>
+              <option value="suspended">Suspended</option>
               <option value="revoked">Revoked</option>
             </select>
+            <select className="h-10 rounded border border-slate-200 bg-white px-3 text-sm" value={expiryWindow} onChange={(e) => setExpiryWindow(e.target.value)}>
+              <option value="">Any expiry</option>
+              <option value="7">Expiring 7d</option>
+              <option value="30">Expiring 30d</option>
+              <option value="expired">Expired</option>
+            </select>
+            <button
+              className="inline-flex h-10 items-center justify-center gap-2 rounded border border-slate-200 bg-white px-3 text-sm font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+              disabled={!certs.length}
+              onClick={() => downloadCsv("employer-certificates.csv", certs, [
+                { header: "Certificate", value: (row) => row.certificate_number },
+                { header: "Food handler", value: (row) => row.food_handler_name },
+                { header: "Branch", value: (row) => row.branch_name || "" },
+                { header: "Facility", value: (row) => row.facility_name },
+                { header: "State", value: (row) => row.issuing_state_name },
+                { header: "Issue date", value: (row) => row.issue_date },
+                { header: "Expiry date", value: (row) => row.expiry_date },
+                { header: "Status", value: (row) => row.effective_status || row.status },
+              ])}
+              type="button"
+            >
+              <Download size={16} />
+              Export
+            </button>
           </div>
 
-          <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white shadow-sm">
-            <table className="w-full text-sm">
-              <thead><tr className="border-b border-slate-100 bg-slate-50 text-left"><th className="px-4 py-2 text-xs font-bold uppercase text-slate-500">Certificate</th><th className="px-4 py-2 text-xs font-bold uppercase text-slate-500 hidden sm:table-cell">Handler</th><th className="px-4 py-2 text-xs font-bold uppercase text-slate-500 hidden md:table-cell">Facility</th><th className="px-4 py-2 text-xs font-bold uppercase text-slate-500 hidden md:table-cell">Issued</th><th className="px-4 py-2 text-xs font-bold uppercase text-slate-500">Expiry</th><th className="px-4 py-2 text-xs font-bold uppercase text-slate-500">Status</th></tr></thead>
-              <tbody className="divide-y divide-slate-50">
-                {certs.map((c) => (
-                  <tr key={c.id} className="hover:bg-slate-50/50">
-                    <td className="px-4 py-2"><span className="font-mono text-xs text-slate-700">{c.certificate_number}</span></td>
-                    <td className="px-4 py-2 hidden sm:table-cell"><span className="text-xs text-slate-700">{c.food_handler_name}</span>{c.branch_name && <span className="text-[10px] text-slate-400 block">{c.branch_name}</span>}</td>
-                    <td className="px-4 py-2 hidden md:table-cell"><span className="text-xs text-slate-500">{c.facility_name}</span></td>
-                    <td className="px-4 py-2 hidden md:table-cell"><span className="text-xs text-slate-500">{new Date(c.issue_date).toLocaleDateString()}</span></td>
-                    <td className="px-4 py-2"><span className="text-xs text-slate-700">{new Date(c.expiry_date).toLocaleDateString()}</span></td>
-                    <td className="px-4 py-2"><CertificateStatusBadge status={c.status} /></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            {certs.length === 0 && <p className="py-8 text-center text-sm text-slate-400">No certificates found.</p>}
-          </div>
+          <EmployerCertificateTable<CertRow>
+            columns={[
+              { key: "certificate", header: "Certificate", render: (c) => <div><p className="font-mono text-xs font-bold text-slate-800">{c.certificate_number}</p><p className="text-xs text-slate-500 sm:hidden">{c.food_handler_name}</p></div> },
+              { key: "handler", header: "Handler", render: (c) => <div><p className="font-semibold text-slate-800">{c.food_handler_name}</p>{c.branch_name ? <p className="text-xs text-slate-500">{c.branch_name}</p> : null}</div> },
+              { key: "facility", header: "Facility", render: (c) => c.facility_name },
+              { key: "expiry", header: "Expiry", render: (c) => new Date(c.expiry_date).toLocaleDateString("en-NG") },
+              { key: "status", header: "Status", render: (c) => <CertificateStatusBadge status={c.effective_status || c.status} /> },
+              { key: "actions", header: "Actions", render: (c) => <div className="flex flex-wrap gap-2"><a className="inline-flex h-8 items-center gap-1 rounded border border-slate-200 px-2 text-xs font-bold text-slate-700 hover:bg-slate-50" href={c.verification_url}><ExternalLink size={13} /> Verify</a><button className="inline-flex h-8 items-center gap-1 rounded border border-slate-200 px-2 text-xs font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-50" disabled={!c.can_download} onClick={() => void downloadCertificate(c)} type="button"><Download size={13} /> PDF</button><button className="inline-flex h-8 items-center gap-1 rounded border border-amber-200 px-2 text-xs font-bold text-amber-800 hover:bg-amber-50" onClick={() => void sendReminder(c)} type="button"><Send size={13} /> Remind</button></div> },
+            ]}
+            rows={certs}
+            empty="No certificates found."
+          />
         </>
       )}
     </PortalShell>

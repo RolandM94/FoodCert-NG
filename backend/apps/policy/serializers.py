@@ -18,6 +18,7 @@ class NationalPolicyConfigSerializer(serializers.ModelSerializer):
             "payment_before_assessment_required",
             "state_validation_before_certificate_required",
             "public_qr_verification_enabled",
+            "state_certificate_template_overrides_enabled",
             "updated_by",
             "updated_by_name",
             "created_at",

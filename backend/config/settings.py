@@ -155,6 +155,7 @@ REST_FRAMEWORK = {
     "DEFAULT_THROTTLE_RATES": {
         "login": env("LOGIN_THROTTLE_RATE", default="5/min"),
         "public_verification": env("PUBLIC_VERIFICATION_THROTTLE_RATE", default="30/min"),
+        "suspicious_report": env("SUSPICIOUS_REPORT_THROTTLE_RATE", default="10/min"),
     },
 }
 

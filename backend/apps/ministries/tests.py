@@ -5,9 +5,9 @@ from rest_framework.test import APITestCase
 from apps.accounts.models import UserRole
 from apps.accounts.services import InviteService
 from apps.assessments.models import FitnessDecision, MedicalAssessment
-from apps.audit.models import AuditAction
+from apps.audit.models import AuditAction, AuditLog
 from apps.audit.services import log_action
-from apps.certificates.models import Certificate, CertificateRequest, CertificateRequestStatus, CertificateStatus
+from apps.certificates.models import Certificate, CertificateRequest, CertificateRequestStatus, CertificateStatus, CertificateVerificationLog, SuspiciousCertificateReport, VerificationResult
 from apps.facilities.models import AccreditationStatus, FacilityAccreditationApplication, FacilityType, MedicalFacility, OwnershipType
 from apps.food_handlers.models import FoodHandlerCategory, FoodHandlerProfile, Gender
 from apps.illness.models import IllnessReport
@@ -676,7 +676,7 @@ class StateCertificateValidationEndpointTests(APITestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(payload(response)["status"], CertificateRequestStatus.APPROVED)
         self.assertEqual(Certificate.objects.count(), 1)
-        self.assertTrue(payload(response)["certificate_number"].startswith("FCN-LA-"))
+        self.assertTrue(payload(response)["certificate_number"].startswith(f"FCNG-LA-{timezone.localdate():%Y}-"))
 
     def test_reject_requires_review_notes(self):
         self.client.force_authenticate(self.state_admin)
@@ -848,7 +848,7 @@ class StateCertificateRegistryEndpointTests(APITestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(payload(response)["status"], CertificateStatus.SUSPENDED)
-        self.assertEqual(payload(response)["revocation_reason"], "Public health review.")
+        self.assertEqual(payload(response)["suspension_reason"], "Public health review.")
 
     def test_revoke_requires_reason_and_updates_certificate(self):
         self.client.force_authenticate(self.state_admin)
@@ -862,6 +862,40 @@ class StateCertificateRegistryEndpointTests(APITestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(payload(response)["status"], CertificateStatus.REVOKED)
         self.assertEqual(payload(response)["revocation_reason"], "Fraud confirmed.")
+
+    def test_reinstate_replace_audit_and_export(self):
+        self.client.force_authenticate(self.state_admin)
+
+        self.client.patch(
+            f"/api/state/certificates/{self.certificate.id}/suspend/",
+            {"reason": "Investigation hold."},
+            format="json",
+        )
+        reinstate = self.client.patch(
+            f"/api/state/certificates/{self.certificate.id}/reinstate/",
+            {"reason": "Review cleared."},
+            format="json",
+        )
+        self.assertEqual(reinstate.status_code, 200)
+        self.assertEqual(payload(reinstate)["status"], CertificateStatus.ACTIVE)
+
+        replace = self.client.post(
+            f"/api/state/certificates/{self.certificate.id}/replace/",
+            {"reason": "Administrative correction."},
+            format="json",
+        )
+        self.assertEqual(replace.status_code, 200)
+        self.assertEqual(payload(replace)["status"], CertificateStatus.REPLACED)
+        self.assertEqual(payload(replace)["replacement_reason"], "Administrative correction.")
+
+        audit = self.client.get(f"/api/state/certificates/{self.certificate.id}/audit/")
+        self.assertEqual(audit.status_code, 200)
+        self.assertTrue(any(item["metadata"].get("event") == "certificate_marked_replaced" for item in payload(audit)))
+
+        export = self.client.get("/api/state/certificates/export/")
+        self.assertEqual(export.status_code, 200)
+        self.assertIn("text/csv", export["Content-Type"])
+        self.assertIn("FCN-LA-REG001", export.content.decode())
 
 
 class StateMonitoringEndpointTests(APITestCase):
@@ -1419,7 +1453,7 @@ class FederalRegistryPolicyEndpointTests(APITestCase):
             final_decision=FitnessDecision.FIT,
             signed_at=timezone.now(),
         )
-        Certificate.objects.create(
+        self.certificate = Certificate.objects.create(
             certificate_number="FCN-REG-CERT-001",
             food_handler=self.food_handler,
             assessment=self.assessment,
@@ -1450,6 +1484,72 @@ class FederalRegistryPolicyEndpointTests(APITestCase):
         self.assertNotIn("masked_nin", record)
         self.assertNotIn("date_of_birth", record)
         self.assertNotIn("doctor_notes", record)
+
+    def test_federal_certificate_detail_is_audited_and_privacy_safe(self):
+        self.client.force_authenticate(self.federal_admin)
+
+        response = self.client.get(f"/api/federal/certificates/{self.certificate.id}/")
+
+        self.assertEqual(response.status_code, 200)
+        record = payload(response)
+        self.assertEqual(record["certificate_number"], "FCN-REG-CERT-001")
+        self.assertNotIn("masked_nin", record)
+        self.assertNotIn("date_of_birth", record)
+        self.assertTrue(
+            AuditLog.objects.filter(
+                target_type="Certificate",
+                target_id=str(self.certificate.id),
+                metadata__event="federal_certificate_detail_viewed",
+            ).exists()
+        )
+
+    def test_federal_certificate_analytics_is_aggregate_and_privacy_safe(self):
+        CertificateVerificationLog.objects.create(
+            certificate_number_submitted="FAKE-CERT",
+            result=VerificationResult.NOT_FOUND,
+        )
+        self.client.force_authenticate(self.federal_admin)
+
+        response = self.client.get("/api/federal/certificates/analytics/")
+
+        self.assertEqual(response.status_code, 200)
+        data = payload(response)
+        self.assertEqual(data["cards"]["total"], 1)
+        self.assertEqual(data["cards"]["invalid_verification_attempts"], 1)
+        self.assertEqual(data["by_state"][0]["state_name"], "Lagos")
+        self.assertNotIn("food_handler_name", data)
+        self.assertNotIn("date_of_birth", data)
+
+    def test_federal_can_flag_certificate_without_changing_status(self):
+        self.client.force_authenticate(self.federal_admin)
+
+        response = self.client.post(
+            f"/api/federal/certificates/{self.certificate.id}/flag/",
+            {"reason": "QR scan pattern looks suspicious", "details": "Repeated failed public checks."},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(payload(response)["status"], "flagged")
+        self.assertEqual(SuspiciousCertificateReport.objects.count(), 1)
+        self.certificate.refresh_from_db()
+        self.assertEqual(self.certificate.status, CertificateStatus.ACTIVE)
+
+    def test_federal_certificate_registry_filters_suspicious_reports(self):
+        SuspiciousCertificateReport.objects.create(
+            certificate=self.certificate,
+            certificate_number_submitted=self.certificate.certificate_number,
+            reason="Mismatch reported by federal review",
+        )
+        self.client.force_authenticate(self.federal_admin)
+
+        response = self.client.get("/api/federal/certificates/?suspicious=true")
+
+        self.assertEqual(response.status_code, 200)
+        records = payload(response)
+        self.assertEqual(len(records), 1)
+        self.assertEqual(records[0]["certificate_number"], "FCN-REG-CERT-001")
+        self.assertEqual(records[0]["suspicious_report_count"], 1)
 
     def test_state_user_cannot_access_federal_registries(self):
         self.client.force_authenticate(self.state_admin)

@@ -156,6 +156,8 @@ class StateCertificateRegistrySerializer(serializers.ModelSerializer):
     facility_name = serializers.CharField(source="facility.facility_name", read_only=True)
     issuing_state_name = serializers.CharField(source="issuing_state.name", read_only=True)
     effective_status = serializers.CharField(read_only=True)
+    suspended_by_name = serializers.CharField(source="suspended_by.get_full_name", read_only=True)
+    revoked_by_name = serializers.CharField(source="revoked_by.get_full_name", read_only=True)
 
     class Meta:
         model = Certificate
@@ -176,7 +178,14 @@ class StateCertificateRegistrySerializer(serializers.ModelSerializer):
             "status",
             "effective_status",
             "verification_url",
+            "suspended_by",
+            "suspended_by_name",
+            "suspended_at",
+            "suspension_reason",
+            "replaced_by",
+            "replacement_reason",
             "revoked_by",
+            "revoked_by_name",
             "revoked_at",
             "revocation_reason",
             "created_at",
@@ -411,6 +420,7 @@ class FederalCertificateRegistrySerializer(serializers.ModelSerializer):
     facility_name = serializers.CharField(source="facility.facility_name", read_only=True)
     issuing_state_name = serializers.CharField(source="issuing_state.name", read_only=True)
     effective_status = serializers.CharField(read_only=True)
+    suspicious_report_count = serializers.SerializerMethodField()
 
     class Meta:
         model = Certificate
@@ -426,11 +436,17 @@ class FederalCertificateRegistrySerializer(serializers.ModelSerializer):
             "expiry_date",
             "status",
             "effective_status",
+            "suspicious_report_count",
             "verification_url",
             "created_at",
             "updated_at",
         )
         read_only_fields = fields
+
+    def get_suspicious_report_count(self, obj):
+        if hasattr(obj, "suspicious_report_count"):
+            return obj.suspicious_report_count
+        return obj.suspicious_reports.count()
 
 
 class FederalFacilityRegistrySerializer(serializers.ModelSerializer):

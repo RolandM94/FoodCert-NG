@@ -1,12 +1,17 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { BadgeCheck } from "lucide-react";
+import { BadgeCheck, Download } from "lucide-react";
 import { useState } from "react";
+import { CertificateAuditTimeline, CertificateLifecycleModal, CertificateRegistryTable } from "@/components/certificates/certificate-widgets";
 import { PortalShell } from "@/components/layout/portal-shell";
-import { DataTable, StatusCell } from "@/components/ui/data-table";
+import { StatusCell } from "@/components/ui/data-table";
 import {
   fetchStateCertificates,
+  downloadStateCertificateExport,
+  fetchStateCertificateAudit,
+  reinstateStateCertificate,
+  replaceStateCertificate,
   revokeStateCertificate,
   suspendStateCertificate,
   type StateCertificateRegistryItem,
@@ -29,7 +34,7 @@ const EXPIRY_OPTIONS = [
   ["expired", "Expired"],
 ];
 
-type ActionName = "suspend" | "revoke";
+type ActionName = "suspend" | "reinstate" | "revoke" | "replace";
 
 function dateLabel(value?: string) {
   if (!value) return "Not set";
@@ -37,7 +42,7 @@ function dateLabel(value?: string) {
 }
 
 function canManage(row: StateCertificateRegistryItem) {
-  return row.status === "active";
+  return ["active", "suspended"].includes(row.status);
 }
 
 export default function Page() {
@@ -46,7 +51,9 @@ export default function Page() {
   const [status, setStatus] = useState("");
   const [expiryWindow, setExpiryWindow] = useState("");
   const [actionTarget, setActionTarget] = useState<{ certificate: StateCertificateRegistryItem; action: ActionName } | null>(null);
+  const [auditTarget, setAuditTarget] = useState<StateCertificateRegistryItem | null>(null);
   const [reason, setReason] = useState("");
+  const [exporting, setExporting] = useState(false);
 
   const certificatesQuery = useQuery({
     queryKey: ["state-certificates", search, status, expiryWindow],
@@ -59,12 +66,21 @@ export default function Page() {
 
   const lifecycleMutation = useMutation({
     mutationFn: ({ certificate, action, lifecycleReason }: { certificate: StateCertificateRegistryItem; action: ActionName; lifecycleReason: string }) =>
-      action === "suspend" ? suspendStateCertificate(certificate.id, lifecycleReason) : revokeStateCertificate(certificate.id, lifecycleReason),
+      action === "suspend" ? suspendStateCertificate(certificate.id, lifecycleReason)
+        : action === "reinstate" ? reinstateStateCertificate(certificate.id, lifecycleReason)
+          : action === "replace" ? replaceStateCertificate(certificate.id, lifecycleReason)
+            : revokeStateCertificate(certificate.id, lifecycleReason),
     onSuccess: () => {
       setActionTarget(null);
       setReason("");
       queryClient.invalidateQueries({ queryKey: ["state-certificates"] });
     },
+  });
+
+  const auditQuery = useQuery({
+    queryKey: ["state-certificate-audit", auditTarget?.id],
+    queryFn: () => fetchStateCertificateAudit(auditTarget!.id),
+    enabled: !!auditTarget,
   });
 
   const certificates = certificatesQuery.data || [];
@@ -91,6 +107,22 @@ export default function Page() {
               </select>
             </label>
           </div>
+          <button
+            className="mt-3 inline-flex h-10 items-center gap-2 rounded border border-slate-200 bg-white px-3 text-sm font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+            disabled={exporting}
+            onClick={async () => {
+              setExporting(true);
+              try {
+                await downloadStateCertificateExport();
+              } finally {
+                setExporting(false);
+              }
+            }}
+            type="button"
+          >
+            <Download size={16} />
+            Export registry
+          </button>
         </section>
 
         <section className="grid gap-3">
@@ -99,7 +131,7 @@ export default function Page() {
             <h2 className="text-base font-bold text-slate-950">Certificate Registry</h2>
           </div>
           {certificatesQuery.isError ? <p className="rounded bg-rose-50 p-3 text-sm font-semibold text-rose-700">Could not load certificates.</p> : null}
-          <DataTable<StateCertificateRegistryItem>
+          <CertificateRegistryTable<StateCertificateRegistryItem>
             columns={[
               { key: "certificate", header: "Certificate", render: (row) => <div><p className="font-bold text-slate-950">{row.certificate_number}</p><p className="text-xs text-slate-500">{row.issuing_state_name}</p></div> },
               { key: "handler", header: "Food handler", render: (row) => <div><p className="font-semibold text-slate-800">{row.food_handler_name || "Unknown"}</p><p className="text-xs text-slate-500">{row.food_handler_category?.replaceAll("_", " ") || "No category"}</p></div> },
@@ -112,10 +144,13 @@ export default function Page() {
                 header: "Actions",
                 render: (row) => canManage(row) ? (
                   <div className="flex flex-wrap gap-2">
-                    <button className="h-8 rounded border border-slate-200 px-3 text-xs font-bold text-slate-700 hover:bg-slate-50" onClick={() => setActionTarget({ certificate: row, action: "suspend" })} type="button">Suspend</button>
+                    {row.status === "active" ? <button className="h-8 rounded border border-slate-200 px-3 text-xs font-bold text-slate-700 hover:bg-slate-50" onClick={() => setActionTarget({ certificate: row, action: "suspend" })} type="button">Suspend</button> : null}
+                    {row.status === "suspended" ? <button className="h-8 rounded border border-emerald-200 px-3 text-xs font-bold text-emerald-700 hover:bg-emerald-50" onClick={() => setActionTarget({ certificate: row, action: "reinstate" })} type="button">Reinstate</button> : null}
+                    {row.status !== "revoked" ? <button className="h-8 rounded border border-amber-200 px-3 text-xs font-bold text-amber-800 hover:bg-amber-50" onClick={() => setActionTarget({ certificate: row, action: "replace" })} type="button">Replace</button> : null}
                     <button className="h-8 rounded border border-red-200 px-3 text-xs font-bold text-red-700 hover:bg-red-50" onClick={() => setActionTarget({ certificate: row, action: "revoke" })} type="button">Revoke</button>
+                    <button className="h-8 rounded border border-slate-200 px-3 text-xs font-bold text-slate-700 hover:bg-slate-50" onClick={() => setAuditTarget(row)} type="button">Audit</button>
                   </div>
-                ) : <span className="text-xs font-semibold text-slate-400">No action</span>,
+                ) : <button className="h-8 rounded border border-slate-200 px-3 text-xs font-bold text-slate-700 hover:bg-slate-50" onClick={() => setAuditTarget(row)} type="button">Audit</button>,
               },
             ]}
             rows={certificates}
@@ -125,29 +160,32 @@ export default function Page() {
       </div>
 
       {actionTarget ? (
+        <CertificateLifecycleModal
+          certificateNumber={actionTarget.certificate.certificate_number}
+          isError={lifecycleMutation.isError}
+          isPending={lifecycleMutation.isPending}
+          onCancel={() => setActionTarget(null)}
+          onSubmit={() => lifecycleMutation.mutate({ certificate: actionTarget.certificate, action: actionTarget.action, lifecycleReason: reason })}
+          reason={reason}
+          setReason={setReason}
+          title={`${actionTarget.action} certificate`}
+        />
+      ) : null}
+
+      {auditTarget ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4">
-          <div className="w-full max-w-md rounded-lg border border-slate-200 bg-white shadow-xl">
+          <div className="w-full max-w-2xl rounded-lg border border-slate-200 bg-white shadow-xl">
             <div className="border-b border-slate-100 px-6 py-4">
-              <h2 className="text-lg font-bold capitalize text-slate-950">{actionTarget.action} certificate</h2>
-              <p className="mt-1 text-sm text-slate-500">{actionTarget.certificate.certificate_number}</p>
+              <h2 className="text-lg font-bold text-slate-950">Certificate audit</h2>
+              <p className="mt-1 text-sm text-slate-500">{auditTarget.certificate_number}</p>
             </div>
-            <form
-              className="grid gap-4 p-6"
-              onSubmit={(event) => {
-                event.preventDefault();
-                lifecycleMutation.mutate({ certificate: actionTarget.certificate, action: actionTarget.action, lifecycleReason: reason });
-              }}
-            >
-              <label className="grid gap-1 text-sm font-semibold text-slate-700">
-                Reason <span className="text-red-500">*</span>
-                <textarea className="rounded border border-slate-200 bg-slate-50 px-3 py-2 text-sm" required rows={3} value={reason} onChange={(event) => setReason(event.target.value)} />
-              </label>
-              {lifecycleMutation.isError ? <p className="rounded bg-red-50 px-3 py-2 text-sm font-semibold text-red-700">Could not complete this certificate action.</p> : null}
-              <div className="flex justify-end gap-3">
-                <button className="h-10 rounded border border-slate-200 px-4 text-sm font-semibold text-slate-600 hover:bg-slate-50" onClick={() => setActionTarget(null)} type="button">Cancel</button>
-                <button className="h-10 rounded bg-brand-green px-4 text-sm font-bold capitalize text-white hover:bg-brand-deep disabled:opacity-60" disabled={lifecycleMutation.isPending} type="submit">{actionTarget.action}</button>
-              </div>
-            </form>
+            <div className="max-h-[60vh] overflow-auto p-6">
+              {!auditQuery.isLoading ? <CertificateAuditTimeline items={auditQuery.data || []} /> : null}
+              {auditQuery.isLoading ? <p className="text-sm text-slate-500">Loading audit events...</p> : null}
+            </div>
+            <div className="border-t border-slate-100 px-6 py-4 text-right">
+              <button className="h-10 rounded border border-slate-200 px-4 text-sm font-semibold text-slate-600 hover:bg-slate-50" onClick={() => setAuditTarget(null)} type="button">Close</button>
+            </div>
           </div>
         </div>
       ) : null}

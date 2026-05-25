@@ -74,6 +74,7 @@ export type FederalCertificateRegistryItem = {
   expiry_date: string;
   status: string;
   effective_status: string;
+  suspicious_report_count: number;
   verification_url: string;
   created_at: string;
   updated_at: string;
@@ -125,6 +126,7 @@ export type FederalPolicyConfig = {
   payment_before_assessment_required: boolean;
   state_validation_before_certificate_required: boolean;
   public_qr_verification_enabled: boolean;
+  state_certificate_template_overrides_enabled: boolean;
   updated_by?: string | null;
   updated_by_name?: string;
   created_at: string;
@@ -147,6 +149,53 @@ export type FederalStateOverrideItem = {
 
 export async function fetchFederalCertificates(params?: Record<string, string>): Promise<FederalCertificateRegistryItem[]> {
   const response = await apiClient.get<ApiEnvelope<FederalCertificateRegistryItem[]>>("/federal/certificates/", { params });
+  return unwrap(response.data);
+}
+
+export type FederalCertificateAnalytics = {
+  cards: {
+    total: number;
+    active: number;
+    expired: number;
+    expiring_30_days: number;
+    suspended: number;
+    revoked: number;
+    flagged: number;
+    invalid_verification_attempts: number;
+  };
+  by_state: Array<{
+    state_name: string;
+    total: number;
+    active: number;
+    expired: number;
+    suspended: number;
+    revoked: number;
+  }>;
+  status_distribution: Array<{ status: string; total: number }>;
+  invalid_verification_trends: Array<{ day: string; total: number }>;
+  high_risk_facilities: Array<{
+    facility_id?: string | null;
+    facility_name: string;
+    state_name: string;
+    total: number;
+    suspended: number;
+    revoked: number;
+    flagged: number;
+  }>;
+};
+
+export async function fetchFederalCertificateAnalytics(): Promise<FederalCertificateAnalytics> {
+  const response = await apiClient.get<ApiEnvelope<FederalCertificateAnalytics>>("/federal/certificates/analytics/");
+  return unwrap(response.data);
+}
+
+export async function fetchFederalCertificate(id: string): Promise<FederalCertificateRegistryItem> {
+  const response = await apiClient.get<ApiEnvelope<FederalCertificateRegistryItem>>(`/federal/certificates/${id}/`);
+  return unwrap(response.data);
+}
+
+export async function flagFederalCertificate(id: string, reason: string, details = ""): Promise<{ status: string; report_id: string }> {
+  const response = await apiClient.post<ApiEnvelope<{ status: string; report_id: string }>>(`/federal/certificates/${id}/flag/`, { reason, details });
   return unwrap(response.data);
 }
 

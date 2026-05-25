@@ -323,7 +323,14 @@ export type StateCertificateRegistryItem = {
   status: CertificateStatus;
   effective_status: CertificateStatus;
   verification_url: string;
+  suspended_by?: string;
+  suspended_by_name?: string;
+  suspended_at?: string;
+  suspension_reason?: string;
+  replaced_by?: string;
+  replacement_reason?: string;
   revoked_by?: string;
+  revoked_by_name?: string;
   revoked_at?: string;
   revocation_reason: string;
   created_at: string;
@@ -345,7 +352,7 @@ export async function fetchStateCertificates(params?: StateCertificateFilters): 
 
 async function patchStateCertificateLifecycle(
   id: string,
-  action: "suspend" | "revoke",
+  action: "suspend" | "revoke" | "reinstate",
   reason: string
 ): Promise<StateCertificateRegistryItem> {
   const response = await apiClient.patch<ApiEnvelope<StateCertificateRegistryItem>>(
@@ -361,6 +368,39 @@ export function suspendStateCertificate(id: string, reason: string) {
 
 export function revokeStateCertificate(id: string, reason: string) {
   return patchStateCertificateLifecycle(id, "revoke", reason);
+}
+
+export function reinstateStateCertificate(id: string, reason: string) {
+  return patchStateCertificateLifecycle(id, "reinstate", reason);
+}
+
+export function replaceStateCertificate(id: string, reason: string): Promise<StateCertificateRegistryItem> {
+  return apiClient.post<ApiEnvelope<StateCertificateRegistryItem>>(`/state/certificates/${id}/replace/`, { reason }).then((response) => unwrap(response.data));
+}
+
+export type StateCertificateAuditItem = {
+  id: string;
+  action: string;
+  actor_name?: string;
+  metadata: Record<string, unknown>;
+  created_at: string;
+};
+
+export async function fetchStateCertificateAudit(id: string): Promise<StateCertificateAuditItem[]> {
+  const response = await apiClient.get<ApiEnvelope<StateCertificateAuditItem[]>>(`/state/certificates/${id}/audit/`);
+  return unwrap(response.data);
+}
+
+export async function downloadStateCertificateExport(): Promise<void> {
+  const response = await apiClient.get("/state/certificates/export/", { responseType: "blob" });
+  const url = window.URL.createObjectURL(response.data as Blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = "state-certificates.csv";
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.URL.revokeObjectURL(url);
 }
 
 export type StateEmployerMonitoringItem = {

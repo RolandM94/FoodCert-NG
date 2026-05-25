@@ -1,6 +1,8 @@
 import hashlib
 from io import BytesIO
 from pathlib import Path
+import secrets
+from typing import Optional
 from uuid import uuid4
 
 import qrcode
@@ -8,7 +10,9 @@ from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.db import transaction
 from django.utils import timezone
+from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
+from reportlab.lib.utils import ImageReader
 from reportlab.pdfgen import canvas
 from rest_framework.exceptions import PermissionDenied, ValidationError
 
@@ -22,9 +26,12 @@ from apps.certificates.models import (
     CertificateRequest,
     CertificateRequestStatus,
     CertificateStatus,
+    CertificateTemplate,
+    CertificateTemplateScope,
     VerificationResult,
 )
 from apps.food_handlers.models import FoodHandlerStatus
+from apps.illness.models import ClearanceStatus, IllnessReport
 from apps.policy.models import StatePolicyConfig
 from apps.payments.models import PaymentStatus
 from apps.reports.models import GeneratedReport, ReportType
@@ -35,6 +42,17 @@ User = get_user_model()
 
 def _absolute_media_url(path: str) -> str:
     return f"http://localhost:8000{settings.MEDIA_URL}{path}"
+
+
+def _media_path_from_url(url: str) -> Optional[Path]:
+    if not url:
+        return None
+    media_prefix = f"http://localhost:8000{settings.MEDIA_URL}"
+    if url.startswith(media_prefix):
+        return Path(settings.MEDIA_ROOT) / url.replace(media_prefix, "")
+    if url.startswith(settings.MEDIA_URL):
+        return Path(settings.MEDIA_ROOT) / url.replace(settings.MEDIA_URL, "", 1)
+    return None
 
 
 class CertificateService:
@@ -67,12 +85,22 @@ class CertificateService:
 
     @classmethod
     def validate_assessment_eligible(cls, assessment):
+        if not AssessmentService.profile_complete(assessment):
+            raise ValidationError("Food handler profile must be complete before certificate issuance.")
         if not AssessmentService.has_verified_identity(assessment):
             raise ValidationError("Food handler NIN must be verified or override-approved before certificate issuance.")
         if not assessment.payment_transaction or assessment.payment_transaction.status != PaymentStatus.SUCCESS:
             raise ValidationError("Assessment payment must be successful before certificate issuance.")
         if not assessment.facility.can_conduct_assessments:
             raise ValidationError("Certificate cannot be issued for an inactive or unapproved facility.")
+        assessment_date = timezone.localtime(assessment.created_at).date() if assessment.created_at else timezone.localdate()
+        if (
+            not assessment.facility.accreditation_start_date
+            or assessment.facility.accreditation_start_date > assessment_date
+            or not assessment.facility.accreditation_expiry_date
+            or assessment.facility.accreditation_expiry_date < assessment_date
+        ):
+            raise ValidationError("Facility accreditation must have been valid when the assessment was conducted.")
         if not assessment.doctor or assessment.doctor.organization_id != assessment.facility.organization_id:
             raise ValidationError("Assessment doctor must be authorized under the facility.")
         if assessment.declaration_status != StepStatus.VALIDATED:
@@ -85,6 +113,19 @@ class CertificateService:
             raise ValidationError("Vaccination status must be reviewed.")
         if assessment.final_decision != FitnessDecision.FIT or not assessment.signed_at:
             raise ValidationError("Only fit, doctor-signed assessments can receive certificates.")
+        if assessment.food_handler.current_status in {FoodHandlerStatus.EXCLUDED, FoodHandlerStatus.TEMPORARILY_EXCLUDED}:
+            raise ValidationError("Food handler has an unresolved exclusion and cannot receive a certificate.")
+        unresolved_illness = IllnessReport.objects.filter(
+            food_handler=assessment.food_handler,
+            clearance_required=True,
+            clearance_status__in=[
+                ClearanceStatus.PENDING,
+                ClearanceStatus.UNDER_REVIEW,
+                ClearanceStatus.CLEARANCE_REQUIRED,
+            ],
+        ).exists()
+        if unresolved_illness:
+            raise ValidationError("Food handler has an unresolved illness or return-to-work clearance block.")
 
     @classmethod
     def validate_state_submission_ready(cls, assessment):
@@ -272,6 +313,22 @@ class CertificateService:
 
     @classmethod
     @transaction.atomic
+    def approve_and_generate(cls, *, request, reviewer, notes=""):
+        certificate_request = cls.approve_request(request=request, reviewer=reviewer, notes=notes)
+        certificate = cls.issue_certificate(assessment=certificate_request.assessment, actor=reviewer)
+        log_action(
+            action=AuditAction.CERTIFICATE_EVENT,
+            actor=reviewer,
+            target=certificate,
+            metadata={
+                "event": "certificate_request_approved_and_generated",
+                "certificate_request_id": str(certificate_request.id),
+            },
+        )
+        return certificate_request, certificate
+
+    @classmethod
+    @transaction.atomic
     def reject_request(cls, *, request, reviewer, notes=""):
         cls.ensure_state_reviewer(reviewer, request)
         request.status = CertificateRequestStatus.REJECTED
@@ -293,54 +350,206 @@ class CertificateService:
 
     @classmethod
     def certificate_number(cls, state_code):
-        return f"FCN-{state_code}-{timezone.now():%Y%m%d}-{uuid4().hex[:8].upper()}"
+        today = timezone.localdate()
+        prefix = f"FCNG-{state_code}-{today:%Y}"
+        sequence = Certificate.objects.filter(certificate_number__startswith=f"{prefix}-").count() + 1
+        while True:
+            sequence_part = f"{sequence:06d}"
+            check = secrets.token_hex(1).upper()
+            number = f"{prefix}-{sequence_part}-{check}"
+            if not Certificate.objects.filter(certificate_number=number).exists():
+                return number
+            sequence += 1
 
     @classmethod
-    def signature_hash(cls, *, certificate_number, assessment_id, food_handler_id, issue_date, expiry_date):
-        payload = f"{certificate_number}:{assessment_id}:{food_handler_id}:{issue_date}:{expiry_date}:{settings.SECRET_KEY}"
+    def verification_token(cls):
+        while True:
+            token = secrets.token_urlsafe(32)
+            if not Certificate.objects.filter(verification_token=token).exists():
+                return token
+
+    @classmethod
+    def signature_hash(
+        cls,
+        *,
+        certificate_number,
+        assessment_id,
+        food_handler_id,
+        issue_date,
+        expiry_date,
+        facility_id=None,
+        issuing_state_id=None,
+        doctor_id=None,
+        verification_token="",
+    ):
+        payload = ":".join(
+            [
+                str(certificate_number),
+                str(assessment_id),
+                str(food_handler_id),
+                str(facility_id or ""),
+                str(issuing_state_id or ""),
+                str(doctor_id or ""),
+                str(issue_date),
+                str(expiry_date),
+                str(verification_token or ""),
+                settings.SECRET_KEY,
+            ]
+        )
         return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
     @classmethod
-    def build_verification_url(cls, certificate_number):
-        return f"http://localhost:3000/verify/{certificate_number}"
+    def build_verification_url(cls, verification_token):
+        return f"http://localhost:3000/verify/{verification_token}"
+
+    @classmethod
+    def active_national_policy(cls):
+        from apps.policy.models import NationalPolicyConfig
+
+        policy = NationalPolicyConfig.objects.order_by("-updated_at").first()
+        if not policy:
+            policy = NationalPolicyConfig.objects.create()
+        return policy
+
+    @classmethod
+    def default_template_for_state(cls, state):
+        policy = cls.active_national_policy()
+        if getattr(policy, "state_certificate_template_overrides_enabled", True):
+            state_template = CertificateTemplate.objects.filter(
+                scope=CertificateTemplateScope.STATE,
+                state=state,
+                is_active=True,
+                is_default=True,
+            ).first()
+            if state_template:
+                return state_template
+        national_template = CertificateTemplate.objects.filter(
+            scope=CertificateTemplateScope.NATIONAL,
+            is_active=True,
+            is_default=True,
+        ).first()
+        if national_template:
+            return national_template
+        return CertificateTemplate.objects.create(
+            name="FoodCert NG Default",
+            scope=CertificateTemplateScope.NATIONAL,
+            ministry_name="FoodCert NG",
+            is_default=True,
+            created_by=None,
+        )
 
     @classmethod
     def write_qr_code(cls, *, certificate_number, verification_url):
         relative_path = f"certificates/qr/{certificate_number}.png"
         output_path = Path(settings.MEDIA_ROOT) / relative_path
         output_path.parent.mkdir(parents=True, exist_ok=True)
-        image = qrcode.make(verification_url)
+        qr = qrcode.QRCode(version=None, error_correction=qrcode.constants.ERROR_CORRECT_M, box_size=10, border=4)
+        qr.add_data(verification_url)
+        qr.make(fit=True)
+        image = qr.make_image(fill_color="black", back_color="white")
         image.save(output_path)
         return _absolute_media_url(relative_path)
 
     @classmethod
     def write_pdf(cls, *, certificate):
+        template = certificate.template or cls.default_template_for_state(certificate.issuing_state)
         relative_path = f"certificates/pdf/{certificate.certificate_number}.pdf"
         output_path = Path(settings.MEDIA_ROOT) / relative_path
         output_path.parent.mkdir(parents=True, exist_ok=True)
         buffer = BytesIO()
         pdf = canvas.Canvas(buffer, pagesize=A4)
+        width, height = A4
         pdf.setTitle(certificate.certificate_number)
+
+        accent_color = template.accent_color if template and template.accent_color else "#0f5132"
+        pdf.setFillColor(colors.HexColor(accent_color))
+        pdf.rect(0, height - 92, width, 92, stroke=0, fill=1)
+        pdf.setFillColor(colors.white)
+        pdf.setFont("Helvetica-Bold", 20)
+        pdf.drawString(54, height - 40, template.ministry_name[:54])
+        pdf.setFont("Helvetica-Bold", 12)
+        pdf.drawString(54, height - 62, f"{certificate.issuing_state.name} State Ministry of Health")
+        pdf.setFont("Helvetica", 9)
+        pdf.drawString(54, height - 78, template.subtitle[:80])
+
+        status_label = certificate.effective_status.replace("_", " ").upper()
+        pdf.setFillColor(colors.HexColor("#dff5e7") if certificate.effective_status == CertificateStatus.ACTIVE else colors.HexColor("#fee2e2"))
+        pdf.roundRect(width - 180, height - 64, 126, 30, 5, stroke=0, fill=1)
+        pdf.setFillColor(colors.HexColor("#0f5132") if certificate.effective_status == CertificateStatus.ACTIVE else colors.HexColor("#991b1b"))
+        pdf.setFont("Helvetica-Bold", 10)
+        pdf.drawCentredString(width - 117, height - 45, status_label)
+
+        pdf.setStrokeColor(colors.HexColor(accent_color))
+        pdf.setLineWidth(1.4)
+        pdf.rect(36, 42, width - 72, height - 126, stroke=1, fill=0)
+
+        pdf.setFillColor(colors.HexColor("#111827"))
         pdf.setFont("Helvetica-Bold", 18)
-        pdf.drawString(72, 780, "FoodCert NG Medical Fitness Certificate")
-        pdf.setFont("Helvetica", 11)
-        lines = [
-            ("Certificate Number", certificate.certificate_number),
-            ("Food Handler", certificate.food_handler.full_name),
+        pdf.drawCentredString(width / 2, height - 136, "Certificate of Fitness to Handle Food")
+        pdf.setFont("Helvetica", 10)
+        pdf.drawCentredString(width / 2, height - 154, "Issued after State validation of a completed medical assessment")
+
+        qr_path = _media_path_from_url(certificate.qr_code_url)
+        if qr_path and qr_path.exists():
+            pdf.drawImage(ImageReader(str(qr_path)), width - 184, height - 312, width=112, height=112, preserveAspectRatio=True, mask="auto")
+        pdf.setFont("Helvetica-Bold", 8)
+        pdf.setFillColor(colors.HexColor("#475569"))
+        pdf.drawCentredString(width - 128, height - 324, "Scan to verify")
+
+        photo = getattr(certificate.food_handler, "passport_photo", None)
+        if photo and getattr(photo, "path", ""):
+            photo_path = Path(photo.path)
+            if photo_path.exists():
+                pdf.drawImage(ImageReader(str(photo_path)), 72, height - 312, width=96, height=112, preserveAspectRatio=True, mask="auto")
+        pdf.setStrokeColor(colors.HexColor("#cbd5e1"))
+        pdf.rect(72, height - 312, 96, 112, stroke=1, fill=0)
+
+        doctor_name = certificate.doctor.get_full_name() or certificate.doctor.email
+        doctor_registration = getattr(certificate.doctor, "professional_registration_number", "") or "Not provided"
+        branch_name = certificate.business_branch.name if certificate.business_branch_id else "Not linked"
+        employer_name = certificate.employer.business_name if certificate.employer_id else "Not linked"
+        assessment_date = timezone.localtime(certificate.assessment.created_at).date()
+        hash_preview = f"{certificate.digital_signature_hash[:16]}..."
+        details = [
+            ("Certificate number", certificate.certificate_number),
+            ("Food handler", certificate.food_handler.full_name),
             ("Masked NIN", certificate.food_handler.masked_nin),
-            ("Facility", certificate.facility.facility_name),
-            ("Doctor", certificate.doctor.get_full_name() or certificate.doctor.email),
-            ("Issuing State", certificate.issuing_state.name),
-            ("Issue Date", str(certificate.issue_date)),
-            ("Expiry Date", str(certificate.expiry_date)),
-            ("Fitness Status", certificate.assessment.final_decision),
+            ("Food handler ID", certificate.food_handler.system_identifier),
+            ("Employer", employer_name),
+            ("Business branch", branch_name),
+            ("Medical facility", certificate.facility.facility_name),
+            ("Doctor", doctor_name),
+            ("Doctor registration", doctor_registration),
+            ("Assessment date", str(assessment_date)),
+            ("Issue date", str(certificate.issue_date)),
+            ("Expiry date", str(certificate.expiry_date)),
+            ("Fitness status", str(certificate.assessment.final_decision).replace("_", " ").title()),
             ("Verification URL", certificate.verification_url),
-            ("Digital Hash", certificate.digital_signature_hash),
+            ("Digital signature", hash_preview),
         ]
-        y = 740
-        for label, value in lines:
-            pdf.drawString(72, y, f"{label}: {value}")
-            y -= 24
+
+        y = height - 210
+        x_label = 192
+        x_value = 322
+        for label, value in details:
+            pdf.setFillColor(colors.HexColor("#64748b"))
+            pdf.setFont("Helvetica-Bold", 8.5)
+            pdf.drawString(x_label, y, label.upper())
+            pdf.setFillColor(colors.HexColor("#0f172a"))
+            pdf.setFont("Helvetica", 10)
+            pdf.drawString(x_value, y, str(value or "Not provided")[:72])
+            y -= 22
+
+        pdf.setFillColor(colors.HexColor("#0f172a"))
+        pdf.setFont("Helvetica-Bold", 11)
+        pdf.drawString(72, 126, template.signatory_title or "Authorized Issuing Authority")
+        pdf.setFont("Helvetica", 10)
+        pdf.drawString(72, 108, template.signatory_name or f"{certificate.issuing_state.name} State Ministry of Health")
+        pdf.line(72, 96, 260, 96)
+        pdf.setFont("Helvetica", 8)
+        pdf.setFillColor(colors.HexColor("#64748b"))
+        pdf.drawString(72, 78, (template.footer_note or "This certificate confirms fitness status only.")[:118])
+        pdf.drawString(72, 64, "Verify authenticity using the QR code or public verification URL.")
         pdf.showPage()
         pdf.save()
         output_path.write_bytes(buffer.getvalue())
@@ -351,6 +560,8 @@ class CertificateService:
     def issue_certificate(cls, *, assessment, actor=None):
         cls.validate_assessment_eligible(assessment)
         policy = cls.policy_for_state(assessment.facility.state)
+        if not policy.certificate_validity_months or policy.certificate_validity_months <= 0:
+            raise ValidationError("Certificate validity policy is missing or invalid.")
         request = getattr(assessment, "certificate_request", None)
         if policy.requires_state_certificate_validation:
             if not request or request.status != CertificateRequestStatus.APPROVED:
@@ -364,30 +575,41 @@ class CertificateService:
         issue_date = timezone.localdate()
         expiry_date = issue_date + timezone.timedelta(days=30 * policy.certificate_validity_months)
         number = cls.certificate_number(assessment.facility.state.code)
-        verification_url = cls.build_verification_url(number)
+        token = cls.verification_token()
+        verification_url = cls.build_verification_url(token)
         signature = cls.signature_hash(
             certificate_number=number,
             assessment_id=assessment.id,
             food_handler_id=assessment.food_handler_id,
             issue_date=issue_date,
             expiry_date=expiry_date,
+            facility_id=assessment.facility_id,
+            issuing_state_id=assessment.facility.state_id,
+            doctor_id=assessment.doctor_id,
+            verification_token=token,
         )
         certificate = Certificate.objects.create(
             certificate_number=number,
+            public_id=uuid4(),
+            verification_token=token,
             food_handler=assessment.food_handler,
             assessment=assessment,
             employer=assessment.employer,
+            business_branch=assessment.food_handler.business_branch,
             facility=assessment.facility,
             doctor=assessment.doctor,
             issuing_state=assessment.facility.state,
             issued_by_state_user=issued_by,
+            template=cls.default_template_for_state(assessment.facility.state),
             issue_date=issue_date,
             expiry_date=expiry_date,
             verification_url=verification_url,
             digital_signature_hash=signature,
         )
         certificate.qr_code_url = cls.write_qr_code(certificate_number=number, verification_url=verification_url)
+        log_action(action=AuditAction.CERTIFICATE_EVENT, actor=actor or issued_by, target=certificate, metadata={"event": "certificate_qr_generated"})
         certificate.pdf_url = cls.write_pdf(certificate=certificate)
+        log_action(action=AuditAction.CERTIFICATE_EVENT, actor=actor or issued_by, target=certificate, metadata={"event": "certificate_pdf_generated", "template_id": str(certificate.template_id) if certificate.template_id else ""})
         certificate.save(update_fields=["qr_code_url", "pdf_url", "updated_at"])
         assessment.status = AssessmentStatus.CERTIFICATE_ISSUED
         assessment.save(update_fields=["status", "updated_at"])
@@ -411,11 +633,35 @@ class CertificateService:
     @transaction.atomic
     def suspend(cls, *, certificate, actor, reason=""):
         certificate.status = CertificateStatus.SUSPENDED
-        certificate.revoked_by = actor
-        certificate.revoked_at = timezone.now()
-        certificate.revocation_reason = reason
-        certificate.save(update_fields=["status", "revoked_by", "revoked_at", "revocation_reason", "updated_at"])
+        certificate.suspended_by = actor
+        certificate.suspended_at = timezone.now()
+        certificate.suspension_reason = reason
+        certificate.save(update_fields=["status", "suspended_by", "suspended_at", "suspension_reason", "updated_at"])
         log_action(action=AuditAction.CERTIFICATE_EVENT, actor=actor, target=certificate, metadata={"event": "certificate_suspended"})
+        return certificate
+
+    @classmethod
+    @transaction.atomic
+    def reinstate(cls, *, certificate, actor, reason=""):
+        if certificate.status != CertificateStatus.SUSPENDED:
+            raise ValidationError("Only suspended certificates can be reinstated.")
+        certificate.status = CertificateStatus.ACTIVE
+        certificate.suspended_by = None
+        certificate.suspended_at = None
+        certificate.suspension_reason = ""
+        certificate.save(update_fields=["status", "suspended_by", "suspended_at", "suspension_reason", "updated_at"])
+        log_action(action=AuditAction.CERTIFICATE_EVENT, actor=actor, target=certificate, metadata={"event": "certificate_reinstated", "reason": reason})
+        return certificate
+
+    @classmethod
+    @transaction.atomic
+    def replace(cls, *, certificate, actor, reason=""):
+        if certificate.status == CertificateStatus.REVOKED:
+            raise ValidationError("Revoked certificates cannot be replaced.")
+        certificate.status = CertificateStatus.REPLACED
+        certificate.replacement_reason = reason
+        certificate.save(update_fields=["status", "replacement_reason", "updated_at"])
+        log_action(action=AuditAction.CERTIFICATE_EVENT, actor=actor, target=certificate, metadata={"event": "certificate_marked_replaced", "reason": reason})
         return certificate
 
     @classmethod
@@ -426,15 +672,113 @@ class CertificateService:
             food_handler_id=certificate.food_handler_id,
             issue_date=certificate.issue_date,
             expiry_date=certificate.expiry_date,
+            facility_id=certificate.facility_id,
+            issuing_state_id=certificate.issuing_state_id,
+            doctor_id=certificate.doctor_id,
+            verification_token=certificate.verification_token,
         )
         if expected_hash != certificate.digital_signature_hash:
+            log_action(
+                action=AuditAction.SECURITY_EVENT,
+                target=certificate,
+                metadata={"event": "certificate_hash_mismatch", "certificate_number": certificate.certificate_number},
+            )
             return VerificationResult.INVALID
         if certificate.status == CertificateStatus.REVOKED:
             return VerificationResult.REVOKED
         if certificate.status == CertificateStatus.SUSPENDED:
             return VerificationResult.SUSPENDED
+        if certificate.status == CertificateStatus.REPLACED:
+            return VerificationResult.REPLACED
         if certificate.status != CertificateStatus.ACTIVE:
             return VerificationResult.INVALID
         if certificate.is_expired:
             return VerificationResult.EXPIRED
         return VerificationResult.VALID
+
+
+class CertificateLifecycleJobService:
+    @classmethod
+    def process_expiry_and_reminders(cls, *, actor=None, today=None):
+        today = today or timezone.localdate()
+        expired = cls.mark_expired(actor=actor, today=today)
+        reminders = cls.send_expiry_reminders(today=today)
+        return {"expired_marked": expired, "reminders_sent": reminders}
+
+    @classmethod
+    def mark_expired(cls, *, actor=None, today=None):
+        today = today or timezone.localdate()
+        queryset = Certificate.objects.filter(status=CertificateStatus.ACTIVE, expiry_date__lt=today)
+        count = 0
+        for certificate in queryset:
+            certificate.status = CertificateStatus.EXPIRED
+            certificate.save(update_fields=["status", "updated_at"])
+            count += 1
+            log_action(
+                action=AuditAction.CERTIFICATE_EVENT,
+                actor=actor,
+                target=certificate,
+                metadata={"event": "certificate_marked_expired", "expiry_date": certificate.expiry_date.isoformat()},
+            )
+            cls._notify_certificate_people(
+                certificate=certificate,
+                subject="Certificate expired",
+                body="A FoodCert NG certificate has expired and is no longer valid for food handling.",
+                reminder_key="expired",
+            )
+        return count
+
+    @classmethod
+    def send_expiry_reminders(cls, *, today=None, reminder_days=(30, 7)):
+        today = today or timezone.localdate()
+        sent = 0
+        for days in reminder_days:
+            target_date = today + timezone.timedelta(days=days)
+            certificates = Certificate.objects.select_related("food_handler", "food_handler__user", "employer").filter(
+                status=CertificateStatus.ACTIVE,
+                expiry_date=target_date,
+            )
+            for certificate in certificates:
+                sent += cls._notify_certificate_people(
+                    certificate=certificate,
+                    subject=f"Certificate expires in {days} days",
+                    body=f"FoodCert NG certificate {certificate.certificate_number} expires in {days} days.",
+                    reminder_key=f"expiry_{days}",
+                    days=days,
+                )
+        return sent
+
+    @classmethod
+    def _notify_certificate_people(cls, *, certificate, subject, body, reminder_key, days=None):
+        recipients = []
+        if certificate.food_handler.user_id:
+            recipients.append(certificate.food_handler.user)
+        if certificate.employer_id and getattr(certificate.employer, "user_id", None):
+            recipients.append(certificate.employer.user)
+        sent = 0
+        for recipient in recipients:
+            context = {
+                "certificate_id": str(certificate.id),
+                "certificate_number": certificate.certificate_number,
+                "reminder_key": reminder_key,
+            }
+            if days is not None:
+                context["days_until_expiry"] = days
+            exists = Notification.objects.filter(
+                recipient=recipient,
+                notification_type=NotificationType.CERTIFICATE_EXPIRY_REMINDER,
+                context_data__certificate_id=str(certificate.id),
+                context_data__reminder_key=reminder_key,
+            ).exists()
+            if exists:
+                continue
+            Notification.objects.create(
+                recipient=recipient,
+                notification_type=NotificationType.CERTIFICATE_EXPIRY_REMINDER,
+                channel=NotificationChannel.IN_APP,
+                subject=subject,
+                body=body,
+                context_data=context,
+            )
+            sent += 1
+        return sent

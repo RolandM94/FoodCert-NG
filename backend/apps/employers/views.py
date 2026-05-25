@@ -1,6 +1,8 @@
 from datetime import date, timedelta
 
 from django.contrib.auth import get_user_model
+from django.conf import settings
+from django.http import FileResponse
 from django.utils import timezone
 from drf_spectacular.utils import extend_schema
 from rest_framework import status, viewsets
@@ -44,6 +46,7 @@ from apps.payments.services import PaymentService
 from apps.reports.models import ReportType
 from apps.reports.serializers import GeneratedReportSerializer
 from apps.reports.services import EmployerReportService
+from apps.notifications.models import Notification, NotificationChannel, NotificationType
 from apps.subscriptions.serializers import (
     EmployerSubscriptionChangePlanSerializer,
     EmployerSubscriptionCheckoutSerializer,
@@ -264,11 +267,8 @@ class EmployerViewSet(viewsets.ModelViewSet):
     def certificates(self, request, pk=None):
         employer = self.get_object()
         self._ensure_can_view_employer_health_data(employer, request.user)
-        queryset = Certificate.objects.select_related(
-            "food_handler", "facility", "issuing_state"
-        ).filter(
-            food_handler__employer=employer
-        ).order_by("-issue_date")
+        queryset = self._employer_certificate_queryset(employer, request.user).order_by("-issue_date")
+        today = timezone.localdate()
 
         branch = request.query_params.get("branch")
         if branch:
@@ -276,10 +276,22 @@ class EmployerViewSet(viewsets.ModelViewSet):
 
         status_filter = request.query_params.get("status")
         if status_filter:
-            queryset = queryset.filter(status=status_filter)
+            if status_filter == "expired":
+                queryset = queryset.filter(status=CertificateStatus.ACTIVE, expiry_date__lt=today)
+            else:
+                queryset = queryset.filter(status=status_filter)
 
-        today = timezone.localdate()
-        all_certs = Certificate.objects.filter(food_handler__employer=employer)
+        expiry_window = request.query_params.get("expiry_window")
+        if expiry_window == "expired":
+            queryset = queryset.filter(expiry_date__lt=today)
+        elif expiry_window:
+            try:
+                days = int(expiry_window)
+                queryset = queryset.filter(expiry_date__gte=today, expiry_date__lte=today + timezone.timedelta(days=days))
+            except ValueError:
+                raise ValidationError("Expiry window must be a number of days or 'expired'.")
+
+        all_certs = self._employer_certificate_queryset(employer, request.user)
         if branch:
             all_certs = all_certs.filter(food_handler__business_branch_id=branch)
 
@@ -305,11 +317,81 @@ class EmployerViewSet(viewsets.ModelViewSet):
                     "issue_date": c.issue_date.isoformat(),
                     "expiry_date": c.expiry_date.isoformat(),
                     "status": c.status,
+                    "effective_status": c.effective_status,
+                    "verification_url": c.verification_url,
+                    "can_download": bool(c.pdf_url),
                 }
                 for c in queryset[:200]
             ],
         }
         return Response(data)
+
+    def _employer_certificate_queryset(self, employer, user):
+        queryset = Certificate.objects.select_related(
+            "food_handler",
+            "food_handler__business_branch",
+            "facility",
+            "issuing_state",
+        ).filter(food_handler__employer=employer)
+        if user.unit_restricted and user.unit_id:
+            queryset = queryset.filter(food_handler__business_branch_id=user.unit_id)
+        return queryset
+
+    def _get_employer_certificate(self, employer, user, certificate_id):
+        certificate = self._employer_certificate_queryset(employer, user).filter(id=certificate_id).first()
+        if not certificate:
+            raise ValidationError("Certificate not found under this employer.")
+        return certificate
+
+    @action(detail=True, methods=["get"], url_path=r"certificates/(?P<certificate_id>[^/.]+)")
+    def certificate_detail(self, request, pk=None, certificate_id=None):
+        employer = self.get_object()
+        self._ensure_can_view_employer_health_data(employer, request.user)
+        c = self._get_employer_certificate(employer, request.user, certificate_id)
+        return Response({
+            "id": str(c.id),
+            "certificate_number": c.certificate_number,
+            "food_handler_name": c.food_handler.full_name,
+            "branch_name": c.food_handler.business_branch.name if c.food_handler.business_branch else None,
+            "facility_name": c.facility.facility_name,
+            "issuing_state_name": c.issuing_state.name,
+            "issue_date": c.issue_date.isoformat(),
+            "expiry_date": c.expiry_date.isoformat(),
+            "status": c.status,
+            "effective_status": c.effective_status,
+            "verification_url": c.verification_url,
+            "can_download": bool(c.pdf_url),
+        })
+
+    @action(detail=True, methods=["get"], url_path=r"certificates/(?P<certificate_id>[^/.]+)/download")
+    def certificate_download(self, request, pk=None, certificate_id=None):
+        employer = self.get_object()
+        self._ensure_can_view_employer_health_data(employer, request.user)
+        certificate = self._get_employer_certificate(employer, request.user, certificate_id)
+        if not certificate.pdf_url:
+            raise ValidationError("Certificate PDF is not available.")
+        media_prefix = "http://localhost:8000/media/"
+        relative_path = certificate.pdf_url.replace(media_prefix, "")
+        file_path = str(settings.MEDIA_ROOT / relative_path)
+        log_action(action=AuditAction.CERTIFICATE_EVENT, actor=request.user, target=certificate, metadata={"event": "employer_certificate_download"})
+        return FileResponse(open(file_path, "rb"), as_attachment=True, filename=f"{certificate.certificate_number}.pdf")
+
+    @action(detail=True, methods=["post"], url_path=r"certificates/(?P<certificate_id>[^/.]+)/send-renewal-reminder")
+    def certificate_renewal_reminder(self, request, pk=None, certificate_id=None):
+        employer = self.get_object()
+        self._ensure_can_view_employer_health_data(employer, request.user)
+        certificate = self._get_employer_certificate(employer, request.user, certificate_id)
+        if certificate.food_handler.user_id:
+            Notification.objects.create(
+                recipient=certificate.food_handler.user,
+                notification_type=NotificationType.CERTIFICATE_RENEWAL,
+                channel=NotificationChannel.IN_APP,
+                subject="Certificate renewal reminder",
+                body=f"{employer.business_name} sent a reminder to renew your FoodCert NG certificate.",
+                context_data={"certificate_id": str(certificate.id), "certificate_number": certificate.certificate_number},
+            )
+        log_action(action=AuditAction.CERTIFICATE_EVENT, actor=request.user, target=certificate, metadata={"event": "employer_certificate_renewal_reminder_sent"})
+        return Response({"status": "sent", "certificate_id": str(certificate.id)})
 
     @action(detail=True, methods=["get"], url_path="vaccinations")
     def vaccinations(self, request, pk=None):

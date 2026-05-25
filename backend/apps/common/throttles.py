@@ -7,3 +7,7 @@ class LoginRateThrottle(ScopedRateThrottle):
 
 class PublicVerificationRateThrottle(ScopedRateThrottle):
     scope = "public_verification"
+
+
+class SuspiciousReportRateThrottle(ScopedRateThrottle):
+    scope = "suspicious_report"

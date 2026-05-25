@@ -39,12 +39,15 @@ export type CertificateRequest = {
 export type Certificate = {
   id: string;
   certificate_number: string;
+  public_id?: string;
+  verification_token?: string;
   food_handler: string;
   food_handler_name?: string;
   masked_nin?: string;
   assessment: string;
   employer?: string;
   employer_name?: string;
+  business_branch?: string;
   facility: string;
   facility_name?: string;
   doctor: string;
@@ -60,15 +63,21 @@ export type Certificate = {
   verification_url: string;
   pdf_url: string;
   digital_signature_hash: string;
+  replaced_by?: string;
+  replacement_reason?: string;
+  suspended_by?: string;
+  suspended_at?: string;
+  suspension_reason?: string;
   revoked_by?: string;
   revoked_at?: string;
   revocation_reason: string;
+  renewal_status?: "not_started" | "renewal_due" | "assessment_pending" | "awaiting_state_validation" | "new_certificate_issued" | "renewal_overdue";
   created_at: string;
   updated_at: string;
 };
 
 export type PublicCertificateVerification = {
-  certificate_validity: "valid" | "expired" | "revoked" | "suspended" | "invalid" | "not_found";
+  certificate_validity: "valid" | "expired" | "revoked" | "suspended" | "replaced" | "invalid" | "not_found";
   certificate_number: string;
   food_handler_name?: string;
   passport_photo?: string;

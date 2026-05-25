@@ -13,6 +13,7 @@ from apps.illness.models import ClearanceStatus, IllnessReport, SuspectedConditi
 from apps.illness.services import IllnessService
 from apps.inspections.models import Inspection, InspectionResponseType, InspectionStatus
 from apps.locations.models import State, LGA
+from apps.notifications.models import Notification, NotificationType
 from apps.organizations.models import Organization, OrganizationType, OrganizationUnit, OrganizationUnitType
 from apps.food_handlers.models import FoodHandlerProfile, FoodHandlerCategory, FoodHandlerStatus, Gender
 from apps.payments.models import PaymentStatus, PaymentTransaction
@@ -794,6 +795,16 @@ class EmployerE11PermissionTests(EmployerE11Base):
         self.assertEqual(response.status_code, 200)
         self.assertEqual({row["full_name"] for row in data(response)}, {"Ada Handler", "Bola Handler"})
 
+    def test_branch_manager_certificate_endpoint_is_branch_scoped(self):
+        self.client.force_authenticate(self.branch_manager)
+        response = self.client.get(f"/api/employers/{self.employer.id}/certificates/")
+
+        self.assertEqual(response.status_code, 200)
+        payload = data(response)
+        self.assertEqual(payload["metrics"]["total"], 1)
+        self.assertEqual(len(payload["certificates"]), 1)
+        self.assertEqual(payload["certificates"][0]["food_handler_name"], "Ada Handler")
+
     def test_food_handler_list_supports_operational_filters(self):
         self.client.force_authenticate(self.owner)
 
@@ -847,6 +858,24 @@ class EmployerE11PrivacyTests(EmployerE11Base):
 
         self.assertEqual(response.status_code, 200)
         self.assert_private_terms_absent(data(response))
+
+    def test_certificate_detail_does_not_leak_medical_data(self):
+        self.client.force_authenticate(self.owner)
+        response = self.client.get(f"/api/employers/{self.employer.id}/certificates/{self.certificate.id}/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assert_private_terms_absent(data(response))
+        self.assertNotIn("digital_signature_hash", data(response))
+
+    def test_employer_can_send_certificate_renewal_reminder(self):
+        self.client.force_authenticate(self.owner)
+        response = self.client.post(f"/api/employers/{self.employer.id}/certificates/{self.certificate.id}/send-renewal-reminder/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(Notification.objects.filter(
+            recipient=self.handler.user,
+            notification_type=NotificationType.CERTIFICATE_RENEWAL,
+        ).exists())
 
     def test_vaccination_endpoint_does_not_leak_clinical_notes(self):
         self.client.force_authenticate(self.owner)

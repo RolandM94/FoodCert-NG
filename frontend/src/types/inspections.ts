@@ -83,3 +83,17 @@ export type InspectionCertificateScan = {
   created_at: string;
   updated_at: string;
 };
+
+export type InspectorCertificateVerification = {
+  id?: string;
+  certificate_number: string;
+  certificate_validity: "valid" | "expired" | "revoked" | "suspended" | "invalid" | "not_found" | "replaced";
+  verification_result?: string;
+  food_handler_name?: string;
+  passport_photo?: string;
+  issuing_state_ministry?: string;
+  approved_medical_facility?: string;
+  issue_date?: string;
+  expiry_date?: string;
+  fitness_status?: string;
+};
