@@ -9,7 +9,7 @@ from apps.certificates.services import CertificateService
 from apps.employers.models import Employer, EstablishmentCategory
 from apps.facilities.models import AccreditationStatus, FacilityType, MedicalFacility, OwnershipType
 from apps.food_handlers.models import FoodHandlerCategory, FoodHandlerProfile, Gender
-from apps.inspections.models import EnforcementAction, Inspection, InspectionResponse, InspectionResponseType, InspectionStatus
+from apps.inspections.models import EnforcementAction, Inspection, InspectionChecklistItem, InspectionResponse, InspectionResponseType, InspectionStatus, ChecklistCategory, ChecklistSeverity
 from apps.locations.models import State
 from apps.nin_verification.models import NINVerification, NINVerificationStatus
 from apps.notifications.models import Notification, NotificationType
@@ -355,3 +355,273 @@ class InspectionWorkflowTests(APITestCase):
             format="json",
         )
         self.assertEqual(response.status_code, 400)
+
+    def test_inspector_lifecycle_accept_start_submit(self):
+        inspection = Inspection.objects.create(inspector=self.inspector, employer=self.employer, status=InspectionStatus.ASSIGNED)
+        self.client.force_authenticate(self.inspector)
+
+        accept_resp = self.client.post(f"/api/inspections/{inspection.id}/accept/")
+        self.assertEqual(accept_resp.status_code, 200)
+        self.assertEqual(data(accept_resp)["status"], InspectionStatus.ACCEPTED)
+
+        start_resp = self.client.post(f"/api/inspections/{inspection.id}/start/")
+        self.assertEqual(start_resp.status_code, 200)
+        self.assertEqual(data(start_resp)["status"], InspectionStatus.IN_PROGRESS)
+
+        inspection.checklist_responses = {"item_a": True}
+        inspection.save()
+        submit_resp = self.client.patch(f"/api/inspections/{inspection.id}/submit/")
+        self.assertEqual(submit_resp.status_code, 200)
+        self.assertEqual(data(submit_resp)["status"], InspectionStatus.SUBMITTED)
+
+    def test_reschedule_request_from_assigned(self):
+        inspection = Inspection.objects.create(inspector=self.inspector, employer=self.employer, status=InspectionStatus.ASSIGNED)
+        self.client.force_authenticate(self.inspector)
+        resp = self.client.post(f"/api/inspections/{inspection.id}/reschedule-request/", {"reason": "Scheduling conflict"}, format="json")
+        self.assertEqual(resp.status_code, 200)
+        inspection.refresh_from_db()
+        self.assertEqual(inspection.status, InspectionStatus.ASSIGNED)
+
+    def test_reschedule_request_from_accepted(self):
+        inspection = Inspection.objects.create(inspector=self.inspector, employer=self.employer, status=InspectionStatus.ACCEPTED)
+        self.client.force_authenticate(self.inspector)
+        resp = self.client.post(f"/api/inspections/{inspection.id}/reschedule-request/", {"reason": "Need to reschedule"}, format="json")
+        self.assertEqual(resp.status_code, 200)
+        inspection.refresh_from_db()
+        self.assertEqual(inspection.status, InspectionStatus.ASSIGNED)
+
+    def test_cancel_inspection(self):
+        inspection = Inspection.objects.create(inspector=self.inspector, employer=self.employer, status=InspectionStatus.ASSIGNED)
+        self.client.force_authenticate(self.state_admin)
+        resp = self.client.post(f"/api/inspections/{inspection.id}/cancel/", {"reason": "No longer needed"}, format="json")
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(data(resp)["status"], InspectionStatus.CANCELLED)
+
+    def test_return_for_correction(self):
+        inspection = Inspection.objects.create(inspector=self.inspector, employer=self.employer, status=InspectionStatus.SUBMITTED)
+        self.client.force_authenticate(self.state_admin)
+        resp = self.client.post(f"/api/inspections/{inspection.id}/return-for-correction/")
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(data(resp)["status"], InspectionStatus.RETURNED_FOR_CORRECTION)
+
+    def test_checklist_responses_upsert(self):
+        item = InspectionChecklistItem.objects.create(
+            category=ChecklistCategory.HYGIENE,
+            question="Are handwashing stations available?",
+            severity_if_failed=ChecklistSeverity.MINOR,
+            sort_order=1,
+        )
+        inspection = Inspection.objects.create(inspector=self.inspector, employer=self.employer)
+        self.client.force_authenticate(self.inspector)
+
+        resp = self.client.post(
+            f"/api/inspections/{inspection.id}/checklist-responses/",
+            {"checklist_item": str(item.id), "response": "yes", "note": "All good"},
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 201)
+        self.assertEqual(data(resp)["response"], "yes")
+
+        list_resp = self.client.get(f"/api/inspections/{inspection.id}/checklist-responses/")
+        self.assertEqual(list_resp.status_code, 200)
+        self.assertEqual(len(data(list_resp)), 1)
+
+    def test_findings_create_and_list(self):
+        inspection = Inspection.objects.create(inspector=self.inspector, employer=self.employer)
+        self.client.force_authenticate(self.inspector)
+
+        resp = self.client.post(
+            f"/api/inspections/{inspection.id}/findings/",
+            {"category": "hygiene", "finding_type": "minor_non_compliance", "severity": "minor", "description": "Missing soap"},
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 201)
+        self.assertEqual(data(resp)["category"], "hygiene")
+
+        list_resp = self.client.get(f"/api/inspections/{inspection.id}/findings/")
+        self.assertEqual(list_resp.status_code, 200)
+        self.assertEqual(len(data(list_resp)), 1)
+
+    def test_evidence_upload_list_delete(self):
+        inspection = Inspection.objects.create(inspector=self.inspector, employer=self.employer)
+        self.client.force_authenticate(self.inspector)
+
+        upload = self.client.post(
+            f"/api/inspections/{inspection.id}/evidence-upload/",
+            {"evidence_type": "photo", "file_url": "https://img.example.com/1.jpg", "caption": "Kitchen photo"},
+            format="json",
+        )
+        self.assertEqual(upload.status_code, 201)
+        ev_id = data(upload)["id"]
+
+        list_resp = self.client.get(f"/api/inspections/{inspection.id}/evidence-entries/")
+        self.assertEqual(len(data(list_resp)), 1)
+
+        del_resp = self.client.delete(f"/api/inspections/{inspection.id}/evidence-entries/{ev_id}/")
+        self.assertEqual(del_resp.status_code, 204)
+
+    def test_employer_context_and_compliance_summary(self):
+        inspection = Inspection.objects.create(inspector=self.inspector, employer=self.employer, status=InspectionStatus.IN_PROGRESS)
+        self.client.force_authenticate(self.inspector)
+
+        ctx_resp = self.client.get(f"/api/inspections/{inspection.id}/employer-context/")
+        self.assertEqual(ctx_resp.status_code, 200)
+        self.assertEqual(data(ctx_resp)["employer"]["name"], "Clean Foods")
+
+        summary_resp = self.client.get(f"/api/inspections/{inspection.id}/compliance-summary/")
+        self.assertEqual(summary_resp.status_code, 200)
+        self.assertIn("total_food_handlers", data(summary_resp))
+
+    def test_food_handlers_list_for_inspection(self):
+        inspection = Inspection.objects.create(inspector=self.inspector, employer=self.employer, status=InspectionStatus.IN_PROGRESS)
+        self.client.force_authenticate(self.inspector)
+
+        resp = self.client.get(f"/api/inspections/{inspection.id}/food-handlers/")
+        self.assertEqual(resp.status_code, 200)
+        self.assertIsInstance(data(resp), list)
+
+    def test_enforcement_notice_create_and_workflow(self):
+        inspection = Inspection.objects.create(inspector=self.inspector, employer=self.employer, status=InspectionStatus.SUBMITTED)
+        self.client.force_authenticate(self.state_admin)
+
+        create = self.client.post(
+            "/api/enforcement-notices/",
+            {
+                "inspection": str(inspection.id),
+                "employer": str(self.employer.id),
+                "notice_type": "compliance",
+                "description": "Compliance required for hygiene standards.",
+                "required_corrective_actions": "Fix handwashing station within 7 days.",
+                "deadline": str(timezone.now().date() + timezone.timedelta(days=7)),
+            },
+            format="json",
+        )
+        self.assertEqual(create.status_code, 201)
+        notice_id = data(create)["id"]
+        self.assertEqual(data(create)["status"], "draft")
+
+        submit = self.client.post(f"/api/enforcement-notices/{notice_id}/submit-for-approval/")
+        self.assertEqual(submit.status_code, 200)
+        self.assertEqual(data(submit)["status"], "pending_approval")
+
+        approve = self.client.post(f"/api/enforcement-notices/{notice_id}/approve/")
+        self.assertEqual(approve.status_code, 200)
+        self.assertEqual(data(approve)["status"], "issued")
+
+        self.client.force_authenticate(self.employer_user)
+        ack = self.client.post(f"/api/enforcement-notices/{notice_id}/acknowledge/")
+        self.assertEqual(ack.status_code, 200)
+
+    def test_corrective_action_submission_and_review(self):
+        inspection = Inspection.objects.create(inspector=self.inspector, employer=self.employer, status=InspectionStatus.SUBMITTED)
+        self.client.force_authenticate(self.state_admin)
+        create = self.client.post(
+            "/api/enforcement-notices/",
+            {
+                "inspection": str(inspection.id),
+                "employer": str(self.employer.id),
+                "notice_type": "compliance",
+                "description": "Fix issues.",
+                "required_corrective_actions": "Install handwashing station.",
+                "deadline": str(timezone.now().date() + timezone.timedelta(days=7)),
+            },
+            format="json",
+        )
+        notice_id = data(create)["id"]
+        self.client.post(f"/api/enforcement-notices/{notice_id}/submit-for-approval/")
+        self.client.post(f"/api/enforcement-notices/{notice_id}/approve/")
+
+        self.client.force_authenticate(self.employer_user)
+        action = self.client.post(
+            f"/api/enforcement-notices/{notice_id}/corrective-actions/",
+            {"response_note": "We have fixed the issue.", "action_taken": "Installed new handwashing station."},
+            format="json",
+        )
+        self.assertEqual(action.status_code, 201)
+        resp_id = data(action)["id"]
+
+        self.client.force_authenticate(self.state_admin)
+        review = self.client.post(
+            f"/api/enforcement-notices/{notice_id}/corrective-actions/{resp_id}/review/",
+            {"action": "accept", "review_note": "Verified compliance."},
+            format="json",
+        )
+        self.assertEqual(review.status_code, 200)
+        self.assertEqual(data(review)["status"], "accepted")
+
+    def test_enforcement_case_create_escalate_close(self):
+        inspection = Inspection.objects.create(inspector=self.inspector, employer=self.employer, status=InspectionStatus.SUBMITTED)
+        self.client.force_authenticate(self.state_admin)
+
+        create = self.client.post(
+            "/api/enforcement-cases/",
+            {"employer": str(self.employer.id), "state": str(self.state.id), "severity": "high", "summary": "Repeated violations."},
+            format="json",
+        )
+        self.assertEqual(create.status_code, 201)
+        case_id = data(create)["id"]
+
+        escalation = self.client.post(f"/api/enforcement-cases/{case_id}/escalate/", {"reason": "Critical risk"}, format="json")
+        self.assertEqual(escalation.status_code, 200)
+        self.assertEqual(data(escalation)["status"], "escalated")
+
+        close = self.client.post(f"/api/enforcement-cases/{case_id}/close/", {"closure_note": "Resolved"}, format="json")
+        self.assertEqual(close.status_code, 200)
+        self.assertEqual(data(close)["status"], "closed")
+
+    def test_escalate_inspection_to_case(self):
+        inspection = Inspection.objects.create(inspector=self.inspector, employer=self.employer, status=InspectionStatus.UNDER_REVIEW)
+        self.client.force_authenticate(self.state_admin)
+
+        resp = self.client.post(f"/api/inspections/{inspection.id}/escalate/", {"severity": "critical", "summary": "Critical hygiene violation."}, format="json")
+        self.assertEqual(resp.status_code, 201)
+        self.assertIn("case_reference", data(resp))
+
+    def test_create_follow_up(self):
+        inspection = Inspection.objects.create(inspector=self.inspector, employer=self.employer, status=InspectionStatus.FOLLOW_UP_REQUIRED, findings="Unresolved violations")
+        self.client.force_authenticate(self.state_admin)
+
+        resp = self.client.post(f"/api/inspections/{inspection.id}/create-follow-up/", {"reason": "Re-check compliance"}, format="json")
+        self.assertEqual(resp.status_code, 201)
+        self.assertEqual(data(resp)["inspection_type"], "follow_up")
+
+    def test_inspector_dashboard_access(self):
+        self.client.force_authenticate(self.inspector)
+        resp = self.client.get("/api/inspector/dashboard/")
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn("cards", data(resp))
+
+    def test_inspector_tasks_with_filters(self):
+        Inspection.objects.create(inspector=self.inspector, employer=self.employer, status=InspectionStatus.ASSIGNED)
+        self.client.force_authenticate(self.inspector)
+        resp = self.client.get("/api/inspector/tasks/?status=assigned")
+        self.assertEqual(resp.status_code, 200)
+
+    def test_state_enforcement_dashboard(self):
+        self.client.force_authenticate(self.state_admin)
+        resp = self.client.get("/api/state/enforcement/dashboard/")
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn("cards", data(resp))
+        self.assertIn("charts", data(resp))
+
+    def test_federal_enforcement_dashboard(self):
+        User.objects.create_user("federal", "fed@example.com", "StrongPass123!", role=UserRole.FEDERAL_ADMIN, state=self.state)
+        self.client.force_authenticate(User.objects.get(email="fed@example.com"))
+        resp = self.client.get("/api/federal/enforcement/dashboard/")
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn("cards", data(resp))
+
+    def test_unauthorized_roles_are_denied(self):
+        self.client.force_authenticate(self.handler_user)
+
+        resp = self.client.post("/api/inspections/", {"employer": str(self.employer.id)}, format="json")
+        self.assertEqual(resp.status_code, 403)
+
+        resp = self.client.get("/api/inspector/dashboard/")
+        self.assertEqual(resp.status_code, 403)
+
+    def test_checklist_items_endpoint(self):
+        self.client.force_authenticate(self.state_admin)
+        resp = self.client.get("/api/inspection-checklist-items/")
+        self.assertEqual(resp.status_code, 200)
+        self.assertIsInstance(data(resp), list)

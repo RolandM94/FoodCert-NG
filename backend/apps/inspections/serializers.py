@@ -2,38 +2,85 @@ from rest_framework import serializers
 
 from apps.certificates.models import Certificate
 from apps.employers.models import Employer
-from apps.inspections.models import Inspection, InspectionCertificateScan, InspectionResponse, InspectionResponseType
+from apps.inspections.models import (
+    ChecklistCategory,
+    ChecklistResponseChoice,
+    ChecklistSeverity,
+    CorrectiveActionResponse,
+    CorrectiveActionStatus,
+    EnforcementCase,
+    EnforcementNotice,
+    EvidenceType,
+    FindingStatus,
+    FindingType,
+    Inspection,
+    InspectionCertificateScan,
+    InspectionChecklistItem,
+    InspectionChecklistResponse,
+    InspectionEvidence,
+    InspectionFinding,
+    InspectionPriority,
+    InspectionResponse,
+    InspectionResponseType,
+    InspectionStatus,
+    InspectionType,
+    NoticeStatus,
+    NoticeType,
+)
 
 
 class InspectionSerializer(serializers.ModelSerializer):
     inspector_name = serializers.CharField(source="inspector.get_full_name", read_only=True)
     employer_name = serializers.CharField(source="employer.business_name", read_only=True)
     branch_name = serializers.CharField(source="branch.name", read_only=True)
+    assigned_by_name = serializers.CharField(source="assigned_by.get_full_name", read_only=True)
+    supervising_officer_name = serializers.CharField(source="supervising_officer.get_full_name", read_only=True)
 
     class Meta:
         model = Inspection
         fields = (
             "id",
+            "reference",
+            "inspection_type",
+            "priority",
             "inspector",
             "inspector_name",
             "employer",
             "employer_name",
             "branch",
             "branch_name",
+            "assigned_by",
+            "assigned_by_name",
+            "supervising_officer",
+            "supervising_officer_name",
+            "parent_inspection",
+            "linked_complaint_id",
+            "linked_illness_report_id",
             "inspection_date",
+            "scheduled_at",
+            "started_at",
+            "submitted_at",
+            "reviewed_at",
+            "closed_at",
             "gps_latitude",
             "gps_longitude",
+            "reason",
             "checklist_responses",
             "compliance_score",
             "enforcement_action",
             "findings",
+            "summary",
             "evidence_files",
             "status",
-            "submitted_at",
+            "cancellation_reason",
             "created_at",
             "updated_at",
         )
-        read_only_fields = ("id", "inspector", "inspector_name", "compliance_score", "evidence_files", "submitted_at", "created_at", "updated_at")
+        read_only_fields = (
+            "id", "reference", "inspector", "inspector_name", "assigned_by_name",
+            "supervising_officer_name", "compliance_score", "evidence_files",
+            "submitted_at", "created_at", "updated_at",
+        )
 
 
 class InspectionResponseSerializer(serializers.ModelSerializer):
@@ -70,12 +117,17 @@ class CreateInspectionSerializer(serializers.ModelSerializer):
         fields = (
             "employer",
             "branch",
+            "inspection_type",
+            "priority",
             "inspection_date",
+            "scheduled_at",
             "gps_latitude",
             "gps_longitude",
+            "reason",
             "checklist_responses",
             "enforcement_action",
             "findings",
+            "summary",
             "status",
         )
 
@@ -161,3 +213,217 @@ class InspectorCertificateSaveSerializer(serializers.Serializer):
 class InspectorCertificateFlagSerializer(serializers.Serializer):
     reason = serializers.CharField(max_length=255)
     details = serializers.CharField(required=False, allow_blank=True)
+
+
+class InspectionChecklistItemSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = InspectionChecklistItem
+        fields = (
+            "id",
+            "category",
+            "question",
+            "severity_if_failed",
+            "is_active",
+            "sort_order",
+            "created_at",
+            "updated_at",
+        )
+        read_only_fields = ("id", "created_at", "updated_at")
+
+
+class InspectionChecklistResponseSerializer(serializers.ModelSerializer):
+    checklist_item_question = serializers.CharField(source="checklist_item.question", read_only=True)
+    checklist_item_category = serializers.CharField(source="checklist_item.category", read_only=True)
+    checklist_item_severity = serializers.CharField(source="checklist_item.severity_if_failed", read_only=True)
+
+    class Meta:
+        model = InspectionChecklistResponse
+        fields = (
+            "id",
+            "inspection",
+            "checklist_item",
+            "checklist_item_question",
+            "checklist_item_category",
+            "checklist_item_severity",
+            "response",
+            "severity",
+            "note",
+            "created_by",
+            "created_at",
+            "updated_at",
+        )
+        read_only_fields = ("id", "checklist_item_question", "checklist_item_category", "checklist_item_severity", "created_by", "created_at", "updated_at")
+
+
+class InspectionFindingSerializer(serializers.ModelSerializer):
+    food_handler_name = serializers.CharField(source="food_handler.full_name", read_only=True)
+    certificate_number = serializers.CharField(source="certificate.certificate_number", read_only=True)
+
+    class Meta:
+        model = InspectionFinding
+        fields = (
+            "id",
+            "inspection",
+            "category",
+            "finding_type",
+            "severity",
+            "description",
+            "recommended_action",
+            "food_handler",
+            "food_handler_name",
+            "certificate",
+            "certificate_number",
+            "status",
+            "created_by",
+            "created_at",
+            "updated_at",
+        )
+        read_only_fields = ("id", "food_handler_name", "certificate_number", "created_by", "created_at", "updated_at")
+
+
+class InspectionFindingCreateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = InspectionFinding
+        fields = (
+            "category",
+            "finding_type",
+            "severity",
+            "description",
+            "recommended_action",
+            "food_handler",
+            "certificate",
+        )
+
+
+class InspectionEvidenceSerializer(serializers.ModelSerializer):
+    uploaded_by_name = serializers.CharField(source="uploaded_by.get_full_name", read_only=True)
+
+    class Meta:
+        model = InspectionEvidence
+        fields = (
+            "id",
+            "inspection",
+            "finding",
+            "evidence_type",
+            "file_url",
+            "caption",
+            "uploaded_by",
+            "uploaded_by_name",
+            "latitude",
+            "longitude",
+            "created_at",
+            "updated_at",
+        )
+        read_only_fields = ("id", "uploaded_by", "uploaded_by_name", "created_at", "updated_at")
+
+
+class EnforcementNoticeSerializer(serializers.ModelSerializer):
+    issued_by_name = serializers.CharField(source="issued_by.get_full_name", read_only=True)
+    approved_by_name = serializers.CharField(source="approved_by.get_full_name", read_only=True)
+    employer_name = serializers.CharField(source="employer.business_name", read_only=True)
+    branch_name = serializers.CharField(source="branch.name", read_only=True)
+
+    class Meta:
+        model = EnforcementNotice
+        fields = (
+            "id",
+            "notice_reference",
+            "inspection",
+            "employer",
+            "employer_name",
+            "branch",
+            "branch_name",
+            "notice_type",
+            "status",
+            "description",
+            "required_corrective_actions",
+            "deadline",
+            "issued_by",
+            "issued_by_name",
+            "approved_by",
+            "approved_by_name",
+            "issued_at",
+            "acknowledged_at",
+            "closed_at",
+            "closure_note",
+            "created_at",
+            "updated_at",
+        )
+        read_only_fields = ("id", "notice_reference", "issued_by_name", "approved_by_name", "employer_name", "branch_name", "issued_at", "acknowledged_at", "created_at", "updated_at")
+
+
+class EnforcementNoticeCreateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = EnforcementNotice
+        fields = (
+            "inspection",
+            "employer",
+            "branch",
+            "notice_type",
+            "description",
+            "required_corrective_actions",
+            "deadline",
+        )
+
+
+class CorrectiveActionResponseSerializer(serializers.ModelSerializer):
+    submitted_by_name = serializers.CharField(source="submitted_by.get_full_name", read_only=True)
+    reviewed_by_name = serializers.CharField(source="reviewed_by.get_full_name", read_only=True)
+    notice_reference = serializers.CharField(source="notice.notice_reference", read_only=True)
+
+    class Meta:
+        model = CorrectiveActionResponse
+        fields = (
+            "id",
+            "notice",
+            "notice_reference",
+            "submitted_by",
+            "submitted_by_name",
+            "response_note",
+            "action_taken",
+            "status",
+            "reviewed_by",
+            "reviewed_by_name",
+            "review_note",
+            "submitted_at",
+            "reviewed_at",
+            "created_at",
+            "updated_at",
+        )
+        read_only_fields = ("id", "submitted_by_name", "reviewed_by_name", "notice_reference", "submitted_at", "reviewed_at", "created_at", "updated_at")
+
+
+class CorrectiveActionResponseCreateSerializer(serializers.Serializer):
+    response_note = serializers.CharField()
+    action_taken = serializers.CharField()
+    evidence_file_url = serializers.URLField(required=False, allow_blank=True)
+
+
+class EnforcementCaseSerializer(serializers.ModelSerializer):
+    opened_by_name = serializers.CharField(source="opened_by.get_full_name", read_only=True)
+    assigned_to_name = serializers.CharField(source="assigned_to.get_full_name", read_only=True)
+    employer_name = serializers.CharField(source="employer.business_name", read_only=True)
+    state_name = serializers.CharField(source="state.name", read_only=True)
+
+    class Meta:
+        model = EnforcementCase
+        fields = (
+            "id",
+            "case_reference",
+            "state",
+            "state_name",
+            "employer",
+            "employer_name",
+            "branch",
+            "status",
+            "severity",
+            "summary",
+            "opened_by",
+            "opened_by_name",
+            "assigned_to",
+            "assigned_to_name",
+            "escalated_to",
+            "created_at",
+            "updated_at",
+        )
+        read_only_fields = ("id", "case_reference", "opened_by_name", "assigned_to_name", "employer_name", "state_name", "created_at", "updated_at")
