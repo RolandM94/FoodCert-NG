@@ -182,46 +182,69 @@ export type AssessmentFee = {
   state: string;
   state_name?: string;
   facility_type: string;
+  fee_name: string;
   amount: string;
   currency: string;
   state_fee: string;
   facility_fee: string;
   platform_fee: string;
+  provider_fee_handling: string;
   effective_from: string;
   effective_to?: string | null;
-  status: "active" | "inactive";
+  status: "draft" | "pending_approval" | "active" | "scheduled" | "expired" | "suspended" | "replaced" | "inactive";
   created_by?: string | null;
+  approved_by?: string | null;
+  approved_at?: string | null;
+  notes?: string;
   created_at: string;
   updated_at: string;
 };
 
 export type StateAssessmentFeePayload = {
   facility_type: string;
+  fee_name?: string;
   amount: string;
   state_fee: string;
   facility_fee: string;
   platform_fee: string;
+  provider_fee_handling?: string;
   currency?: string;
   effective_from: string;
   effective_to?: string | null;
-  status?: "active" | "inactive";
+  status?: AssessmentFee["status"];
+  notes?: string;
 };
 
 export async function fetchStateAssessmentFees(params?: {
   status?: string;
   facility_type?: string;
 }): Promise<AssessmentFee[]> {
-  const response = await apiClient.get<ApiEnvelope<AssessmentFee[]>>("/state/fees/", { params });
+  const response = await apiClient.get<ApiEnvelope<AssessmentFee[]>>("/state/fee-schedules/", { params });
   return unwrap(response.data);
 }
 
 export async function createStateAssessmentFee(payload: StateAssessmentFeePayload): Promise<AssessmentFee> {
-  const response = await apiClient.post<ApiEnvelope<AssessmentFee>>("/state/fees/", payload);
+  const response = await apiClient.post<ApiEnvelope<AssessmentFee>>("/state/fee-schedules/", payload);
   return unwrap(response.data);
 }
 
 export async function updateStateAssessmentFee(id: string, payload: Partial<StateAssessmentFeePayload>): Promise<AssessmentFee> {
-  const response = await apiClient.patch<ApiEnvelope<AssessmentFee>>(`/state/fees/${id}/`, payload);
+  const response = await apiClient.patch<ApiEnvelope<AssessmentFee>>(`/state/fee-schedules/${id}/`, payload);
+  return unwrap(response.data);
+}
+
+export async function submitStateAssessmentFee(id: string): Promise<AssessmentFee> {
+  const response = await apiClient.post<ApiEnvelope<AssessmentFee>>(`/state/fee-schedules/${id}/submit/`);
+  return unwrap(response.data);
+}
+
+export async function approveStateAssessmentFee(id: string): Promise<AssessmentFee> {
+  const response = await apiClient.post<ApiEnvelope<AssessmentFee>>(`/state/fee-schedules/${id}/approve/`);
+  return unwrap(response.data);
+}
+
+export async function suspendStateAssessmentFee(id: string): Promise<AssessmentFee> {
+  const response = await apiClient.post<ApiEnvelope<AssessmentFee>>(`/state/fee-schedules/${id}/suspend/`);
   return unwrap(response.data);
 }
 
@@ -579,6 +602,13 @@ export type StateRevenueSnapshot = {
     facility_amount: string;
     state_amount: string;
     platform_amount: string;
+    payment_count?: number;
+    successful_payment_count?: number;
+    payment_amount?: string;
+    refund_count?: number;
+    refund_amount?: string;
+    open_refund_count?: number;
+    reconciliation_issue_count?: number;
   };
   charts: Record<string, Array<Record<string, string | number>>>;
   sections: {
@@ -629,6 +659,11 @@ export async function fetchStateRevenue(params?: { date_from?: string; date_to?:
   return unwrap(response.data);
 }
 
+export async function fetchStateFinanceDashboard(params?: { date_from?: string; date_to?: string }): Promise<StateRevenueSnapshot> {
+  const response = await apiClient.get<ApiEnvelope<StateRevenueSnapshot>>("/state/finance/dashboard/", { params });
+  return unwrap(response.data);
+}
+
 export async function fetchStateSettlements(params?: {
   status?: string;
   facility?: string;
@@ -636,5 +671,38 @@ export async function fetchStateSettlements(params?: {
   date_to?: string;
 }): Promise<StateSettlementItem[]> {
   const response = await apiClient.get<ApiEnvelope<StateSettlementItem[]>>("/state/settlements/", { params });
+  return unwrap(response.data);
+}
+
+export async function fetchStateFinanceSettlements(params?: {
+  status?: string;
+  facility?: string;
+  date_from?: string;
+  date_to?: string;
+}): Promise<StateSettlementItem[]> {
+  const response = await apiClient.get<ApiEnvelope<StateSettlementItem[]>>("/state/finance/settlements/", { params });
+  return unwrap(response.data);
+}
+
+export type StateRefundItem = {
+  id: string;
+  payment_transaction: string;
+  payment_reference?: string;
+  requested_by?: string | null;
+  requested_by_email?: string;
+  approved_by?: string | null;
+  amount: string;
+  reason: string;
+  review_notes?: string;
+  status: string;
+  provider_refund_reference?: string;
+  approved_at?: string | null;
+  processed_at?: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export async function fetchStateFinanceRefunds(params?: { status?: string }): Promise<StateRefundItem[]> {
+  const response = await apiClient.get<ApiEnvelope<StateRefundItem[]>>("/state/finance/refunds/", { params });
   return unwrap(response.data);
 }

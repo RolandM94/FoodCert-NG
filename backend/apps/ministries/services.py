@@ -14,6 +14,8 @@ from apps.ministries.models import FederalStateQueryStatus, StateReport, StateRe
 from apps.organizations.models import Organization, OrganizationType
 from apps.reports.services import DashboardService
 from apps.settlements.models import Settlement, SettlementStatus
+from apps.payments.models import PaymentReconciliationRecord, PaymentStatus, PaymentTransaction, ReconciliationStatus, RefundRequest, RefundStatus
+from apps.subscriptions.models import EmployerInvoice, EmployerSubscription, InvoiceStatus, SubscriptionStatus
 
 
 class MinistryDashboardService:
@@ -47,12 +49,27 @@ class StateReportService:
     @classmethod
     def finance_snapshot(cls, *, state, date_from=None, date_to=None):
         settlements = cls.scoped_settlements(state=state, date_from=date_from, date_to=date_to)
+        payments = PaymentTransaction.objects.filter(metadata__state_id=str(state.id))
+        refunds = RefundRequest.objects.filter(payment_transaction__metadata__state_id=str(state.id))
+        reconciliation = PaymentReconciliationRecord.objects.filter(
+            Q(payment_transaction__metadata__state_id=str(state.id)) | Q(provider_payload__state_id=str(state.id))
+        )
+        if date_from:
+            payments = payments.filter(created_at__date__gte=date_from)
+            refunds = refunds.filter(created_at__date__gte=date_from)
+            reconciliation = reconciliation.filter(created_at__date__gte=date_from)
+        if date_to:
+            payments = payments.filter(created_at__date__lte=date_to)
+            refunds = refunds.filter(created_at__date__lte=date_to)
+            reconciliation = reconciliation.filter(created_at__date__lte=date_to)
         totals = settlements.aggregate(
             gross_amount=Sum("gross_amount"),
             facility_amount=Sum("facility_amount"),
             state_amount=Sum("state_amount"),
             platform_amount=Sum("platform_amount"),
         )
+        payment_totals = payments.aggregate(total_amount=Sum("amount"))
+        refund_totals = refunds.aggregate(total_amount=Sum("amount"))
         paid = settlements.filter(settlement_status=SettlementStatus.PAID)
         pending = settlements.exclude(settlement_status=SettlementStatus.PAID)
         return {
@@ -69,9 +86,19 @@ class StateReportService:
                 "facility_amount": str(totals["facility_amount"] or 0),
                 "state_amount": str(totals["state_amount"] or 0),
                 "platform_amount": str(totals["platform_amount"] or 0),
+                "payment_count": payments.count(),
+                "successful_payment_count": payments.filter(status=PaymentStatus.SUCCESS).count(),
+                "payment_amount": str(payment_totals["total_amount"] or 0),
+                "refund_count": refunds.count(),
+                "refund_amount": str(refund_totals["total_amount"] or 0),
+                "open_refund_count": refunds.exclude(status__in=[RefundStatus.REFUNDED, RefundStatus.REJECTED, RefundStatus.CANCELLED]).count(),
+                "reconciliation_issue_count": reconciliation.exclude(status__in=[ReconciliationStatus.MATCHED, ReconciliationStatus.MANUALLY_RESOLVED]).count(),
             },
             "charts": {
                 "settlement_status": list(settlements.values("settlement_status").annotate(total=Count("id")).order_by("settlement_status")),
+                "payment_status": list(payments.values("status").annotate(total=Count("id")).order_by("status")),
+                "refund_status": list(refunds.values("status").annotate(total=Count("id")).order_by("status")),
+                "reconciliation_status": list(reconciliation.values("status").annotate(total=Count("id")).order_by("status")),
                 "facility_revenue": [
                     {
                         "facility__facility_name": row["facility__facility_name"],
@@ -154,6 +181,102 @@ class StateReportService:
         report.save(update_fields=["status", "submitted_by", "submitted_at", "updated_at"])
         log_action(action=AuditAction.WORKFLOW_TRANSITION, actor=actor, target=report, metadata={"event": "state_report_submitted"})
         return report
+
+
+class FederalFinanceService:
+    @classmethod
+    def _date_scope(cls, queryset, *, date_from=None, date_to=None):
+        if date_from:
+            queryset = queryset.filter(created_at__date__gte=date_from)
+        if date_to:
+            queryset = queryset.filter(created_at__date__lte=date_to)
+        return queryset
+
+    @classmethod
+    def dashboard(cls, *, date_from=None, date_to=None):
+        payments = cls._date_scope(PaymentTransaction.objects.all(), date_from=date_from, date_to=date_to)
+        settlements = cls._date_scope(Settlement.objects.select_related("state", "facility"), date_from=date_from, date_to=date_to)
+        refunds = cls._date_scope(RefundRequest.objects.all(), date_from=date_from, date_to=date_to)
+        invoices = cls._date_scope(EmployerInvoice.objects.all(), date_from=date_from, date_to=date_to)
+        reconciliation = cls._date_scope(PaymentReconciliationRecord.objects.all(), date_from=date_from, date_to=date_to)
+        payment_totals = payments.aggregate(total_amount=Sum("amount"))
+        settlement_totals = settlements.aggregate(
+            gross_amount=Sum("gross_amount"),
+            facility_amount=Sum("facility_amount"),
+            state_amount=Sum("state_amount"),
+            platform_amount=Sum("platform_amount"),
+        )
+        invoice_totals = invoices.aggregate(amount_due=Sum("amount_due"), amount_paid=Sum("amount_paid"))
+        refund_totals = refunds.aggregate(total_amount=Sum("amount"))
+        return {
+            "filters": {"date_from": str(date_from) if date_from else "", "date_to": str(date_to) if date_to else ""},
+            "cards": {
+                "payment_count": payments.count(),
+                "successful_payment_count": payments.filter(status=PaymentStatus.SUCCESS).count(),
+                "payment_amount": str(payment_totals["total_amount"] or 0),
+                "settlement_count": settlements.count(),
+                "paid_settlement_count": settlements.filter(settlement_status=SettlementStatus.PAID).count(),
+                "gross_amount": str(settlement_totals["gross_amount"] or 0),
+                "facility_amount": str(settlement_totals["facility_amount"] or 0),
+                "state_amount": str(settlement_totals["state_amount"] or 0),
+                "platform_amount": str(settlement_totals["platform_amount"] or 0),
+                "invoice_amount_due": str(invoice_totals["amount_due"] or 0),
+                "invoice_amount_paid": str(invoice_totals["amount_paid"] or 0),
+                "active_subscription_count": EmployerSubscription.objects.filter(status=SubscriptionStatus.ACTIVE).count(),
+                "refund_count": refunds.count(),
+                "refund_amount": str(refund_totals["total_amount"] or 0),
+                "reconciliation_issue_count": reconciliation.exclude(status__in=[ReconciliationStatus.MATCHED, ReconciliationStatus.MANUALLY_RESOLVED]).count(),
+            },
+            "charts": {
+                "payment_status": list(payments.values("status").annotate(total=Count("id")).order_by("status")),
+                "settlement_status": list(settlements.values("settlement_status").annotate(total=Count("id")).order_by("settlement_status")),
+                "subscription_status": list(EmployerSubscription.objects.values("status").annotate(total=Count("id")).order_by("status")),
+                "invoice_status": list(invoices.values("status").annotate(total=Count("id")).order_by("status")),
+                "reconciliation_status": list(reconciliation.values("status").annotate(total=Count("id")).order_by("status")),
+            },
+        }
+
+    @classmethod
+    def revenue_by_state(cls, *, date_from=None, date_to=None):
+        settlements = cls._date_scope(Settlement.objects.select_related("state"), date_from=date_from, date_to=date_to)
+        return [
+            {
+                "state_id": str(row["state_id"]) if row["state_id"] else "",
+                "state_name": row["state__name"] or "Unknown",
+                "settlement_count": row["settlement_count"],
+                "gross_amount": str(row["gross_amount"] or 0),
+                "facility_amount": str(row["facility_amount"] or 0),
+                "state_amount": str(row["state_amount"] or 0),
+                "platform_amount": str(row["platform_amount"] or 0),
+            }
+            for row in settlements.values("state_id", "state__name")
+            .annotate(
+                settlement_count=Count("id"),
+                gross_amount=Sum("gross_amount"),
+                facility_amount=Sum("facility_amount"),
+                state_amount=Sum("state_amount"),
+                platform_amount=Sum("platform_amount"),
+            )
+            .order_by("state__name")
+        ]
+
+    @classmethod
+    def subscription_summary(cls):
+        invoices = EmployerInvoice.objects.all()
+        invoice_totals = invoices.aggregate(amount_due=Sum("amount_due"), amount_paid=Sum("amount_paid"))
+        return {
+            "cards": {
+                "subscription_count": EmployerSubscription.objects.count(),
+                "active_subscription_count": EmployerSubscription.objects.filter(status=SubscriptionStatus.ACTIVE).count(),
+                "past_due_subscription_count": EmployerSubscription.objects.filter(status=SubscriptionStatus.PAST_DUE).count(),
+                "invoice_count": invoices.count(),
+                "paid_invoice_count": invoices.filter(status=InvoiceStatus.PAID).count(),
+                "invoice_amount_due": str(invoice_totals["amount_due"] or 0),
+                "invoice_amount_paid": str(invoice_totals["amount_paid"] or 0),
+            },
+            "status": list(EmployerSubscription.objects.values("status").annotate(total=Count("id")).order_by("status")),
+            "invoices": list(invoices.values("status").annotate(total=Count("id"), amount_due=Sum("amount_due"), amount_paid=Sum("amount_paid")).order_by("status")),
+        }
 
 
 class FederalPerformanceService:

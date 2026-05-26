@@ -2,19 +2,22 @@
 
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, CreditCard, ReceiptText, WalletCards } from "lucide-react";
+import { AlertTriangle, CreditCard, RefreshCw, ReceiptText, ShieldCheck, WalletCards, XCircle } from "lucide-react";
 import { PortalShell } from "@/components/layout/portal-shell";
 import { SubscriptionPlanCard } from "@/components/ui/subscription-plan-card";
 import { listEmployers } from "@/lib/api/identity";
 import {
   changeEmployerSubscriptionPlan,
+  cancelEmployerSubscription,
   checkoutEmployerSubscription,
+  getEmployerEntitlements,
   getEmployerSubscription,
   listEmployerInvoices,
   listEmployerPayments,
   listSubscriptionPlans,
+  renewEmployerSubscription,
 } from "@/lib/api/payments";
-import type { BillingCycle, EmployerSubscriptionPlan, PaymentStatus, SubscriptionStatus } from "@/types/payments";
+import type { BillingCycle, EmployerSubscriptionPlan, InvoiceStatus, PaymentStatus, SubscriptionStatus } from "@/types/payments";
 
 const currency = new Intl.NumberFormat("en-NG", {
   style: "currency",
@@ -37,11 +40,11 @@ function planFeatures(plan: EmployerSubscriptionPlan) {
   ];
 }
 
-function StatusBadge({ status }: { status: PaymentStatus | SubscriptionStatus }) {
+function StatusBadge({ status }: { status: PaymentStatus | SubscriptionStatus | InvoiceStatus }) {
   const tone =
-    status === "active" || status === "success"
+    status === "active" || status === "success" || status === "paid"
       ? "bg-emerald-50 text-brand-deep ring-emerald-200"
-      : status === "pending" || status === "past_due" || status === "trial"
+      : status === "pending" || status === "past_due" || status === "trial" || status === "issued"
         ? "bg-amber-50 text-amber-700 ring-amber-200"
         : "bg-rose-50 text-rose-700 ring-rose-200";
   return (
@@ -84,6 +87,12 @@ export default function Page() {
     enabled: Boolean(employer?.id),
   });
 
+  const entitlementsQuery = useQuery({
+    queryKey: ["employer-entitlements", employer?.id],
+    queryFn: () => getEmployerEntitlements(employer!.id),
+    enabled: Boolean(employer?.id),
+  });
+
   const currentSubscription = subscriptionQuery.data;
   const activePlans = useMemo(
     () => (plansQuery.data || []).filter((plan) => plan.status === "active"),
@@ -99,12 +108,32 @@ export default function Page() {
       queryClient.invalidateQueries({ queryKey: ["employer-subscription", employer?.id] });
       queryClient.invalidateQueries({ queryKey: ["employer-invoices", employer?.id] });
       queryClient.invalidateQueries({ queryKey: ["employer-payments", employer?.id] });
+      queryClient.invalidateQueries({ queryKey: ["employer-entitlements", employer?.id] });
+    },
+  });
+
+  const renewMutation = useMutation({
+    mutationFn: () => renewEmployerSubscription(employer!.id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["employer-subscription", employer?.id] });
+      queryClient.invalidateQueries({ queryKey: ["employer-invoices", employer?.id] });
+      queryClient.invalidateQueries({ queryKey: ["employer-payments", employer?.id] });
+      queryClient.invalidateQueries({ queryKey: ["employer-entitlements", employer?.id] });
+    },
+  });
+
+  const cancelMutation = useMutation({
+    mutationFn: () => cancelEmployerSubscription(employer!.id, { reason: "Cancelled from employer billing dashboard" }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["employer-subscription", employer?.id] });
+      queryClient.invalidateQueries({ queryKey: ["employer-entitlements", employer?.id] });
     },
   });
 
   const usage = currentSubscription?.usage_percentage ?? 0;
   const expiryWarning = currentSubscription?.is_active && (currentSubscription.days_until_expiry ?? 999) <= 7;
   const isExpired = currentSubscription && !currentSubscription.is_active;
+  const entitlements = entitlementsQuery.data || currentSubscription?.entitlements;
 
   return (
     <PortalShell
@@ -169,6 +198,30 @@ export default function Page() {
                 <div className="h-2 rounded bg-brand-green" style={{ width: `${Math.min(usage, 100)}%` }} />
               </div>
             </div>
+            {currentSubscription ? (
+              <div className="mt-5 flex flex-wrap gap-2">
+                <button
+                  className="inline-flex items-center gap-2 rounded border border-brand-deep px-3 py-2 text-sm font-bold text-brand-deep disabled:cursor-not-allowed disabled:opacity-50"
+                  disabled={!employer || renewMutation.isPending}
+                  onClick={() => renewMutation.mutate()}
+                  type="button"
+                >
+                  <RefreshCw size={16} />
+                  Renew
+                </button>
+                {currentSubscription.status !== "cancelled" ? (
+                  <button
+                    className="inline-flex items-center gap-2 rounded border border-rose-200 px-3 py-2 text-sm font-bold text-rose-700 disabled:cursor-not-allowed disabled:opacity-50"
+                    disabled={!employer || cancelMutation.isPending}
+                    onClick={() => cancelMutation.mutate()}
+                    type="button"
+                  >
+                    <XCircle size={16} />
+                    Cancel
+                  </button>
+                ) : null}
+              </div>
+            ) : null}
           </div>
 
           <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
@@ -194,6 +247,36 @@ export default function Page() {
             <p className="mt-4 text-sm leading-6 text-slate-600">
               Changing plans creates a verified subscription payment through the configured payment provider and activates the selected plan.
             </p>
+            <div className="mt-5 rounded-lg border border-slate-200 bg-white p-4">
+              <div className="flex items-center gap-2">
+                <ShieldCheck className="text-brand-deep" size={18} />
+                <p className="text-sm font-bold text-slate-950">Entitlements</p>
+              </div>
+              <div className="mt-4 grid gap-3 text-sm">
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-slate-500">Premium features</span>
+                  <StatusBadge status={entitlements?.premium_features_active ? "active" : "expired"} />
+                </div>
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-slate-500">Regulatory access</span>
+                  <StatusBadge status={entitlements?.regulatory_access === false ? "cancelled" : "active"} />
+                </div>
+                <div className="grid grid-cols-3 gap-2 pt-1 text-center">
+                  <div className="rounded border border-slate-100 p-2">
+                    <p className="text-xs text-slate-500">Handlers</p>
+                    <p className="font-bold text-slate-950">{entitlements?.limits.max_food_handlers ?? currentSubscription?.max_food_handlers ?? 5}</p>
+                  </div>
+                  <div className="rounded border border-slate-100 p-2">
+                    <p className="text-xs text-slate-500">Locations</p>
+                    <p className="font-bold text-slate-950">{entitlements?.limits.max_locations ?? currentSubscription?.max_locations ?? 1}</p>
+                  </div>
+                  <div className="rounded border border-slate-100 p-2">
+                    <p className="text-xs text-slate-500">Users</p>
+                    <p className="font-bold text-slate-950">{entitlements?.limits.max_users ?? currentSubscription?.max_users ?? 1}</p>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
         </section>
 
@@ -226,6 +309,9 @@ export default function Page() {
           </div>
           {checkoutMutation.isError ? (
             <p className="mt-3 text-sm font-semibold text-rose-600">Could not update subscription. Please check the selected plan and try again.</p>
+          ) : null}
+          {renewMutation.isError || cancelMutation.isError ? (
+            <p className="mt-3 text-sm font-semibold text-rose-600">Could not update billing lifecycle. Please try again.</p>
           ) : null}
         </section>
 

@@ -96,7 +96,14 @@ export default function Page() {
                     <td className="p-3"><p className="text-sm font-semibold text-slate-700">{dateLabel(assessment.appointment_date || assessment.assessment_date)}</p><StatusBadge status={assessment.appointment_status || "not_booked"} /></td>
                     <td className="p-3"><AssessmentStatusBadge status={assessment.status} /></td>
                     <td className="p-3"><StatusBadge status={assessment.final_decision} /></td>
-                    <td className="p-3"><Link className="rounded border border-slate-200 px-3 py-1.5 text-xs font-bold text-slate-700" href={`/food-handler/assessments/${assessment.id}`}>Open</Link></td>
+                    <td className="p-3">
+                      <div className="flex flex-wrap gap-2">
+                        <Link className="rounded border border-slate-200 px-3 py-1.5 text-xs font-bold text-slate-700" href={`/food-handler/assessments/${assessment.id}`}>Open</Link>
+                        {assessment.payment_status !== "success" ? (
+                          <Link className="rounded bg-brand-green px-3 py-1.5 text-xs font-bold text-white" href={`/food-handler/assessment/${assessment.id}/pay`}>Pay</Link>
+                        ) : null}
+                      </div>
+                    </td>
                   </tr>
                 ))}
                 {!assessments.length && !loading ? <tr><td className="p-3 text-slate-500" colSpan={5}>No assessments found.</td></tr> : null}

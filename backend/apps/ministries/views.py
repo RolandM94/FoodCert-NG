@@ -53,11 +53,11 @@ from apps.ministries.serializers import (
     FederalStateQuerySerializer,
 )
 from apps.ministries.models import FederalStateQuery, StateReport
-from apps.ministries.services import FederalOversightService, FederalPerformanceService, MinistryDashboardService, StateReportService, get_state_ministry_organization
+from apps.ministries.services import FederalFinanceService, FederalOversightService, FederalPerformanceService, MinistryDashboardService, StateReportService, get_state_ministry_organization
 from apps.organizations.models import OrganizationUnit
 from apps.organizations.services import create_unit, deactivate_unit, update_unit
-from apps.payments.models import AssessmentFee
-from apps.payments.serializers import AssessmentFeeSerializer
+from apps.payments.models import ActiveStatus, AssessmentFee, PaymentTransaction, RefundRequest
+from apps.payments.serializers import AssessmentFeeSerializer, RefundRequestSerializer
 from apps.employers.models import Employer
 from apps.food_handlers.models import FoodHandlerProfile
 from apps.illness.models import IllnessReport
@@ -113,6 +113,55 @@ class FederalStateSummaryView(APIView):
     @extend_schema(responses=dict)
     def get(self, request, state_id):
         return Response(FederalPerformanceService.state_summary(state_id))
+
+
+class FederalFinanceDashboardView(APIView):
+    permission_classes = [IsAuthenticated, IsActiveUser, IsFederalMinistryUser]
+
+    @extend_schema(responses=dict)
+    def get(self, request):
+        return Response(
+            FederalFinanceService.dashboard(
+                date_from=request.query_params.get("date_from"),
+                date_to=request.query_params.get("date_to"),
+            )
+        )
+
+
+class FederalFinanceRevenueByStateView(APIView):
+    permission_classes = [IsAuthenticated, IsActiveUser, IsFederalMinistryUser]
+
+    @extend_schema(responses=dict)
+    def get(self, request):
+        return Response(
+            FederalFinanceService.revenue_by_state(
+                date_from=request.query_params.get("date_from"),
+                date_to=request.query_params.get("date_to"),
+            )
+        )
+
+
+class FederalFinanceSubscriptionsView(APIView):
+    permission_classes = [IsAuthenticated, IsActiveUser, IsFederalMinistryUser]
+
+    @extend_schema(responses=dict)
+    def get(self, request):
+        return Response(FederalFinanceService.subscription_summary())
+
+
+class FederalFinanceSettlementListView(APIView):
+    permission_classes = [IsAuthenticated, IsActiveUser, IsFederalMinistryUser]
+
+    @extend_schema(responses=SettlementSerializer(many=True))
+    def get(self, request):
+        queryset = Settlement.objects.select_related("facility", "state", "payment_transaction").order_by("-created_at")
+        status_filter = request.query_params.get("status")
+        if status_filter:
+            queryset = queryset.filter(settlement_status=status_filter)
+        state = request.query_params.get("state")
+        if state:
+            queryset = queryset.filter(state_id=state)
+        return Response(SettlementSerializer(queryset[:500], many=True).data)
 
 
 class FederalCertificateRegistryView(APIView):
@@ -752,7 +801,10 @@ class StateAssessmentFeeListCreateView(APIView):
             raise ValidationError("State, facility, and platform fees must equal the gross amount.")
 
     def validate_no_overlap(self, *, facility_type, effective_from, effective_to=None, exclude=None):
-        queryset = self.get_queryset().filter(facility_type=facility_type, status="active")
+        queryset = self.get_queryset().filter(
+            facility_type=facility_type,
+            status__in=[ActiveStatus.ACTIVE, ActiveStatus.SCHEDULED],
+        )
         if exclude:
             queryset = queryset.exclude(pk=exclude.pk)
         if effective_to is None:
@@ -762,7 +814,24 @@ class StateAssessmentFeeListCreateView(APIView):
                 Q(effective_to__isnull=True) | Q(effective_to__gte=effective_from)
             )
         if overlap.exists():
-            raise ValidationError("Active fee periods cannot overlap for the same facility type.")
+            raise ValidationError("Active or scheduled fee periods cannot overlap for the same facility type.")
+
+    def validate_not_used_for_financial_change(self, fee, data):
+        financial_fields = {
+            "facility_type",
+            "amount",
+            "currency",
+            "state_fee",
+            "facility_fee",
+            "platform_fee",
+            "provider_fee_handling",
+            "effective_from",
+            "effective_to",
+        }
+        if not financial_fields.intersection(data):
+            return
+        if PaymentTransaction.objects.filter(metadata__assessment_fee_id=str(fee.id)).exists():
+            raise ValidationError("Fee schedules used by payments cannot be edited. Create a replacement schedule instead.")
 
     @extend_schema(responses=AssessmentFeeSerializer(many=True))
     def get(self, request):
@@ -775,11 +844,12 @@ class StateAssessmentFeeListCreateView(APIView):
         serializer = AssessmentFeeSerializer(data={**request.data, "state": str(request.user.state_id)})
         serializer.is_valid(raise_exception=True)
         self.validate_fee_split(serializer.validated_data)
-        self.validate_no_overlap(
-            facility_type=serializer.validated_data["facility_type"],
-            effective_from=serializer.validated_data["effective_from"],
-            effective_to=serializer.validated_data.get("effective_to"),
-        )
+        if serializer.validated_data.get("status") in {ActiveStatus.ACTIVE, ActiveStatus.SCHEDULED}:
+            self.validate_no_overlap(
+                facility_type=serializer.validated_data["facility_type"],
+                effective_from=serializer.validated_data["effective_from"],
+                effective_to=serializer.validated_data.get("effective_to"),
+            )
         fee = serializer.save(state=request.user.state, created_by=request.user)
         return Response(AssessmentFeeSerializer(fee).data, status=status.HTTP_201_CREATED)
 
@@ -806,7 +876,8 @@ class StateAssessmentFeeDetailView(StateAssessmentFeeListCreateView):
         effective_from = serializer.validated_data.get("effective_from", fee.effective_from)
         effective_to = serializer.validated_data.get("effective_to", fee.effective_to)
         status_value = serializer.validated_data.get("status", fee.status)
-        if status_value == "active":
+        self.validate_not_used_for_financial_change(fee, serializer.validated_data)
+        if status_value in {ActiveStatus.ACTIVE, ActiveStatus.SCHEDULED}:
             self.validate_no_overlap(
                 facility_type=facility_type,
                 effective_from=effective_from,
@@ -814,6 +885,38 @@ class StateAssessmentFeeDetailView(StateAssessmentFeeListCreateView):
                 exclude=fee,
             )
         fee = serializer.save(state=request.user.state)
+        return Response(AssessmentFeeSerializer(fee).data)
+
+    def post(self, request, pk, action=None):
+        if not can_manage_state_fees(request.user):
+            raise PermissionDenied("You cannot configure state assessment fees.")
+        fee = self.get_object(pk)
+        if action == "submit":
+            if fee.status not in {ActiveStatus.DRAFT, ActiveStatus.INACTIVE}:
+                raise ValidationError("Only draft or inactive fee schedules can be submitted.")
+            fee.status = ActiveStatus.PENDING_APPROVAL
+            update_fields = ["status", "updated_at"]
+            event = "fee_schedule_submitted"
+        elif action == "approve":
+            self.validate_no_overlap(
+                facility_type=fee.facility_type,
+                effective_from=fee.effective_from,
+                effective_to=fee.effective_to,
+                exclude=fee,
+            )
+            fee.status = ActiveStatus.ACTIVE if fee.effective_from <= timezone.localdate() else ActiveStatus.SCHEDULED
+            fee.approved_by = request.user
+            fee.approved_at = timezone.now()
+            update_fields = ["status", "approved_by", "approved_at", "updated_at"]
+            event = "fee_schedule_approved"
+        elif action == "suspend":
+            fee.status = ActiveStatus.SUSPENDED
+            update_fields = ["status", "updated_at"]
+            event = "fee_schedule_suspended"
+        else:
+            raise ValidationError("Unsupported fee schedule action.")
+        fee.save(update_fields=update_fields)
+        log_action(action=AuditAction.UPDATE, actor=request.user, target=fee, metadata={"event": event})
         return Response(AssessmentFeeSerializer(fee).data)
 
 
@@ -1344,6 +1447,52 @@ class StateRevenueView(StateMonitoringMixin, APIView):
                 date_to=request.query_params.get("date_to"),
             )
         )
+
+
+class StateFinanceDashboardView(StateMonitoringMixin, APIView):
+    permission_classes = [IsAuthenticated, IsActiveUser, IsStateMinistryUser]
+
+    @extend_schema(responses=dict)
+    def get(self, request):
+        return Response(
+            StateReportService.finance_snapshot(
+                state=self.require_state(),
+                date_from=request.query_params.get("date_from"),
+                date_to=request.query_params.get("date_to"),
+            )
+        )
+
+
+class StateFinanceExportView(StateMonitoringMixin, APIView):
+    permission_classes = [IsAuthenticated, IsActiveUser, IsStateMinistryUser]
+
+    def get(self, request):
+        snapshot = StateReportService.finance_snapshot(
+            state=self.require_state(),
+            date_from=request.query_params.get("date_from"),
+            date_to=request.query_params.get("date_to"),
+        )
+        response = HttpResponse(content_type="text/csv")
+        response["Content-Disposition"] = 'attachment; filename="state-finance-summary.csv"'
+        writer = csv.writer(response)
+        writer.writerow(["metric", "value"])
+        for key, value in snapshot["cards"].items():
+            writer.writerow([key, value])
+        return response
+
+
+class StateRefundListView(StateMonitoringMixin, APIView):
+    permission_classes = [IsAuthenticated, IsActiveUser, IsStateMinistryUser]
+
+    @extend_schema(responses=RefundRequestSerializer(many=True))
+    def get(self, request):
+        queryset = RefundRequest.objects.select_related("payment_transaction", "requested_by", "approved_by").filter(
+            payment_transaction__metadata__state_id=str(self.require_state().id)
+        )
+        status_filter = request.query_params.get("status")
+        if status_filter:
+            queryset = queryset.filter(status=status_filter)
+        return Response(RefundRequestSerializer(queryset.order_by("-created_at")[:500], many=True).data)
 
 
 class StateSettlementListView(StateMonitoringMixin, APIView):

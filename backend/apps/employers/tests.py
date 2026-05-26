@@ -390,6 +390,52 @@ class EmployerSubscriptionBillingTests(APITestCase):
         self.assertEqual(EmployerSubscription.objects.filter(status=SubscriptionStatus.ACTIVE).count(), 1)
         self.assertEqual(EmployerSubscription.objects.filter(status=SubscriptionStatus.CANCELLED).count(), 1)
 
+    def test_expired_subscription_loses_premium_not_regulatory_access_then_renews(self):
+        self.client.force_authenticate(self.employer_user)
+        self.client.post(
+            f"/api/employers/{self.employer.id}/subscription/checkout/",
+            {"plan_id": str(self.basic.id), "billing_cycle": BillingCycle.MONTHLY},
+            format="json",
+        )
+        subscription = EmployerSubscription.objects.get(status=SubscriptionStatus.ACTIVE)
+        subscription.expires_at = timezone.now() - timezone.timedelta(days=1)
+        subscription.save(update_fields=["expires_at", "updated_at"])
+
+        entitlements_response = self.client.get(f"/api/employers/{self.employer.id}/subscription/entitlements/")
+        subscription.refresh_from_db()
+        renew_response = self.client.post(f"/api/employers/{self.employer.id}/subscription/renew/")
+
+        self.assertEqual(entitlements_response.status_code, 200)
+        self.assertTrue(data(entitlements_response)["regulatory_access"])
+        self.assertFalse(data(entitlements_response)["premium_features_active"])
+        self.assertEqual(subscription.status, SubscriptionStatus.PAST_DUE)
+        self.assertEqual(renew_response.status_code, 201)
+        self.assertEqual(data(renew_response)["status"], SubscriptionStatus.ACTIVE)
+        self.assertEqual(EmployerSubscription.objects.filter(status=SubscriptionStatus.ACTIVE).count(), 1)
+
+    def test_cancel_subscription_keeps_regulatory_access_but_removes_premium(self):
+        self.client.force_authenticate(self.employer_user)
+        self.client.post(
+            f"/api/employers/{self.employer.id}/subscription/checkout/",
+            {"plan_id": str(self.basic.id), "billing_cycle": BillingCycle.MONTHLY},
+            format="json",
+        )
+
+        cancel_response = self.client.post(
+            f"/api/employers/{self.employer.id}/subscription/cancel/",
+            {"reason": "Switching billing owner"},
+            format="json",
+        )
+        entitlements_response = self.client.get(f"/api/employers/{self.employer.id}/subscription/entitlements/")
+
+        self.assertEqual(cancel_response.status_code, 200)
+        self.assertEqual(data(cancel_response)["status"], SubscriptionStatus.CANCELLED)
+        self.assertEqual(data(cancel_response)["cancellation_reason"], "Switching billing owner")
+        self.assertTrue(data(entitlements_response)["regulatory_access"])
+        self.assertFalse(data(entitlements_response)["premium_features_active"])
+        self.employer.refresh_from_db()
+        self.assertEqual(self.employer.subscription_status, EmployerSubscriptionStatus.CANCELLED)
+
     def test_billing_history_endpoints_return_transactions_and_invoices(self):
         PaymentTransaction.objects.create(
             payer_user=self.employer_user,

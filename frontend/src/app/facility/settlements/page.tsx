@@ -163,6 +163,9 @@ export default function Page() {
               type="button"
               onClick={() => downloadCsv("facility-settlements.csv", rows, [
                 { header: "Payment reference", value: (row) => row.payment_reference || row.payment_transaction },
+                { header: "Allocation", value: (row) => row.payment_allocation_reference || row.payment_allocation || "" },
+                { header: "Assessment", value: (row) => row.assessment || "" },
+                { header: "Fee schedule", value: (row) => row.fee_schedule_name || row.fee_schedule || "" },
                 { header: "Gross", value: (row) => row.gross_amount },
                 { header: "Facility amount", value: (row) => row.facility_amount },
                 { header: "State amount", value: (row) => row.state_amount },
@@ -183,12 +186,16 @@ export default function Page() {
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm">
               <thead className="bg-slate-50 text-xs font-bold uppercase text-slate-500">
-                <tr><th className="p-3">Payment</th><th className="p-3">Gross</th><th className="p-3">Facility</th><th className="p-3">State</th><th className="p-3">Platform</th><th className="p-3">Status</th><th className="p-3">Dispute</th><th className="p-3">Action</th></tr>
+                <tr><th className="p-3">Trace</th><th className="p-3">Gross</th><th className="p-3">Facility</th><th className="p-3">State</th><th className="p-3">Platform</th><th className="p-3">Status</th><th className="p-3">Dispute</th><th className="p-3">Action</th></tr>
               </thead>
               <tbody className="divide-y divide-slate-200">
                 {rows.length ? rows.map((row) => (
                   <tr key={row.id}>
-                    <td className="p-3"><p className="font-bold text-slate-950">{row.payment_reference || row.settlement_reference || row.id}</p><p className="text-xs text-slate-500">Created {formatDate(row.created_at)} · settled {formatDate(row.settled_at)}</p></td>
+                    <td className="p-3">
+                      <p className="font-bold text-slate-950">{row.payment_reference || row.settlement_reference || row.id}</p>
+                      <p className="text-xs text-slate-500">Allocation {row.payment_allocation_reference || row.payment_allocation || "legacy"}</p>
+                      <p className="text-xs text-slate-500">Fee {row.fee_schedule_name || "Not linked"} · Created {formatDate(row.created_at)}</p>
+                    </td>
                     <td className="p-3">{money(row.gross_amount)}</td>
                     <td className="p-3">{money(row.facility_amount)}</td>
                     <td className="p-3">{money(row.state_amount)}</td>

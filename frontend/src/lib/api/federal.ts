@@ -62,6 +62,67 @@ export async function fetchFederalStateSummary(stateId: string): Promise<Federal
   return unwrap(response.data);
 }
 
+export type FederalFinanceDashboard = {
+  filters: { date_from: string; date_to: string };
+  cards: Record<string, string | number>;
+  charts: Record<string, Array<Record<string, string | number>>>;
+};
+
+export type FederalRevenueByStateRow = {
+  state_id: string;
+  state_name: string;
+  settlement_count: number;
+  gross_amount: string;
+  facility_amount: string;
+  state_amount: string;
+  platform_amount: string;
+};
+
+export type FederalFinanceSettlementItem = {
+  id: string;
+  facility: string;
+  facility_name?: string;
+  state: string;
+  state_name?: string;
+  payment_transaction: string;
+  payment_reference?: string;
+  gross_amount: string;
+  facility_amount: string;
+  state_amount: string;
+  platform_amount: string;
+  settlement_status: string;
+  settlement_reference: string;
+  settled_at?: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type FederalSubscriptionFinance = {
+  cards: Record<string, string | number>;
+  status: Array<{ status: string; total: number }>;
+  invoices: Array<{ status: string; total: number; amount_due?: string; amount_paid?: string }>;
+};
+
+export async function fetchFederalFinanceDashboard(params?: { date_from?: string; date_to?: string }): Promise<FederalFinanceDashboard> {
+  const response = await apiClient.get<ApiEnvelope<FederalFinanceDashboard>>("/federal/finance/dashboard/", { params });
+  return unwrap(response.data);
+}
+
+export async function fetchFederalRevenueByState(params?: { date_from?: string; date_to?: string }): Promise<FederalRevenueByStateRow[]> {
+  const response = await apiClient.get<ApiEnvelope<FederalRevenueByStateRow[]>>("/federal/finance/revenue-by-state/", { params });
+  return unwrap(response.data);
+}
+
+export async function fetchFederalFinanceSettlements(params?: { status?: string; state?: string }): Promise<FederalFinanceSettlementItem[]> {
+  const response = await apiClient.get<ApiEnvelope<FederalFinanceSettlementItem[]>>("/federal/finance/settlements/", { params });
+  return unwrap(response.data);
+}
+
+export async function fetchFederalFinanceSubscriptions(): Promise<FederalSubscriptionFinance> {
+  const response = await apiClient.get<ApiEnvelope<FederalSubscriptionFinance>>("/federal/finance/subscriptions/");
+  return unwrap(response.data);
+}
+
 export type FederalCertificateRegistryItem = {
   id: string;
   certificate_number: string;

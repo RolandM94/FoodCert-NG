@@ -1,6 +1,10 @@
 from dataclasses import dataclass
+import hashlib
+import hmac
 
 from django.conf import settings
+
+from apps.payments.models import PaymentProvider as PaymentProviderConfig
 
 
 @dataclass
@@ -18,6 +22,15 @@ class PaymentVerification:
     metadata: dict
 
 
+@dataclass
+class PaymentWebhookPayload:
+    reference: str
+    event_type: str
+    provider_reference: str
+    idempotency_key: str
+    metadata: dict
+
+
 class PaymentProvider:
     provider_name = "base"
 
@@ -29,6 +42,25 @@ class PaymentProvider:
 
     def refund_payment(self, reference, amount=None):
         raise NotImplementedError
+
+    def verify_webhook_signature(self, *, body: bytes, signature: str, secret: str = "") -> bool:
+        if not secret:
+            return True
+        expected = hmac.new(secret.encode("utf-8"), body, hashlib.sha256).hexdigest()
+        return hmac.compare_digest(signature, expected)
+
+    def parse_webhook_payload(self, payload: dict) -> PaymentWebhookPayload:
+        reference = payload.get("reference") or payload.get("data", {}).get("reference") or ""
+        event_type = payload.get("event") or payload.get("event_type") or ""
+        provider_reference = payload.get("provider_reference") or payload.get("data", {}).get("reference") or reference
+        idempotency_key = payload.get("idempotency_key") or payload.get("event_id") or f"{self.provider_name}:{event_type}:{provider_reference}"
+        return PaymentWebhookPayload(
+            reference=reference,
+            event_type=event_type,
+            provider_reference=provider_reference,
+            idempotency_key=idempotency_key,
+            metadata=payload,
+        )
 
 
 class MockPaymentProvider(PaymentProvider):
@@ -54,7 +86,13 @@ class MockPaymentProvider(PaymentProvider):
         return {"reference": reference, "amount": str(amount) if amount else None, "status": "refunded"}
 
 
-def get_payment_provider() -> PaymentProvider:
-    if settings.PAYMENT_PROVIDER == "mock":
+def active_provider_config(provider_code=None):
+    code = provider_code or getattr(settings, "PAYMENT_PROVIDER", "mock")
+    return PaymentProviderConfig.objects.filter(code=code, is_active=True).first()
+
+
+def get_payment_provider(provider_code=None) -> PaymentProvider:
+    code = provider_code or getattr(settings, "PAYMENT_PROVIDER", "mock")
+    if code == "mock":
         return MockPaymentProvider()
     return MockPaymentProvider()

@@ -48,11 +48,14 @@ from apps.reports.serializers import GeneratedReportSerializer
 from apps.reports.services import EmployerReportService
 from apps.notifications.models import Notification, NotificationChannel, NotificationType
 from apps.subscriptions.serializers import (
+    EmployerEntitlementSerializer,
+    EmployerInvoiceSerializer,
+    EmployerSubscriptionCancelSerializer,
     EmployerSubscriptionChangePlanSerializer,
     EmployerSubscriptionCheckoutSerializer,
     EmployerSubscriptionSerializer,
 )
-from apps.subscriptions.services import EmployerSubscriptionService
+from apps.subscriptions.services import EmployerInvoiceService, EmployerSubscriptionService
 from apps.vaccinations.models import VaccinationRecord, VaccinationStatus, VaccineType
 
 User = get_user_model()
@@ -569,6 +572,13 @@ class EmployerViewSet(viewsets.ModelViewSet):
             plan=plan,
             billing_cycle=billing_cycle,
         )
+        invoice = EmployerInvoiceService.create_for_subscription_checkout(
+            employer=employer,
+            plan=plan,
+            billing_cycle=billing_cycle,
+            payment_transaction=transaction_obj,
+            actor=request.user,
+        )
         transaction_obj = PaymentService.verify_payment(reference=transaction_obj.internal_reference, actor=request.user)
         subscription = EmployerSubscriptionService.activate(
             employer=employer,
@@ -577,6 +587,7 @@ class EmployerViewSet(viewsets.ModelViewSet):
             payment_transaction=transaction_obj,
             actor=request.user,
         )
+        EmployerInvoiceService.mark_paid(invoice=invoice, subscription=subscription, actor=request.user)
         return Response(EmployerSubscriptionSerializer(subscription).data, status=status.HTTP_201_CREATED)
 
     @extend_schema(request=EmployerSubscriptionChangePlanSerializer, responses=EmployerSubscriptionSerializer)
@@ -594,6 +605,13 @@ class EmployerViewSet(viewsets.ModelViewSet):
             plan=plan,
             billing_cycle=billing_cycle,
         )
+        invoice = EmployerInvoiceService.create_for_subscription_checkout(
+            employer=employer,
+            plan=plan,
+            billing_cycle=billing_cycle,
+            payment_transaction=transaction_obj,
+            actor=request.user,
+        )
         transaction_obj = PaymentService.verify_payment(reference=transaction_obj.internal_reference, actor=request.user)
         subscription = EmployerSubscriptionService.change_plan(
             employer=employer,
@@ -601,6 +619,51 @@ class EmployerViewSet(viewsets.ModelViewSet):
             billing_cycle=billing_cycle,
             payment_transaction=transaction_obj,
             actor=request.user,
+        )
+        EmployerInvoiceService.mark_paid(invoice=invoice, subscription=subscription, actor=request.user)
+        return Response(EmployerSubscriptionSerializer(subscription).data)
+
+    @extend_schema(responses={201: EmployerSubscriptionSerializer})
+    @action(detail=True, methods=["post"], url_path="subscription/renew")
+    def subscription_renew(self, request, pk=None):
+        employer = self.get_object()
+        self._ensure_can_manage_billing(employer, request.user)
+        current = EmployerSubscriptionService.current_for_employer(employer)
+        if not current:
+            raise ValidationError("No subscription is available to renew.")
+        transaction_obj = PaymentService.initiate_subscription_payment(
+            payer_user=request.user,
+            employer=employer,
+            plan=current.plan,
+            billing_cycle=current.billing_cycle,
+        )
+        invoice = EmployerInvoiceService.create_for_subscription_checkout(
+            employer=employer,
+            plan=current.plan,
+            billing_cycle=current.billing_cycle,
+            payment_transaction=transaction_obj,
+            actor=request.user,
+        )
+        transaction_obj = PaymentService.verify_payment(reference=transaction_obj.internal_reference, actor=request.user)
+        subscription = EmployerSubscriptionService.renew(
+            employer=employer,
+            payment_transaction=transaction_obj,
+            actor=request.user,
+        )
+        EmployerInvoiceService.mark_paid(invoice=invoice, subscription=subscription, actor=request.user)
+        return Response(EmployerSubscriptionSerializer(subscription).data, status=status.HTTP_201_CREATED)
+
+    @extend_schema(request=EmployerSubscriptionCancelSerializer, responses=EmployerSubscriptionSerializer)
+    @action(detail=True, methods=["post"], url_path="subscription/cancel")
+    def subscription_cancel(self, request, pk=None):
+        employer = self.get_object()
+        self._ensure_can_manage_billing(employer, request.user)
+        serializer = EmployerSubscriptionCancelSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        subscription = EmployerSubscriptionService.cancel(
+            employer=employer,
+            actor=request.user,
+            reason=serializer.validated_data.get("reason", ""),
         )
         return Response(EmployerSubscriptionSerializer(subscription).data)
 
@@ -614,6 +677,13 @@ class EmployerViewSet(viewsets.ModelViewSet):
             return Response(None)
         return Response(EmployerSubscriptionSerializer(subscription).data)
 
+    @extend_schema(responses=EmployerEntitlementSerializer)
+    @action(detail=True, methods=["get"], url_path="subscription/entitlements")
+    def subscription_entitlements(self, request, pk=None):
+        employer = self.get_object()
+        self._ensure_can_manage_billing(employer, request.user)
+        return Response(EmployerSubscriptionService.entitlements_for_employer(employer))
+
     @extend_schema(responses=PaymentTransactionSerializer(many=True))
     @action(detail=True, methods=["get"], url_path="payments")
     def payments(self, request, pk=None):
@@ -625,6 +695,10 @@ class EmployerViewSet(viewsets.ModelViewSet):
     def invoices(self, request, pk=None):
         employer = self.get_object()
         self._ensure_can_manage_billing(employer, request.user)
+        invoices = employer.invoices.select_related("subscription__plan", "payment_transaction").order_by("-issued_at")
+        if invoices.exists():
+            return Response(EmployerInvoiceSerializer(invoices, many=True).data)
+
         rows = []
         for transaction_obj in self._employer_billing_transactions(employer):
             rows.append({

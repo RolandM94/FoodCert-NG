@@ -29,7 +29,7 @@ from apps.ministries.permissions import (
 )
 from apps.organizations.models import Organization, OrganizationType, OrganizationUnitType
 from apps.nin_verification.models import NINVerification, NINVerificationStatus
-from apps.payments.models import AssessmentFee, PayerType, PaymentStatus, PaymentTransaction
+from apps.payments.models import ActiveStatus, AssessmentFee, PayerType, PaymentStatus, PaymentTransaction
 from apps.policy.models import NationalPolicyConfig, StatePolicyConfig
 from apps.settlements.models import Settlement, SettlementStatus
 
@@ -433,11 +433,13 @@ class StateAssessmentFeeEndpointTests(APITestCase):
 
     def fee_payload(self, facility_type="clinic"):
         return {
+            "fee_name": "Clinic assessment",
             "facility_type": facility_type,
             "amount": "10000.00",
             "state_fee": "2000.00",
             "facility_fee": "7000.00",
             "platform_fee": "1000.00",
+            "provider_fee_handling": "deduct_from_platform",
             "currency": "NGN",
             "effective_from": "2026-05-18",
             "status": "active",
@@ -505,6 +507,58 @@ class StateAssessmentFeeEndpointTests(APITestCase):
         response = self.client.post("/api/state/fees/", self.fee_payload(), format="json")
 
         self.assertEqual(response.status_code, 403)
+
+    def test_fee_schedule_can_be_submitted_and_approved_via_prd_alias(self):
+        self.client.force_authenticate(self.state_admin)
+        data = self.fee_payload("diagnostic_centre")
+        data["status"] = ActiveStatus.DRAFT
+
+        created = self.client.post("/api/state/fee-schedules/", data, format="json")
+        self.assertEqual(created.status_code, 201)
+        fee_id = payload(created)["id"]
+
+        submitted = self.client.post(f"/api/state/fee-schedules/{fee_id}/submit/")
+        self.assertEqual(submitted.status_code, 200)
+        self.assertEqual(payload(submitted)["status"], ActiveStatus.PENDING_APPROVAL)
+
+        approved = self.client.post(f"/api/state/fee-schedules/{fee_id}/approve/")
+        self.assertEqual(approved.status_code, 200)
+        self.assertEqual(payload(approved)["status"], ActiveStatus.ACTIVE)
+        fee = AssessmentFee.objects.get(id=fee_id)
+        self.assertEqual(fee.approved_by, self.state_admin)
+        self.assertIsNotNone(fee.approved_at)
+
+    def test_used_fee_schedule_financial_fields_are_immutable(self):
+        fee = AssessmentFee.objects.create(
+            state=self.lagos,
+            facility_type="clinic",
+            amount="10000.00",
+            state_fee="2000.00",
+            facility_fee="7000.00",
+            platform_fee="1000.00",
+            effective_from="2026-05-18",
+            created_by=self.state_admin,
+        )
+        PaymentTransaction.objects.create(
+            payer_user=self.state_admin,
+            payer_type=PayerType.FOOD_HANDLER,
+            related_entity_type="food_handler_assessment",
+            related_entity_id=self.state_admin.id,
+            amount="10000.00",
+            payment_provider="mock",
+            internal_reference="ASS-FEE-LOCK-001",
+            status=PaymentStatus.SUCCESS,
+            metadata={"assessment_fee_id": str(fee.id), "state_id": str(self.lagos.id)},
+        )
+        self.client.force_authenticate(self.state_admin)
+
+        response = self.client.patch(
+            f"/api/state/fee-schedules/{fee.id}/",
+            {"amount": "12000.00", "state_fee": "3000.00", "facility_fee": "8000.00", "platform_fee": "1000.00"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400)
 
 
 class StateCertificateValidationEndpointTests(APITestCase):

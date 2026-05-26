@@ -25,13 +25,23 @@ class SubscriptionStatus(models.TextChoices):
     EXPIRED = "expired", "Expired"
 
 
+class InvoiceStatus(models.TextChoices):
+    ISSUED = "issued", "Issued"
+    PAID = "paid", "Paid"
+    OVERDUE = "overdue", "Overdue"
+    CANCELLED = "cancelled", "Cancelled"
+
+
 class EmployerSubscriptionPlan(BaseModel):
     name = models.CharField(max_length=120, unique=True)
     description = models.TextField(blank=True)
     max_food_handlers = models.PositiveIntegerField(default=0)
     max_locations = models.PositiveIntegerField(default=1)
+    max_users = models.PositiveIntegerField(default=1)
+    trial_days = models.PositiveIntegerField(default=0)
     price_monthly = models.DecimalField(max_digits=12, decimal_places=2)
     price_yearly = models.DecimalField(max_digits=12, decimal_places=2)
+    currency = models.CharField(max_length=3, default="NGN")
     features = models.JSONField(default=dict, blank=True)
     status = models.CharField(max_length=16, choices=PlanStatus.choices, default=PlanStatus.ACTIVE, db_index=True)
 
@@ -51,6 +61,10 @@ class EmployerSubscription(BaseModel):
     starts_at = models.DateTimeField()
     expires_at = models.DateTimeField()
     cancelled_at = models.DateTimeField(null=True, blank=True)
+    grace_period_ends_at = models.DateTimeField(null=True, blank=True)
+    renewal_reminder_sent_at = models.DateTimeField(null=True, blank=True)
+    auto_renew = models.BooleanField(default=True)
+    cancellation_reason = models.TextField(blank=True)
     last_payment_transaction = models.ForeignKey(
         "payments.PaymentTransaction",
         on_delete=models.SET_NULL,
@@ -76,3 +90,41 @@ class EmployerSubscription(BaseModel):
         if billing_cycle == BillingCycle.YEARLY:
             return starts_at + timedelta(days=365)
         return starts_at + timedelta(days=30)
+
+
+class EmployerInvoice(BaseModel):
+    invoice_number = models.CharField(max_length=40, unique=True)
+    employer = models.ForeignKey("employers.Employer", on_delete=models.PROTECT, related_name="invoices")
+    subscription = models.ForeignKey(
+        EmployerSubscription,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="invoices",
+    )
+    payment_transaction = models.OneToOneField(
+        "payments.PaymentTransaction",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="employer_invoice",
+    )
+    description = models.CharField(max_length=255)
+    line_items = models.JSONField(default=list, blank=True)
+    amount_due = models.DecimalField(max_digits=12, decimal_places=2)
+    amount_paid = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    currency = models.CharField(max_length=3, default="NGN")
+    status = models.CharField(max_length=16, choices=InvoiceStatus.choices, default=InvoiceStatus.ISSUED, db_index=True)
+    due_date = models.DateField()
+    issued_at = models.DateTimeField(default=timezone.now)
+    paid_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-issued_at"]
+        indexes = [
+            models.Index(fields=["employer", "status"]),
+            models.Index(fields=["due_date"]),
+        ]
+
+    def __str__(self) -> str:
+        return self.invoice_number
