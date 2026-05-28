@@ -1,6 +1,7 @@
 from pathlib import Path
 
 import environ
+from celery.schedules import crontab
 
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -167,6 +168,12 @@ SPECTACULAR_SETTINGS = {
 
 CELERY_BROKER_URL = env("REDIS_URL", default="redis://redis:6379/0")
 CELERY_RESULT_BACKEND = CELERY_BROKER_URL
+CELERY_BEAT_SCHEDULE = {
+    "reports-run-me-indicator-calculations-daily": {
+        "task": "reports.run_me_indicator_calculations",
+        "schedule": crontab(hour=2, minute=15),
+    },
+}
 
 DEFAULT_CERTIFICATE_VALIDITY_MONTHS = env("DEFAULT_CERTIFICATE_VALIDITY_MONTHS")
 DEFAULT_TYPHOID_VALIDITY_YEARS = env("DEFAULT_TYPHOID_VALIDITY_YEARS")

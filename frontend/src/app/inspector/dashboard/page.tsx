@@ -1,96 +1,108 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
-import { AlertTriangle, Calendar, CheckCircle, ClipboardCheck, Clock, Flag, GitBranch, SearchCheck, Timer, TrendingUp } from "lucide-react";
-import { useRouter } from "next/navigation";
+import Link from "next/link";
+import { useCallback, useEffect, useState } from "react";
+import { AlertTriangle, CalendarCheck, CheckCircle2, ClipboardList, Clock, FileSearch, Flag, RefreshCw, ShieldAlert, TrendingUp } from "lucide-react";
+
+import { KPICard } from "@/components/dashboards";
 import { PortalShell } from "@/components/layout/portal-shell";
-import { fetchInspectorDashboard, fetchInspectorTasks } from "@/lib/api/inspections";
+import { StatusBadge } from "@/components/status/status-badge";
+import { apiClient } from "@/lib/api/client";
 
-const cardsConfig: Array<{ key: string; label: string; icon: typeof Clock; color: string }> = [
-  { key: "assigned_inspections", label: "Assigned", icon: ClipboardCheck, color: "text-blue-600" },
-  { key: "due_today", label: "Due Today", icon: Calendar, color: "text-amber-500" },
-  { key: "overdue", label: "Overdue", icon: AlertTriangle, color: "text-red-500" },
-  { key: "in_progress", label: "In Progress", icon: Timer, color: "text-brand-green" },
-  { key: "submitted", label: "Submitted", icon: CheckCircle, color: "text-indigo-500" },
-  { key: "notices_issued", label: "Notices Issued", icon: Flag, color: "text-orange-500" },
-  { key: "corrective_actions_pending", label: "Actions Pending", icon: SearchCheck, color: "text-pink-500" },
-  { key: "follow_ups", label: "Follow-Ups", icon: GitBranch, color: "text-teal-500" },
-  { key: "high_priority", label: "High Priority", icon: AlertTriangle, color: "text-red-600" },
-  { key: "closed_this_month", label: "Closed (Month)", icon: TrendingUp, color: "text-slate-500" },
-];
-
-function statusColor(status: string): string {
-  const map: Record<string, string> = {
-    assigned: "bg-blue-100 text-blue-700", accepted: "bg-cyan-100 text-cyan-700",
-    in_progress: "bg-green-100 text-green-700", submitted: "bg-indigo-100 text-indigo-700",
-    closed: "bg-slate-100 text-slate-600", cancelled: "bg-red-100 text-red-600",
-    escalated: "bg-orange-100 text-orange-700", under_review: "bg-purple-100 text-purple-700",
+interface InspectorDashboardData {
+  inspector: { id: string; name: string; state: string };
+  cards: Record<string, number>;
+  sections: {
+    task_list: Array<{ id: string; reference: string; employer: string; branch: string; type: string; scheduled_date: string; priority: string; status: string }>;
+    performance_summary: Record<string, number | string>;
+    status_breakdown: Array<{ status: string; total: number }>;
+    priority_breakdown: Array<{ priority: string; total: number }>;
   };
-  return map[status] || "bg-slate-100 text-slate-500";
+}
+
+function dateLabel(value?: string) {
+  if (!value) return "—";
+  return new Intl.DateTimeFormat("en-NG", { dateStyle: "medium" }).format(new Date(value));
 }
 
 export default function Page() {
-  const router = useRouter();
-  const dashboard = useQuery({ queryKey: ["inspector-dashboard"], queryFn: fetchInspectorDashboard });
-  const tasks = useQuery({ queryKey: ["inspector-tasks"], queryFn: () => fetchInspectorTasks() });
+  const [data, setData] = useState<InspectorDashboardData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
 
-  const cards = dashboard.data?.cards || {} as Record<string, number>;
-  const taskList = tasks.data?.data || [];
+  const loadData = useCallback(async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const res = await apiClient.get("/api/dashboard/inspector/");
+      setData(res.data.data);
+    } catch {
+      setError("Could not load inspector dashboard.");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadData();
+  }, [loadData]);
 
   return (
-    <PortalShell role="inspector" title="Inspector dashboard" description="Track your assigned inspections, deadlines, and enforcement activity.">
+    <PortalShell role="inspector" title="Inspector Dashboard" description="View assigned inspections, track progress, review findings, and manage enforcement notices.">
       <div className="grid gap-5">
-        <section className="grid gap-3 grid-cols-2 md:grid-cols-3 lg:grid-cols-5">
-          {cardsConfig.map(({ key, label, icon: Icon, color }) => (
-            <div key={key} className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-              <div className="flex items-center gap-2"><Icon size={16} className={color} /><p className="text-xs font-bold uppercase text-slate-500">{label}</p></div>
-              <p className="mt-2 text-2xl font-bold text-slate-950">{(cards as Record<string, number>)[key] ?? 0}</p>
-            </div>
-          ))}
+        {loading ? <p className="rounded-lg border border-slate-200 bg-white p-4 text-sm font-semibold text-slate-600 shadow-sm">Loading dashboard...</p> : null}
+        {error ? <div className="flex items-start gap-2 rounded-lg bg-rose-50 p-3 text-sm font-semibold text-rose-800"><Flag size={16} />{error}</div> : null}
+
+        <section className="grid gap-3 sm:grid-cols-2 md:grid-cols-5">
+          <KPICard label="Assigned" value={data?.cards?.assigned_inspections ?? 0} icon={ClipboardList} />
+          <KPICard label="Due Today" value={data?.cards?.due_today ?? 0} icon={CalendarCheck} />
+          <KPICard label="In Progress" value={data?.cards?.in_progress ?? 0} icon={TrendingUp} />
+          <KPICard label="Submitted" value={data?.cards?.submitted ?? 0} icon={CheckCircle2} />
+          <KPICard label="Overdue" value={data?.cards?.overdue ?? 0} icon={Clock} />
+          <KPICard label="Notices Issued" value={data?.cards?.notices_issued ?? 0} icon={FileSearch} />
+          <KPICard label="Corrective Actions" value={data?.cards?.corrective_actions_pending ?? 0} icon={AlertTriangle} subtitle="Pending" />
+          <KPICard label="Follow-ups Due" value={data?.cards?.follow_ups_due ?? 0} icon={RefreshCw} />
+          <KPICard label="High Priority" value={data?.cards?.high_priority ?? 0} icon={ShieldAlert} />
+          <KPICard label="Closed (Month)" value={data?.cards?.closed_this_month ?? 0} icon={CheckCircle2} />
         </section>
 
         <section className="rounded-lg border border-slate-200 bg-white shadow-sm">
-          <div className="flex items-center justify-between border-b p-4">
-            <h2 className="text-base font-bold text-slate-950">Inspection Tasks</h2>
-            <button onClick={() => router.push("/inspector/inspections/new")} className="rounded bg-brand-green px-4 py-2 text-sm font-semibold text-white hover:bg-brand-deep">New Inspection</button>
+          <div className="flex items-center justify-between gap-3 border-b border-slate-200 p-4">
+            <h2 className="text-sm font-bold text-slate-950">Inspection Tasks</h2>
+            <button className="inline-flex h-9 items-center gap-2 rounded border border-slate-200 px-3 text-xs font-bold text-slate-700" type="button" onClick={() => void loadData()}>
+              <RefreshCw size={14} /> Refresh
+            </button>
           </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="border-b bg-slate-50 text-left text-xs uppercase text-slate-500">
-                <tr>
-                  <th className="p-3">Reference</th>
-                  <th className="p-3">Employer</th>
-                  <th className="p-3">Type</th>
-                  <th className="p-3">Date</th>
-                  <th className="p-3">Priority</th>
-                  <th className="p-3">Status</th>
-                  <th className="p-3">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y">
-                {tasks.isLoading ? (
-                  <tr><td colSpan={7} className="p-6 text-center text-slate-400">Loading tasks...</td></tr>
-                ) : taskList.length === 0 ? (
-                  <tr><td colSpan={7} className="p-6 text-center text-slate-400">No inspection tasks assigned to you.</td></tr>
-                ) : (
-                  taskList.map((t: Record<string, unknown>) => (
-                    <tr key={t.id as string} className="hover:bg-slate-50">
-                      <td className="p-3 font-mono text-xs">{(t.reference as string) || (t.id as string).slice(0, 8)}</td>
-                      <td className="p-3 font-medium">{t.employer_name as string || "-"}</td>
-                      <td className="p-3 text-slate-500">{String(t.inspection_type || "-").replace(/_/g, " ")}</td>
-                      <td className="p-3 text-slate-500">{t.scheduled_at ? new Date(t.scheduled_at as string).toLocaleDateString() : (t.inspection_date ? new Date(t.inspection_date as string).toLocaleDateString() : "-")}</td>
-                      <td className="p-3"><span className={`rounded px-2 py-0.5 text-xs font-semibold ${t.priority === "critical" ? "bg-red-100 text-red-700" : t.priority === "high" ? "bg-orange-100 text-orange-700" : "bg-slate-100 text-slate-600"}`}>{String(t.priority || "medium")}</span></td>
-                      <td className="p-3"><span className={`rounded px-2 py-0.5 text-xs font-semibold ${statusColor(t.status as string)}`}>{String(t.status || "-").replace(/_/g, " ")}</span></td>
-                      <td className="p-3">
-                        <button onClick={() => router.push(`/inspector/inspections/${t.id as string}`)} className="rounded bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-200">View</button>
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
+          <div className="divide-y divide-slate-200">
+            {data?.sections?.task_list?.length ? (
+              data.sections.task_list.map((task) => (
+                <div className="flex items-center justify-between gap-3 p-4 text-sm" key={task.id}>
+                  <div>
+                    <p className="font-bold text-slate-950">{task.reference || task.employer}</p>
+                    <p className="text-xs text-slate-500">{task.employer} · {task.branch || "HQ"} · {task.type} · {dateLabel(task.scheduled_date)}</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <StatusBadge status={task.status} />
+                    {task.priority === "high" || task.priority === "critical" ? <span className="inline-flex items-center rounded bg-rose-100 px-2 py-0.5 text-xs font-bold text-rose-800">{task.priority}</span> : null}
+                    <Link className="text-xs font-bold text-brand-green" href={`/inspector/inspections/${task.id}`}>View</Link>
+                  </div>
+                </div>
+              ))
+            ) : (
+              <p className="p-4 text-sm text-slate-500">No inspection tasks assigned.</p>
+            )}
           </div>
         </section>
+
+        {data?.sections?.performance_summary ? (
+          <div className="grid gap-3 md:grid-cols-5">
+            <KPICard label="Open" value={data.sections.performance_summary.open ?? 0} icon={ClipboardList} />
+            <KPICard label="Submitted" value={data.sections.performance_summary.submitted ?? 0} icon={FileSearch} />
+            <KPICard label="Closed" value={data.sections.performance_summary.closed ?? 0} icon={CheckCircle2} />
+            <KPICard label="Escalated" value={data.sections.performance_summary.escalated ?? 0} icon={ShieldAlert} />
+            <KPICard label="Avg Compliance" value={`${data.sections.performance_summary.average_compliance_score}%`} icon={TrendingUp} />
+          </div>
+        ) : null}
       </div>
     </PortalShell>
   );

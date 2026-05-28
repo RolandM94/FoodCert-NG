@@ -44,6 +44,30 @@ This scaffold includes:
 - API docs: `http://localhost:8000/api/docs/`
 - Frontend: `http://localhost:3000/`
 
+## Test Accounts
+
+All passwords: **`Demo@2024!`**
+
+| Username | Role | Portal | Notes |
+|---|---|---|---|
+| `super.admin` | Super Admin | /federal/dashboard | Full system access |
+| `federal.admin` | Federal Admin | /federal/dashboard | National oversight |
+| `lagos.admin` | State Admin | /state/dashboard | Lagos state admin |
+| `lagos.verifier` | State Verifier | /state/dashboard | Certificate verification |
+| `lagos.accreditor` | State Accreditor | /state/dashboard | Facility accreditation |
+| `lagos.inspector` | Inspector | /inspector/dashboard | Field inspections |
+| `excel.admin` | Facility Admin | /facility/dashboard | Excel Medical Centre |
+| `prime.admin` | Facility Admin | /facility/dashboard | Prime Diagnostics |
+| `excel.doctor` | Doctor | /doctor/dashboard | Assessment workflow |
+| `excel.lab` | Lab Staff | /lab/dashboard | Lab tests & results |
+| `megachow.hq` | Employer (HQ) | /employer/dashboard | MegaChow head office |
+| `megachow.ikeja` | Employer (Branch) | /employer/dashboard | MegaChow Ikeja branch |
+| `megachow.surulere` | Employer (Branch) | /employer/dashboard | MegaChow Surulere branch |
+| `ada.okafor` | Food Handler | /food-handler/dashboard | Fit — certificate ready |
+| `bola.surulere` | Food Handler | /food-handler/dashboard | Fit — Surulere branch |
+| `emeka.nnamdi` | Food Handler | /food-handler/dashboard | NIN pending (blocked) |
+| `chioma.eze` | Food Handler | /food-handler/dashboard | Temporarily excluded |
+
 ## Authentication and Organization APIs
 
 - Register: `POST /api/auth/register/`

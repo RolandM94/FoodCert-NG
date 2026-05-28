@@ -104,7 +104,12 @@ INSPECTION_STATUS_TRANSITIONS = {
 def validate_status_transition(inspection, new_status):
     if not inspection.pk:
         return
-    current = InspectionStatus(inspection.status)
+    current_value = Inspection.objects.filter(pk=inspection.pk).values_list("status", flat=True).first()
+    if current_value is None:
+        return
+    if current_value == new_status:
+        return
+    current = InspectionStatus(current_value)
     allowed = INSPECTION_STATUS_TRANSITIONS.get(current, [])
     target = InspectionStatus(new_status)
     if target not in allowed:
