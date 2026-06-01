@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { AlertCircle, BadgeCheck, Building2, Flag, RefreshCw, ShieldCheck, TrendingUp, Users } from "lucide-react";
+import { AlertCircle, BadgeCheck, Building2, Flag, ShieldCheck, TrendingUp, Users } from "lucide-react";
 
 import { ChartCard, KPICard } from "@/components/dashboards";
 import { PortalShell } from "@/components/layout/portal-shell";
@@ -12,7 +12,7 @@ interface FederalDashboardData {
   charts: {
     compliance_by_state: Array<{ state__name: string; total: number; certified: number }>;
     state_comparison_table: Array<Record<string, number | string>>;
-    certification_coverage_by_state: Array<Record<string, number>>;
+    certification_coverage_by_state: Array<{ state_name: string; state_code: string; coverage: number }>;
     facility_accreditation_by_state: Array<Record<string, number>>;
     vaccination_coverage_by_state: Array<Record<string, number>>;
     state_report_submission_status: Array<Record<string, number | string>>;
@@ -80,9 +80,9 @@ export default function Page() {
           <ChartCard title="Certification Coverage by State">
             {data?.charts?.certification_coverage_by_state?.length ? (
               <div className="space-y-2">
-                {data.charts.certification_coverage_by_state.filter((s: Record<string, number>) => s.total && s.total > 0).slice(0, 10).map((s: Record<string, number>) => (
-                  <div className="flex items-center gap-3 text-sm" key={s.state__name as string}>
-                    <p className="w-32 truncate font-medium text-slate-700">{s.state__name as string || "Unknown"}</p>
+                {data.charts.certification_coverage_by_state.slice(0, 10).map((s) => (
+                  <div className="flex items-center gap-3 text-sm" key={s.state_code}>
+                    <p className="w-32 truncate font-medium text-slate-700">{s.state_name || "Unknown"}</p>
                     <div className="flex-1 rounded-full bg-slate-100 h-2">
                       <div className="rounded-full bg-brand-green h-2" style={{ width: `${s.coverage || 0}%` }} />
                     </div>

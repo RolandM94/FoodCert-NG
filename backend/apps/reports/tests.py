@@ -838,6 +838,16 @@ class DashboardReportingTests(APITestCase):
         self.assertIn("state_report_submission_status", payload["charts"])
 
     def test_analytics_endpoints_return_chart_payloads(self):
+        OrganizationUnit.objects.create(
+            organization=self.employer_org,
+            name="Ikeja Branch",
+            unit_type=OrganizationUnitType.BRANCH,
+        )
+        OrganizationUnit.objects.create(
+            organization=self.employer_org,
+            name="Operations Desk",
+            unit_type=OrganizationUnitType.DEPARTMENT,
+        )
         self.client.force_authenticate(self.state_admin)
 
         endpoints = [
@@ -859,9 +869,13 @@ class DashboardReportingTests(APITestCase):
             self.assertIn("cards", payload, endpoint)
             self.assertIn("charts", payload, endpoint)
 
-        certificate_payload = data(self.client.get("/api/analytics/certificates/"))
+        certificate_payload = data(self.client.get("/api/analytics/certificates/", {"state": str(self.oyo.id)}))
         self.assertEqual(certificate_payload["cards"]["issued"], 1)
         self.assertIn("issuance_trend", certificate_payload["charts"])
+        inspections_payload = data(self.client.get("/api/analytics/inspections/", {"date_to": timezone.localdate()}))
+        self.assertEqual(inspections_payload["cards"]["inspections"], 1)
+        employers_payload = data(self.client.get("/api/analytics/employers/"))
+        self.assertEqual(employers_payload["charts"]["branch_by_state"][0]["total"], 1)
 
     def test_finance_analytics_require_finance_role(self):
         self.client.force_authenticate(self.employer_user)

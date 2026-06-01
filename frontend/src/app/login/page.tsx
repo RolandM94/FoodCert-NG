@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
@@ -36,6 +36,15 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    const token = window.localStorage.getItem("foodcert_access_token");
+    const role = window.localStorage.getItem("foodcert_user_role");
+    if (token && role) {
+      const home = ROLE_HOME[role as UserRole];
+      if (home) router.replace(home);
+    }
+  }, [router]);
 
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();

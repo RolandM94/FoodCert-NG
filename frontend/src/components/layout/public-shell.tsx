@@ -1,5 +1,10 @@
+"use client";
+
 import Link from "next/link";
-import { ShieldCheck } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { LogOut, ShieldCheck } from "lucide-react";
+import { useEffect, useState } from "react";
+import { logout } from "@/lib/api/auth";
 
 export function PublicShell({
   title,
@@ -10,6 +15,26 @@ export function PublicShell({
   description: string;
   children: React.ReactNode;
 }) {
+  const router = useRouter();
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [loggingOut, setLoggingOut] = useState(false);
+
+  useEffect(() => {
+    const token = window.localStorage.getItem("foodcert_access_token");
+    setIsLoggedIn(!!token);
+  }, []);
+
+  function handleLogout() {
+    setLoggingOut(true);
+    const refresh = window.localStorage.getItem("foodcert_refresh_token") || "";
+    window.localStorage.removeItem("foodcert_access_token");
+    window.localStorage.removeItem("foodcert_refresh_token");
+    window.localStorage.removeItem("foodcert_user_role");
+    window.localStorage.removeItem("foodcert_user_meta");
+    logout(refresh).catch(() => {});
+    router.push("/login");
+  }
+
   return (
     <main className="min-h-screen bg-[#f7faf8] text-slate-950">
       <header className="border-b border-emerald-100 bg-white">
@@ -27,9 +52,21 @@ export function PublicShell({
             <Link className="rounded px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50" href="/facilities/approved">
               Facilities
             </Link>
-            <Link className="rounded bg-brand-green px-3 py-2 text-sm font-bold text-white" href="/login">
-              Sign in
-            </Link>
+            {isLoggedIn ? (
+              <button
+                className="inline-flex items-center gap-2 rounded bg-brand-green px-3 py-2 text-sm font-bold text-white hover:bg-brand-deep disabled:opacity-60"
+                disabled={loggingOut}
+                onClick={handleLogout}
+                type="button"
+              >
+                <LogOut aria-hidden="true" size={16} />
+                Sign out
+              </button>
+            ) : (
+              <Link className="rounded bg-brand-green px-3 py-2 text-sm font-bold text-white" href="/login">
+                Sign in
+              </Link>
+            )}
           </div>
         </div>
       </header>

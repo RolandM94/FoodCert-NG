@@ -8,6 +8,7 @@ from pathlib import Path
 from uuid import uuid4
 
 from django.conf import settings
+from django.db import models
 from django.db.models import Avg, Count, Q, Sum
 from django.db.models.functions import TruncMonth
 from django.utils import timezone
@@ -26,7 +27,7 @@ from apps.inspections.models import CorrectiveActionResponse, EnforcementAction,
 from apps.lab_tests.models import LabTest, LabTestStatus
 from apps.locations.models import LGA, State
 from apps.ministries.models import StateReport, StateReportStatus
-from apps.organizations.models import Organization, OrganizationStatus
+from apps.organizations.models import Organization, OrganizationStatus, OrganizationUnitType
 from apps.payments.models import PaymentStatus, PaymentTransaction
 from apps.reports.models import DataQualityIssue, DataQualityIssueSeverity, GeneratedReport, GeneratedReportStatus, MEIndicator, MEIndicatorValue, ReportFormat, ReportType
 from apps.settlements.models import Settlement, SettlementStatus
@@ -414,10 +415,12 @@ class AnalyticsService:
             queryset = queryset.filter(**{paths["employer_category"]: employer_category})
         if facility_type and paths.get("facility_type"):
             queryset = queryset.filter(**{paths["facility_type"]: facility_type})
+        model_field = queryset.model._meta.get_field(date_field.split("__", 1)[0])
+        lookup = f"{date_field}__date" if isinstance(model_field, models.DateTimeField) else date_field
         if date_from:
-            queryset = queryset.filter(**{f"{date_field}__date__gte" if date_field.endswith("_at") or date_field == "created_at" else f"{date_field}__gte": date_from})
+            queryset = queryset.filter(**{f"{lookup}__gte": date_from})
         if date_to:
-            queryset = queryset.filter(**{f"{date_field}__date__lte" if date_field.endswith("_at") or date_field == "created_at" else f"{date_field}__lte": date_to})
+            queryset = queryset.filter(**{f"{lookup}__lte": date_to})
         return queryset
 
     @classmethod
@@ -583,7 +586,17 @@ class AnalyticsService:
                 "compliance_status": cls.grouped_counts(employers, "compliance_status"),
                 "subscription_status": cls.grouped_counts(employers, "subscription_status"),
                 "establishment_category": cls.grouped_counts(employers, "establishment_category"),
-                "branch_by_state": list(employers.values("state__name").annotate(total=Count("organization__units", distinct=True)).order_by("state__name")),
+                "branch_by_state": list(
+                    employers.values("state__name")
+                    .annotate(
+                        total=Count(
+                            "organization__units",
+                            filter=Q(organization__units__unit_type=OrganizationUnitType.BRANCH),
+                            distinct=True,
+                        )
+                    )
+                    .order_by("state__name")
+                ),
             },
         }
 

@@ -3,7 +3,6 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useParams } from "next/navigation";
-import { AlertTriangle, CheckCircle, XCircle, ChevronDown } from "lucide-react";
 import { PortalShell } from "@/components/layout/portal-shell";
 import { getEnforcementNotice, submitNoticeForApproval, approveNotice, closeNotice, getCorrectiveActions } from "@/lib/api/inspections";
 import { apiClient } from "@/lib/api/client";

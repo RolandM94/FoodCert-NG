@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AlertCircle, BadgeCheck, CalendarDays, ClipboardList, FileCheck2, ShieldCheck } from "lucide-react";
 
@@ -26,6 +27,7 @@ function latestByDate<T extends { created_at: string }>(rows: T[]) {
 }
 
 export default function Page() {
+  const router = useRouter();
   const [profile, setProfile] = useState<FoodHandlerProfile | null>(null);
   const [assessments, setAssessments] = useState<MedicalAssessment[]>([]);
   const [snapshot, setSnapshot] = useState<AssessmentStatusSnapshot | null>(null);
@@ -37,6 +39,11 @@ export default function Page() {
     setLoading(true);
     setError("");
     try {
+      const token = window.localStorage.getItem("foodcert_access_token");
+      if (!token) {
+        router.replace("/login");
+        return;
+      }
       const [profiles, assessmentRows, certificateRows] = await Promise.all([
         listFoodHandlers(),
         listAssessments(),
@@ -52,7 +59,7 @@ export default function Page() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [router]);
 
   useEffect(() => {
     void loadData();

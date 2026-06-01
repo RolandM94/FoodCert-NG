@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { ClipboardCheck } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { PortalShell } from "@/components/layout/portal-shell";
 import { listEnforcementNotices } from "@/lib/api/inspections";

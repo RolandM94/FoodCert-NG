@@ -1,9 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { Bell, ShieldCheck } from "lucide-react";
+import { usePathname, useRouter } from "next/navigation";
+import { Bell, LogOut, ShieldCheck } from "lucide-react";
 import { useEffect, useState } from "react";
+import { logout } from "@/lib/api/auth";
 import { listEmployerNotifications } from "@/lib/api/employer-management";
 import { listEmployers } from "@/lib/api/identity";
 import { PORTAL_NAV } from "@/lib/navigation/portal-nav";
@@ -18,10 +19,15 @@ function useAuthMeta() {
     unitType?: string;
     stateName?: string;
   }>({});
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
 
   useEffect(() => {
     const token = localStorage.getItem("foodcert_access_token");
-    if (!token) return;
+    if (!token) {
+      setIsLoggedIn(false);
+      return;
+    }
+    setIsLoggedIn(true);
     try {
       const payload = JSON.parse(atob(token.split(".")[1]));
       const userMeta = localStorage.getItem("foodcert_user_meta");
@@ -37,7 +43,7 @@ function useAuthMeta() {
     }
   }, []);
 
-  return meta;
+  return { ...meta, isLoggedIn };
 }
 
 export function PortalShell({
@@ -52,9 +58,22 @@ export function PortalShell({
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
+  const router = useRouter();
   const nav = PORTAL_NAV[role];
-  const scopeMeta = useAuthMeta();
+  const { isLoggedIn, ...scopeMeta } = useAuthMeta();
   const [notificationCount, setNotificationCount] = useState(0);
+  const [loggingOut, setLoggingOut] = useState(false);
+
+  function handleLogout() {
+    setLoggingOut(true);
+    const refresh = window.localStorage.getItem("foodcert_refresh_token") || "";
+    window.localStorage.removeItem("foodcert_access_token");
+    window.localStorage.removeItem("foodcert_refresh_token");
+    window.localStorage.removeItem("foodcert_user_role");
+    window.localStorage.removeItem("foodcert_user_meta");
+    logout(refresh).catch(() => {});
+    router.push("/login");
+  }
 
   useEffect(() => {
     let mounted = true;
@@ -109,9 +128,21 @@ export function PortalShell({
                   ) : null}
                 </Link>
               ) : null}
-              <Link className="rounded border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-700" href="/login">
-                Sign in
-              </Link>
+              {isLoggedIn ? (
+                <button
+                  className="inline-flex items-center gap-2 rounded border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+                  disabled={loggingOut}
+                  onClick={handleLogout}
+                  type="button"
+                >
+                  <LogOut aria-hidden="true" size={16} />
+                  Sign out
+                </button>
+              ) : (
+                <Link className="rounded border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-700" href="/login">
+                  Sign in
+                </Link>
+              )}
             </div>
           </div>
           <nav className="flex gap-2 overflow-x-auto pb-1">
