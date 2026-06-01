@@ -6,7 +6,7 @@ from drf_spectacular.utils import extend_schema
 from rest_framework import status, viewsets
 from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.decorators import throttle_classes
-from rest_framework.exceptions import NotFound, PermissionDenied, ValidationError
+from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -33,7 +33,7 @@ from apps.certificates.serializers import (
     SuspiciousCertificateReportSerializer,
 )
 from apps.certificates.services import CertificateService
-from apps.notifications.models import Notification, NotificationChannel, NotificationType
+from apps.notifications.models import Notification, NotificationCategory
 from apps.policy.models import NationalPolicyConfig
 
 
@@ -158,8 +158,8 @@ class CertificateViewSet(viewsets.ReadOnlyModelViewSet):
     @action(detail=True, methods=["get"], url_path="download")
     def download(self, request, pk=None):
         certificate = self.get_object()
-        if not certificate.pdf_url:
-            raise NotFound("Certificate PDF is not available.")
+        certificate.pdf_url = CertificateService.write_pdf(certificate=certificate)
+        certificate.save(update_fields=["pdf_url", "updated_at"])
         media_prefix = "http://localhost:8000/media/"
         relative_path = certificate.pdf_url.replace(media_prefix, "")
         file_path = str(settings.MEDIA_ROOT / relative_path)
@@ -203,15 +203,9 @@ class CertificateViewSet(viewsets.ReadOnlyModelViewSet):
             raise PermissionDenied("Only the certificate owner can start renewal.")
         Notification.objects.create(
             recipient=request.user,
-            notification_type=NotificationType.CERTIFICATE_RENEWAL,
-            channel=NotificationChannel.IN_APP,
-            subject="Certificate renewal started",
-            body="Start a fresh medical assessment to renew this certificate.",
-            context_data={
-                "certificate_id": str(certificate.id),
-                "certificate_number": certificate.certificate_number,
-                "next_url": "/food-handler/assessments",
-            },
+            category=NotificationCategory.RENEWAL,
+            title="Certificate renewal started",
+            message="Start a fresh medical assessment to renew this certificate.",
         )
         log_action(
             action=AuditAction.CERTIFICATE_EVENT,

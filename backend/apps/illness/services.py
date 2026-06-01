@@ -10,7 +10,7 @@ from apps.audit.models import AuditAction
 from apps.audit.services import log_action
 from apps.food_handlers.models import FoodHandlerStatus
 from apps.illness.models import ClearanceStatus, IllnessReport, SuspectedCondition
-from apps.notifications.models import Notification, NotificationChannel, NotificationType
+from apps.notifications.models import Notification, NotificationCategory
 
 
 class IllnessService:
@@ -75,11 +75,9 @@ class IllnessService:
         if food_handler.employer and food_handler.employer.user:
             Notification.objects.create(
                 recipient=food_handler.employer.user,
-                notification_type=NotificationType.ILLNESS_REPORTED,
-                channel=NotificationChannel.IN_APP,
-                subject="Food handler temporarily excluded",
-                body=f"{food_handler.full_name} must not be assigned food handling duties until cleared.",
-                context_data={"illness_report_id": str(report.id), "food_handler_id": str(food_handler.id)},
+                category=NotificationCategory.ASSESSMENT,
+                title="Food handler temporarily excluded",
+                message=f"{food_handler.full_name} must not be assigned food handling duties until cleared.",
             )
         log_action(action=AuditAction.WORKFLOW_TRANSITION, actor=reported_by, target=report, metadata={"event": "illness_reported"})
         return report
@@ -144,11 +142,9 @@ class IllnessService:
             if report.food_handler.user:
                 Notification.objects.create(
                     recipient=report.food_handler.user,
-                    notification_type=NotificationType.RETURN_TO_WORK_CLEARED,
-                    channel=NotificationChannel.IN_APP,
-                    subject="Return to work cleared",
-                    body="You have been cleared to return to food handling duties.",
-                    context_data={"illness_report_id": str(report.id)},
+                    category=NotificationCategory.ASSESSMENT,
+                    title="Return to work cleared",
+                    message="You have been cleared to return to food handling duties.",
                 )
         report.save(update_fields=["reviewed_by_doctor", "cleared_at", "clearance_status", "notes", "return_to_work_certificate_number", "updated_at"])
         log_action(

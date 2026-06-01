@@ -13,7 +13,7 @@ from apps.illness.models import ClearanceStatus, IllnessReport, SuspectedConditi
 from apps.illness.services import IllnessService
 from apps.inspections.models import Inspection, InspectionResponseType, InspectionStatus
 from apps.locations.models import State, LGA
-from apps.notifications.models import Notification, NotificationType
+from apps.notifications.models import Notification, NotificationCategory
 from apps.organizations.models import Organization, OrganizationType, OrganizationUnit, OrganizationUnitType
 from apps.food_handlers.models import FoodHandlerProfile, FoodHandlerCategory, FoodHandlerStatus, Gender
 from apps.payments.models import PaymentStatus, PaymentTransaction
@@ -920,7 +920,7 @@ class EmployerE11PrivacyTests(EmployerE11Base):
         self.assertEqual(response.status_code, 200)
         self.assertTrue(Notification.objects.filter(
             recipient=self.handler.user,
-            notification_type=NotificationType.CERTIFICATE_RENEWAL,
+            category=NotificationCategory.RENEWAL,
         ).exists())
 
     def test_vaccination_endpoint_does_not_leak_clinical_notes(self):

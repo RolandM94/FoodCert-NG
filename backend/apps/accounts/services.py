@@ -8,7 +8,7 @@ from rest_framework.exceptions import PermissionDenied, ValidationError
 from apps.accounts.models import InviteStatus, UserInvite, UserRole
 from apps.audit.models import AuditAction
 from apps.audit.services import log_action
-from apps.notifications.models import Notification, NotificationChannel, NotificationType
+from apps.notifications.models import Notification, NotificationCategory
 
 User = get_user_model()
 
@@ -166,11 +166,9 @@ class InviteService:
 
         Notification.objects.create(
             recipient=invite.invited_by,
-            notification_type=NotificationType.SYSTEM_ANNOUNCEMENT,
-            channel=NotificationChannel.IN_APP,
-            subject="Invite accepted",
-            body=f"{user.email} accepted your FoodCert NG organization invite.",
-            context_data={"invite_id": str(invite.id), "accepted_by": str(user.id)},
+            category=NotificationCategory.SYSTEM,
+            title="Invite accepted",
+            message=f"{user.email} accepted your FoodCert NG organization invite.",
         )
         log_action(action=AuditAction.UPDATE, actor=user, target=invite, metadata={"event": "invite_accepted"})
         return user, invite

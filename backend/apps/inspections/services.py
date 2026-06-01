@@ -26,7 +26,7 @@ from apps.inspections.models import (
     InspectionType,
     NoticeStatus,
 )
-from apps.notifications.models import Notification, NotificationChannel, NotificationType
+from apps.notifications.models import Notification, NotificationCategory
 
 
 class InspectionService:
@@ -168,11 +168,9 @@ class InspectionService:
         if inspection.enforcement_action in {"compliance_notice", "follow_up_required", "sanction_recommended", "escalated_to_state"} and inspection.employer.user:
             Notification.objects.create(
                 recipient=inspection.employer.user,
-                notification_type=NotificationType.COMPLIANCE_NOTICE,
-                channel=NotificationChannel.IN_APP,
-                subject="Inspection compliance notice",
-                body=inspection.findings or "An inspection requires your attention.",
-                context_data={"inspection_id": str(inspection.id), "enforcement_action": inspection.enforcement_action},
+                category=NotificationCategory.ENFORCEMENT,
+                title="Inspection compliance notice",
+                message=inspection.findings or "An inspection requires your attention.",
             )
         log_action(action=AuditAction.WORKFLOW_TRANSITION, actor=actor, target=inspection, metadata={"event": "inspection_submitted"})
         return inspection
@@ -732,15 +730,9 @@ class InspectionJobService:
             if inspection.inspector_id:
                 Notification.objects.create(
                     recipient=inspection.inspector,
-                    notification_type=NotificationType.INSPECTION_ASSIGNED,
-                    channel=NotificationChannel.IN_APP,
-                    subject="Inspection due today",
-                    body=f"Inspection {inspection.reference} at {inspection.employer.name} is scheduled for today.",
-                    context_data={
-                        "inspection_id": str(inspection.id),
-                        "inspection_reference": inspection.reference,
-                        "event": "inspection_due",
-                    },
+                    category=NotificationCategory.INSPECTION,
+                    title="Inspection due today",
+                    message=f"Inspection {inspection.reference} at {inspection.employer.name} is scheduled for today.",
                 )
                 sent += 1
 
@@ -754,16 +746,9 @@ class InspectionJobService:
                 overdue_days = (today - inspection.scheduled_at.date()).days
                 Notification.objects.create(
                     recipient=inspection.inspector,
-                    notification_type=NotificationType.COMPLIANCE_NOTICE,
-                    channel=NotificationChannel.IN_APP,
-                    subject="Inspection overdue",
-                    body=f"Inspection {inspection.reference} at {inspection.employer.name} is {overdue_days} day(s) overdue.",
-                    context_data={
-                        "inspection_id": str(inspection.id),
-                        "inspection_reference": inspection.reference,
-                        "event": "inspection_overdue",
-                        "overdue_days": overdue_days,
-                    },
+                    category=NotificationCategory.ENFORCEMENT,
+                    title="Inspection overdue",
+                    message=f"Inspection {inspection.reference} at {inspection.employer.name} is {overdue_days} day(s) overdue.",
                 )
                 sent += 1
 
@@ -785,25 +770,19 @@ class InspectionJobService:
                 if notice.employer.user_id:
                     exists = Notification.objects.filter(
                         recipient=notice.employer.user,
-                        notification_type=NotificationType.COMPLIANCE_NOTICE,
-                        context_data__notice_id=str(notice.id),
-                        context_data__event="corrective_action_due",
-                        context_data__days_ahead=days_ahead,
+                        category=NotificationCategory.ENFORCEMENT,
+                        related_object_type="enforcement_notice",
+                        related_object_id=str(notice.id),
+                    ).filter(
+                        title__contains=str(days_ahead),
                     ).exists()
                     if exists:
                         continue
                     Notification.objects.create(
                         recipient=notice.employer.user,
-                        notification_type=NotificationType.COMPLIANCE_NOTICE,
-                        channel=NotificationChannel.IN_APP,
-                        subject=f"Corrective action deadline in {days_ahead} day(s)",
-                        body=f"Enforcement notice {notice.notice_reference} requires corrective action by {notice.deadline.isoformat()}.",
-                        context_data={
-                            "notice_id": str(notice.id),
-                            "notice_reference": notice.notice_reference,
-                            "event": "corrective_action_due",
-                            "days_ahead": days_ahead,
-                        },
+                        category=NotificationCategory.ENFORCEMENT,
+                        title=f"Corrective action deadline in {days_ahead} day(s)",
+                        message=f"Enforcement notice {notice.notice_reference} requires corrective action by {notice.deadline.isoformat()}.",
                     )
                     sent += 1
 
@@ -817,23 +796,18 @@ class InspectionJobService:
             if notice.employer.user_id:
                 exists = Notification.objects.filter(
                     recipient=notice.employer.user,
-                    notification_type=NotificationType.COMPLIANCE_NOTICE,
-                    context_data__notice_id=str(notice.id),
-                    context_data__event="corrective_action_overdue_escalated",
+                    category=NotificationCategory.ENFORCEMENT,
+                    related_object_type="enforcement_notice",
+                    related_object_id=str(notice.id),
+                    title__icontains="overdue",
                 ).exists()
                 if exists:
                     continue
                 Notification.objects.create(
                     recipient=notice.employer.user,
-                    notification_type=NotificationType.COMPLIANCE_NOTICE,
-                    channel=NotificationChannel.IN_APP,
-                    subject="Corrective action overdue — escalated",
-                    body=f"Enforcement notice {notice.notice_reference} is overdue by {cls._OVERDUE_ESCALATION_DAYS}+ days and has been flagged for escalation.",
-                    context_data={
-                        "notice_id": str(notice.id),
-                        "notice_reference": notice.notice_reference,
-                        "event": "corrective_action_overdue_escalated",
-                    },
+                    category=NotificationCategory.ENFORCEMENT,
+                    title="Corrective action overdue — escalated",
+                    message=f"Enforcement notice {notice.notice_reference} is overdue by {cls._OVERDUE_ESCALATION_DAYS}+ days and has been flagged for escalation.",
                 )
                 sent += 1
 
@@ -854,23 +828,18 @@ class InspectionJobService:
             if inspection.inspector_id and inspection.scheduled_at and inspection.scheduled_at.date() <= today:
                 exists = Notification.objects.filter(
                     recipient=inspection.inspector,
-                    notification_type=NotificationType.INSPECTION_ASSIGNED,
-                    context_data__inspection_id=str(inspection.id),
-                    context_data__event="follow_up_due",
+                    category=NotificationCategory.INSPECTION,
+                    related_object_type="inspection",
+                    related_object_id=str(inspection.id),
+                    title__icontains="follow-up",
                 ).exists()
                 if exists:
                     continue
                 Notification.objects.create(
                     recipient=inspection.inspector,
-                    notification_type=NotificationType.INSPECTION_ASSIGNED,
-                    channel=NotificationChannel.IN_APP,
-                    subject="Follow-up inspection due",
-                    body=f"Follow-up inspection {inspection.reference} at {inspection.employer.name} is due.",
-                    context_data={
-                        "inspection_id": str(inspection.id),
-                        "inspection_reference": inspection.reference,
-                        "event": "follow_up_due",
-                    },
+                    category=NotificationCategory.INSPECTION,
+                    title="Follow-up inspection due",
+                    message=f"Follow-up inspection {inspection.reference} at {inspection.employer.name} is due.",
                 )
                 sent += 1
 

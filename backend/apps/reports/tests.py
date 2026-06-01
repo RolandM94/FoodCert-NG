@@ -16,7 +16,7 @@ from apps.illness.models import IllnessReport
 from apps.inspections.models import EnforcementAction, Inspection, InspectionPriority, InspectionStatus
 from apps.lab_tests.models import LabTest, LabTestStatus, LabTestType
 from apps.locations.models import LGA, State
-from apps.notifications.models import Notification, NotificationChannel, NotificationStatus, NotificationType
+from apps.notifications.models import Notification, NotificationCategory
 from apps.organizations.models import Organization, OrganizationType, OrganizationUnit, OrganizationUnitType
 from apps.payments.models import PaymentStatus, PaymentTransaction
 from apps.ministries.models import StateReport, StateReportStatus
@@ -702,11 +702,9 @@ class DashboardReportingTests(APITestCase):
     def test_nested_employer_notifications_and_settings(self):
         Notification.objects.create(
             recipient=self.employer_user,
-            notification_type=NotificationType.COMPLIANCE_NOTICE,
-            channel=NotificationChannel.IN_APP,
-            status=NotificationStatus.DELIVERED,
-            subject="Inspection notice",
-            body="Please respond to your inspection notice.",
+            category=NotificationCategory.ENFORCEMENT,
+            title="Inspection notice",
+            message="Please respond to your inspection notice.",
         )
         self.client.force_authenticate(self.employer_user)
 

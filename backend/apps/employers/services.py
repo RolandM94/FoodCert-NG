@@ -12,7 +12,7 @@ from apps.employers.models import Employer, ComplianceStatus, SubscriptionStatus
 from apps.food_handlers.models import FoodHandlerProfile, FoodHandlerStatus
 from apps.illness.models import IllnessReport
 from apps.inspections.models import Inspection, InspectionStatus
-from apps.notifications.models import Notification, NotificationChannel, NotificationStatus
+from apps.notifications.models import Notification
 from apps.organizations.models import Organization, OrganizationType
 from apps.organizations.models import OrganizationUnit, OrganizationUnitType
 from apps.vaccinations.models import VaccinationRecord, VaccinationStatus, VaccineType
@@ -214,16 +214,14 @@ class EmployerDashboardService:
         rows = []
         notifications = Notification.objects.filter(
             recipient__organization=employer.organization,
-            channel=NotificationChannel.IN_APP,
         ).order_by("-created_at")[:6]
         for item in notifications:
             rows.append({
                 "id": str(item.id),
                 "kind": "notification",
-                "title": item.subject,
-                "description": item.body[:160],
+                "title": item.title,
+                "description": item.message[:160],
                 "created_at": item.created_at.isoformat(),
-                "status": item.status,
             })
         inspections = Inspection.objects.filter(employer=employer)
         if scoped_branch:
@@ -318,22 +316,20 @@ class EmployerDashboardService:
     def notifications(cls, *, employer, actor):
         queryset = Notification.objects.filter(
             recipient__organization=employer.organization,
-            channel=NotificationChannel.IN_APP,
         ).select_related("recipient").order_by("-created_at")
         rows = [
             {
                 "id": str(item.id),
                 "recipient_name": item.recipient.get_full_name() or item.recipient.email,
-                "notification_type": item.notification_type,
-                "status": item.status,
-                "subject": item.subject,
-                "body": item.body,
+                "category": item.category,
+                "title": item.title,
+                "message": item.message,
                 "created_at": item.created_at.isoformat(),
                 "read_at": item.read_at.isoformat() if item.read_at else None,
             }
             for item in queryset[:50]
         ]
         return {
-            "unread_count": queryset.exclude(status=NotificationStatus.READ).count(),
+            "unread_count": queryset.filter(is_read=False).count(),
             "notifications": rows,
         }

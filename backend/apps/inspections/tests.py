@@ -12,7 +12,7 @@ from apps.food_handlers.models import FoodHandlerCategory, FoodHandlerProfile, G
 from apps.inspections.models import EnforcementAction, Inspection, InspectionChecklistItem, InspectionResponse, InspectionResponseType, InspectionStatus, ChecklistCategory, ChecklistSeverity
 from apps.locations.models import State
 from apps.nin_verification.models import NINVerification, NINVerificationStatus
-from apps.notifications.models import Notification, NotificationType
+from apps.notifications.models import Notification, NotificationCategory
 from apps.organizations.models import Organization, OrganizationType, OrganizationUnit, OrganizationUnitType
 from apps.payments.models import PaymentStatus, PaymentTransaction
 
@@ -149,7 +149,7 @@ class InspectionWorkflowTests(APITestCase):
         self.assertEqual(submit_response.status_code, 200)
         self.assertEqual(data(submit_response)["status"], InspectionStatus.SUBMITTED)
         self.assertEqual(data(submit_response)["compliance_score"], "66.67")
-        self.assertTrue(Notification.objects.filter(recipient=self.employer_user, notification_type=NotificationType.COMPLIANCE_NOTICE).exists())
+        self.assertTrue(Notification.objects.filter(recipient=self.employer_user, category=NotificationCategory.ENFORCEMENT).exists())
 
     def test_inspector_can_add_evidence_and_scan_certificate(self):
         certificate = self._certificate()

@@ -2,13 +2,12 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Bell, LogOut, ShieldCheck } from "lucide-react";
+import { LogOut, ShieldCheck } from "lucide-react";
 import { useEffect, useState } from "react";
 import { logout } from "@/lib/api/auth";
-import { listEmployerNotifications } from "@/lib/api/employer-management";
-import { listEmployers } from "@/lib/api/identity";
 import { PORTAL_NAV } from "@/lib/navigation/portal-nav";
 import { ROLE_LABELS } from "@/lib/permissions/roles";
+import { NotificationBell } from "@/components/ui/notification-bell";
 import { UnitScopeBadge } from "@/components/ui/unit-scope-badge";
 import type { UserRole } from "@/types/auth";
 
@@ -20,11 +19,13 @@ function useAuthMeta() {
     stateName?: string;
   }>({});
   const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [isAuthChecked, setIsAuthChecked] = useState(false);
 
   useEffect(() => {
     const token = localStorage.getItem("foodcert_access_token");
     if (!token) {
       setIsLoggedIn(false);
+      setIsAuthChecked(true);
       return;
     }
     setIsLoggedIn(true);
@@ -41,9 +42,10 @@ function useAuthMeta() {
     } catch {
       // ignore parse errors
     }
+    setIsAuthChecked(true);
   }, []);
 
-  return { ...meta, isLoggedIn };
+  return { ...meta, isLoggedIn, isAuthChecked };
 }
 
 export function PortalShell({
@@ -60,8 +62,7 @@ export function PortalShell({
   const pathname = usePathname();
   const router = useRouter();
   const nav = PORTAL_NAV[role];
-  const { isLoggedIn, ...scopeMeta } = useAuthMeta();
-  const [notificationCount, setNotificationCount] = useState(0);
+  const { isLoggedIn, isAuthChecked, ...scopeMeta } = useAuthMeta();
   const [loggingOut, setLoggingOut] = useState(false);
 
   function handleLogout() {
@@ -76,24 +77,12 @@ export function PortalShell({
   }
 
   useEffect(() => {
-    let mounted = true;
-    if (role !== "employer") return;
-    listEmployers()
-      .then((employers) => employers[0]?.id)
-      .then((employerId) => {
-        if (!employerId) return null;
-        return listEmployerNotifications(employerId);
-      })
-      .then((payload) => {
-        if (mounted && payload) setNotificationCount(payload.unread_count);
-      })
-      .catch(() => {
-        if (mounted) setNotificationCount(0);
-      });
-    return () => {
-      mounted = false;
-    };
-  }, [role]);
+    if (isAuthChecked && !isLoggedIn) {
+      router.replace(`/login?next=${encodeURIComponent(pathname)}`);
+    }
+  }, [isAuthChecked, isLoggedIn, pathname, router]);
+
+  const notificationHref = role === "employer" ? "/employer/notifications" : "/food-handler/notifications";
 
   return (
     <main className="min-h-screen bg-[#f7faf8] text-slate-950">
@@ -118,16 +107,7 @@ export function PortalShell({
               />
             </div>
             <div className="flex items-center gap-2">
-              {role === "employer" ? (
-                <Link className="relative inline-flex h-10 w-10 items-center justify-center rounded border border-slate-200 text-slate-700 hover:bg-slate-50" href="/employer/notifications" aria-label="Employer notifications">
-                  <Bell aria-hidden="true" size={18} />
-                  {notificationCount > 0 ? (
-                    <span className="absolute -right-1 -top-1 min-w-5 rounded-full bg-rose-600 px-1.5 py-0.5 text-center text-[10px] font-bold text-white">
-                      {notificationCount > 99 ? "99+" : notificationCount}
-                    </span>
-                  ) : null}
-                </Link>
-              ) : null}
+              <NotificationBell href={notificationHref} />
               {isLoggedIn ? (
                 <button
                   className="inline-flex items-center gap-2 rounded border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"

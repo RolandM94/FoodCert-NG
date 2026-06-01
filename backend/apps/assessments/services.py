@@ -21,7 +21,7 @@ from apps.audit.services import log_action
 from apps.food_handlers.models import FoodHandlerStatus
 from apps.illness.models import ClearanceStatus, IllnessReport, SuspectedCondition
 from apps.nin_verification.models import NINVerificationStatus
-from apps.notifications.models import Notification, NotificationChannel, NotificationType
+from apps.notifications.models import Notification, NotificationCategory
 from apps.payments.models import PaymentStatus
 from apps.policy.models import NationalPolicyConfig
 from apps.reports.models import GeneratedReport, GeneratedReportStatus, ReportFormat, ReportType
@@ -488,16 +488,9 @@ class AssessmentService:
         for recipient in {user for user in recipients if user}:
             Notification.objects.create(
                 recipient=recipient,
-                notification_type=NotificationType.SYSTEM_ANNOUNCEMENT,
-                channel=NotificationChannel.IN_APP,
-                subject="Appointment updated",
-                body=f"Your FoodCert NG assessment appointment was {event.replace('_', ' ')}.",
-                context_data={
-                    "appointment_id": str(appointment.id),
-                    "assessment_id": str(assessment.id) if assessment else "",
-                    "event": event,
-                    "actor_id": str(actor.id) if actor else "",
-                },
+                category=NotificationCategory.SYSTEM,
+                title="Appointment updated",
+                message=f"Your FoodCert NG assessment appointment was {event.replace('_', ' ')}.",
             )
 
     @classmethod

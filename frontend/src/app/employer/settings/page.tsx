@@ -3,25 +3,11 @@
 import Link from "next/link";
 import { useMemo } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Bell, Building2, Save, Settings, ShieldCheck } from "lucide-react";
+import { BellRing, Building2, Save, Settings, ShieldCheck } from "lucide-react";
 import { PortalShell } from "@/components/layout/portal-shell";
 import { getEmployerSettings, updateEmployerSettings } from "@/lib/api/employer-management";
 import { listEmployers } from "@/lib/api/identity";
-
-const notificationTypes = [
-  ["certificate_expiry_reminder", "Certificate expiry reminders"],
-  ["vaccination_due", "Vaccination due"],
-  ["illness_reported", "Illness reported"],
-  ["inspection_assigned", "Inspection notices"],
-  ["compliance_notice", "Compliance notices"],
-  ["subscription_expiry", "Subscription expiry"],
-] as const;
-
-const channels = [
-  ["email", "Email"],
-  ["sms", "SMS"],
-  ["in_app", "In-app"],
-] as const;
+import { NotificationPreferenceForm } from "@/components/ui/notification-preference-form";
 
 function settingValue(settings: Record<string, unknown>, key: string, fallback: string | number | boolean) {
   const value = settings[key];
@@ -39,7 +25,6 @@ export default function Page() {
   });
 
   const settings = settingsQuery.data;
-  const notificationPreferences = useMemo(() => settings?.notification_preferences || {}, [settings]);
   const businessSettings = useMemo(() => settings?.business_settings || {}, [settings]);
 
   const mutation = useMutation({
@@ -47,65 +32,22 @@ export default function Page() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["employer-settings", employer?.id] }),
   });
 
-  const togglePreference = (type: string, channel: string) => {
-    const next = {
-      ...notificationPreferences,
-      [type]: {
-        ...(notificationPreferences[type] || {}),
-        [channel]: !(notificationPreferences[type]?.[channel] ?? true),
-      },
-    };
-    mutation.mutate({ notification_preferences: next });
-  };
-
   const updateBusinessSetting = (key: string, value: unknown) => {
     mutation.mutate({ business_settings: { ...businessSettings, [key]: value } });
   };
 
   return (
-    <PortalShell role="employer" title="Employer Settings" description="Manage organization notification preferences, reminder cadence, and operational settings.">
+    <PortalShell role="employer" title="Employer Settings" description="Manage notification preferences, reminder cadence, and operational settings.">
       <div className="grid gap-6">
         {mutation.isError ? <p className="rounded-lg bg-rose-50 p-4 text-sm font-semibold text-rose-700">Could not save settings.</p> : null}
         {mutation.isSuccess ? <p className="rounded-lg bg-emerald-50 p-4 text-sm font-semibold text-brand-deep">Settings saved.</p> : null}
 
         <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
           <div className="mb-5 flex items-center gap-2">
-            <Bell className="text-brand-deep" size={18} />
+            <BellRing className="text-brand-deep" size={18} />
             <h2 className="text-base font-bold text-slate-950">Notification Preferences</h2>
           </div>
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[680px] text-left text-sm">
-              <thead className="text-xs font-bold uppercase tracking-wide text-slate-500">
-                <tr>
-                  <th className="border-b border-slate-100 py-2 pr-4">Notification</th>
-                  {channels.map(([, label]) => <th key={label} className="border-b border-slate-100 py-2 text-center">{label}</th>)}
-                </tr>
-              </thead>
-              <tbody>
-                {notificationTypes.map(([type, label]) => (
-                  <tr key={type}>
-                    <td className="border-b border-slate-50 py-4 pr-4 font-semibold text-slate-900">{label}</td>
-                    {channels.map(([channel, channelLabel]) => {
-                      const active = notificationPreferences[type]?.[channel] ?? true;
-                      return (
-                        <td key={`${type}-${channel}`} className="border-b border-slate-50 py-4 text-center">
-                          <button
-                            aria-label={`${active ? "Disable" : "Enable"} ${channelLabel} for ${label}`}
-                            className={`inline-flex h-8 w-14 items-center rounded-full border p-1 transition ${active ? "border-emerald-200 bg-emerald-100" : "border-slate-200 bg-slate-100"}`}
-                            disabled={mutation.isPending}
-                            onClick={() => togglePreference(type, channel)}
-                            type="button"
-                          >
-                            <span className={`h-6 w-6 rounded-full bg-white shadow-sm transition ${active ? "translate-x-6" : "translate-x-0"}`} />
-                          </button>
-                        </td>
-                      );
-                    })}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <NotificationPreferenceForm />
         </section>
 
         <section className="grid gap-6 lg:grid-cols-2">

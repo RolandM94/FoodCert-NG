@@ -15,7 +15,7 @@ from apps.illness.models import ClearanceStatus, IllnessReport
 from apps.inspections.models import Inspection, InspectionCertificateScan
 from apps.locations.models import State
 from apps.nin_verification.models import NINVerification, NINVerificationStatus
-from apps.notifications.models import Notification, NotificationType
+from apps.notifications.models import Notification, NotificationCategory
 from apps.organizations.models import Organization, OrganizationType
 from apps.payments.models import PaymentStatus, PaymentTransaction
 from apps.policy.models import NationalPolicyConfig, StatePolicyConfig
@@ -864,6 +864,43 @@ class CertificateIssuanceTests(APITestCase):
             ).exists()
         )
 
+    def test_state_and_federal_certificate_downloads_are_audited(self):
+        certificate_request = CertificateRequest.objects.create(
+            assessment=self.assessment,
+            requested_by=self.doctor,
+            status="approved",
+            reviewed_by=self.state_admin,
+            reviewed_at=timezone.now(),
+        )
+        self.client.force_authenticate(self.state_admin)
+        certificate_response = self.client.post(
+            "/api/certificates/generate/",
+            {"certificate_request": str(certificate_request.id)},
+            format="json",
+        )
+        certificate = Certificate.objects.get(id=data(certificate_response)["id"])
+        federal_admin = User.objects.create_user(
+            username="federal-certificate-download",
+            email="federal-certificate-download@example.com",
+            password="StrongPass123!",
+            role=UserRole.FEDERAL_ADMIN,
+        )
+
+        for user in [self.state_admin, federal_admin]:
+            self.client.force_authenticate(user)
+            response = self.client.get(f"/api/certificates/{certificate.id}/download/")
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response["Content-Type"], "application/pdf")
+
+        self.assertEqual(
+            AuditLog.objects.filter(
+                target_type="Certificate",
+                target_id=str(certificate.id),
+                metadata__event="certificate_download",
+            ).count(),
+            2,
+        )
+
     def test_food_handler_can_start_own_certificate_renewal(self):
         certificate_request = CertificateRequest.objects.create(
             assessment=self.assessment,
@@ -886,7 +923,7 @@ class CertificateIssuanceTests(APITestCase):
         self.assertEqual(response.status_code, 200)
         self.assertTrue(Notification.objects.filter(
             recipient=self.handler_user,
-            notification_type=NotificationType.CERTIFICATE_RENEWAL,
+            category=NotificationCategory.RENEWAL,
         ).exists())
 
     def test_revoked_certificate_verifies_as_revoked(self):
@@ -1019,8 +1056,10 @@ class CertificateIssuanceTests(APITestCase):
         self.assertEqual(second["reminders_sent"], 0)
         self.assertTrue(Notification.objects.filter(
             recipient=self.handler_user,
-            notification_type=NotificationType.CERTIFICATE_EXPIRY_REMINDER,
-            context_data__reminder_key="expiry_30",
+            category=NotificationCategory.CERTIFICATE,
+            related_object_type="certificate",
+            related_object_id=certificate.id,
+            title="Certificate expires in 30 days",
         ).exists())
 
         certificate.expiry_date = timezone.localdate() - timezone.timedelta(days=1)

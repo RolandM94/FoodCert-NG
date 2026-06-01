@@ -7,7 +7,7 @@ from apps.employers.models import Employer, EstablishmentCategory
 from apps.food_handlers.models import FoodHandlerCategory, FoodHandlerProfile, FoodHandlerStatus, Gender
 from apps.illness.models import ClearanceStatus
 from apps.locations.models import State
-from apps.notifications.models import Notification, NotificationType
+from apps.notifications.models import Notification, NotificationCategory
 from apps.organizations.models import Organization, OrganizationType
 
 User = get_user_model()
@@ -85,7 +85,7 @@ class IllnessWorkflowTests(APITestCase):
         self.assertEqual(data(response)["earliest_return_date"], str(symptom_end + timezone.timedelta(days=2)))
         self.food_handler.refresh_from_db()
         self.assertEqual(self.food_handler.current_status, FoodHandlerStatus.TEMPORARILY_EXCLUDED)
-        self.assertTrue(Notification.objects.filter(recipient=self.employer_user, notification_type=NotificationType.ILLNESS_REPORTED).exists())
+        self.assertTrue(Notification.objects.filter(recipient=self.employer_user, category=NotificationCategory.ASSESSMENT).exists())
 
     def test_doctor_can_clear_after_earliest_return_date(self):
         self.client.force_authenticate(self.handler_user)

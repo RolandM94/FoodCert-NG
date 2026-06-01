@@ -40,6 +40,10 @@ def percent(numerator, denominator):
     return round((numerator / denominator) * 100, 2)
 
 
+def decimal_string(value):
+    return format(Decimal(value or 0).normalize(), "f")
+
+
 def media_url(relative_path):
     return f"http://localhost:8000{settings.MEDIA_URL}{relative_path}"
 
@@ -1186,7 +1190,7 @@ class DashboardService:
                     "closed": inspections.filter(status=InspectionStatus.CLOSED).count(),
                     "submitted": inspections.filter(status=InspectionStatus.SUBMITTED).count(),
                     "escalated": inspections.filter(status=InspectionStatus.ESCALATED).count(),
-                    "average_compliance_score": str(inspections.exclude(compliance_score__isnull=True).aggregate(score=Avg("compliance_score"))["score"] or 0),
+                    "average_compliance_score": decimal_string(inspections.exclude(compliance_score__isnull=True).aggregate(score=Avg("compliance_score"))["score"]),
                 },
                 "status_breakdown": list(inspections.values("status").annotate(total=Count("id")).order_by("status")),
                 "priority_breakdown": list(inspections.values("priority").annotate(total=Count("id")).order_by("priority")),
@@ -1392,7 +1396,7 @@ class DashboardService:
                 "pending_doctor_review": assessments.filter(Q(final_decision=FitnessDecision.PENDING) | Q(declaration_status=StepStatus.SUBMITTED)).count(),
                 "average_turnaround_hours": cls.average_turnaround_hours(assessments),
                 "pending_settlements": pending_settlements.count(),
-                "settled_amount": str(settled.aggregate(total=Sum("facility_amount"))["total"] or 0),
+                "settled_amount": decimal_string(settled.aggregate(total=Sum("facility_amount"))["total"]),
             },
             "charts": {
                 "assessment_status": list(assessments.values("status").annotate(total=Count("id")).order_by("status")),
@@ -1670,8 +1674,8 @@ class DashboardService:
                 "food_handler_categories": list(handlers.values("food_handler_category").annotate(total=Count("id")).order_by("food_handler_category")),
                 "establishment_categories": list(Employer.objects.values("establishment_category").annotate(total=Count("id")).order_by("establishment_category")),
                 "vaccination_coverage": cls.vaccination_coverage_queryset(handlers),
-                "illness_trends": list(IllnessReport.objects.extra(select={"month": "strftime('%%Y-%%m', created_at)"}).values("month").annotate(total=Count("id")).order_by("month")),
-                "inspection_trends": list(Inspection.objects.extra(select={"month": "strftime('%%Y-%%m', inspection_date)"}).values("month").annotate(total=Count("id")).order_by("month")),
+                "illness_trends": cls.monthly_trend(IllnessReport.objects.all(), "created_at"),
+                "inspection_trends": cls.monthly_trend(Inspection.objects.all(), "inspection_date"),
             },
         }
 

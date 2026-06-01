@@ -35,6 +35,7 @@ from apps.food_handlers.serializers import (
     FoodHandlerBranchAssignmentSerializer,
 )
 from apps.certificates.models import Certificate, CertificateStatus
+from apps.certificates.services import CertificateService
 from apps.illness.models import IllnessReport
 from apps.illness.services import IllnessService
 from apps.inspections.models import Inspection
@@ -46,7 +47,7 @@ from apps.payments.services import PaymentService
 from apps.reports.models import ReportType
 from apps.reports.serializers import GeneratedReportSerializer
 from apps.reports.services import EmployerReportService
-from apps.notifications.models import Notification, NotificationChannel, NotificationType
+from apps.notifications.models import Notification, NotificationCategory
 from apps.subscriptions.serializers import (
     EmployerEntitlementSerializer,
     EmployerInvoiceSerializer,
@@ -371,8 +372,8 @@ class EmployerViewSet(viewsets.ModelViewSet):
         employer = self.get_object()
         self._ensure_can_view_employer_health_data(employer, request.user)
         certificate = self._get_employer_certificate(employer, request.user, certificate_id)
-        if not certificate.pdf_url:
-            raise ValidationError("Certificate PDF is not available.")
+        certificate.pdf_url = CertificateService.write_pdf(certificate=certificate)
+        certificate.save(update_fields=["pdf_url", "updated_at"])
         media_prefix = "http://localhost:8000/media/"
         relative_path = certificate.pdf_url.replace(media_prefix, "")
         file_path = str(settings.MEDIA_ROOT / relative_path)
@@ -387,11 +388,9 @@ class EmployerViewSet(viewsets.ModelViewSet):
         if certificate.food_handler.user_id:
             Notification.objects.create(
                 recipient=certificate.food_handler.user,
-                notification_type=NotificationType.CERTIFICATE_RENEWAL,
-                channel=NotificationChannel.IN_APP,
-                subject="Certificate renewal reminder",
-                body=f"{employer.business_name} sent a reminder to renew your FoodCert NG certificate.",
-                context_data={"certificate_id": str(certificate.id), "certificate_number": certificate.certificate_number},
+                category=NotificationCategory.RENEWAL,
+                title="Certificate renewal reminder",
+                message=f"{employer.business_name} sent a reminder to renew your FoodCert NG certificate.",
             )
         log_action(action=AuditAction.CERTIFICATE_EVENT, actor=request.user, target=certificate, metadata={"event": "employer_certificate_renewal_reminder_sent"})
         return Response({"status": "sent", "certificate_id": str(certificate.id)})

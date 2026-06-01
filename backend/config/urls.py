@@ -48,6 +48,7 @@ urlpatterns = [
     path("api/", include("apps.inspections.urls")),
     path("api/", include("apps.reports.urls")),
     path("api/", include("apps.ministries.urls")),
+    path("api/", include("apps.notifications.urls")),
     path("verify/<str:certificate_number>/", public_verify_certificate, name="public-certificate-verify-page"),
     path("api/schema/", SpectacularAPIView.as_view(), name="schema"),
     path("api/docs/", SpectacularSwaggerView.as_view(url_name="schema"), name="swagger-ui"),

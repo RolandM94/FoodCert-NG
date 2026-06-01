@@ -2,6 +2,7 @@ import hashlib
 from io import BytesIO
 from pathlib import Path
 import secrets
+from textwrap import wrap
 from typing import Optional
 from uuid import uuid4
 
@@ -35,7 +36,8 @@ from apps.illness.models import ClearanceStatus, IllnessReport
 from apps.policy.models import StatePolicyConfig
 from apps.payments.models import PaymentStatus
 from apps.reports.models import GeneratedReport, ReportType
-from apps.notifications.models import Notification, NotificationChannel, NotificationType
+from apps.notifications.models import Notification, NotificationCategory
+from apps.notifications.services import NotificationService
 
 User = get_user_model()
 
@@ -57,26 +59,38 @@ def _media_path_from_url(url: str) -> Optional[Path]:
 
 class CertificateService:
     @classmethod
-    def _notify_assessment_people(cls, *, assessment, notification_type, subject, body, context_data=None):
+    def _notify_assessment_people(cls, *, assessment, category, title, message):
         recipients = []
         if assessment.doctor_id:
-            recipients.append(assessment.doctor)
+            recipients.append({
+                "user_id": str(assessment.doctor_id),
+                "email": assessment.doctor.email or "",
+                "recipient_type": "doctor",
+            })
         if assessment.food_handler.user_id:
-            recipients.append(assessment.food_handler.user)
-        recipients.extend(User.objects.filter(role=UserRole.FACILITY_ADMIN, organization_id=assessment.facility.organization_id, is_active=True))
-        seen = set()
-        for recipient in recipients:
-            if not recipient or recipient.id in seen:
-                continue
-            seen.add(recipient.id)
-            Notification.objects.create(
-                recipient=recipient,
-                notification_type=notification_type,
-                channel=NotificationChannel.IN_APP,
-                subject=subject,
-                body=body,
-                context_data=context_data or {},
-            )
+            recipients.append({
+                "user_id": str(assessment.food_handler.user_id),
+                "email": assessment.food_handler.user.email or "",
+                "recipient_type": "food_handler",
+            })
+        facility_admins = User.objects.filter(
+            role=UserRole.FACILITY_ADMIN,
+            organization_id=assessment.facility.organization_id,
+            is_active=True,
+        )
+        for admin in facility_admins:
+            recipients.append({
+                "user_id": str(admin.id),
+                "email": admin.email or "",
+                "recipient_type": "facility_admin",
+                "organization_id": str(admin.organization_id) if admin.organization_id else "",
+            })
+        NotificationService.send(
+            category=category,
+            title=title,
+            message=message,
+            recipients=recipients,
+        )
 
     @classmethod
     def policy_for_state(cls, state):
@@ -196,10 +210,9 @@ class CertificateService:
         assessment.save(update_fields=["status", "updated_at"])
         cls._notify_assessment_people(
             assessment=assessment,
-            notification_type=NotificationType.COMPLIANCE_NOTICE,
-            subject="Assessment submitted to State",
-            body="A fit assessment has been submitted for State certificate validation.",
-            context_data={"assessment_id": str(assessment.id), "certificate_request_id": str(request.id)},
+            category=NotificationCategory.ENFORCEMENT,
+            title="Assessment submitted to State",
+            message="A fit assessment has been submitted for State certificate validation.",
         )
         log_action(
             action=AuditAction.CERTIFICATE_EVENT,
@@ -236,15 +249,9 @@ class CertificateService:
         if certificate_request.reviewed_by:
             Notification.objects.create(
                 recipient=certificate_request.reviewed_by,
-                notification_type=NotificationType.SYSTEM_ANNOUNCEMENT,
-                channel=NotificationChannel.IN_APP,
-                subject="Certificate clarification response received",
-                body="A facility has responded to a State certificate validation clarification request.",
-                context_data={
-                    "certificate_request_id": str(certificate_request.id),
-                    "assessment_id": str(assessment.id),
-                    "facility_id": str(assessment.facility_id),
-                },
+                category=NotificationCategory.SYSTEM,
+                title="Certificate clarification response received",
+                message="A facility has responded to a State certificate validation clarification request.",
             )
         return certificate_request
 
@@ -269,15 +276,9 @@ class CertificateService:
         for admin in facility_admins:
             Notification.objects.create(
                 recipient=admin,
-                notification_type=NotificationType.SYSTEM_ANNOUNCEMENT,
-                channel=NotificationChannel.IN_APP,
-                subject="State clarification requested",
-                body="State validation requested clarification on a certificate submission.",
-                context_data={
-                    "certificate_request_id": str(request.id),
-                    "assessment_id": str(request.assessment_id),
-                    "facility_id": str(request.assessment.facility_id),
-                },
+                category=NotificationCategory.SYSTEM,
+                title="State clarification requested",
+                message="State validation requested clarification on a certificate submission.",
             )
         return request
 
@@ -303,10 +304,9 @@ class CertificateService:
         request.assessment.save(update_fields=["status", "updated_at"])
         cls._notify_assessment_people(
             assessment=request.assessment,
-            notification_type=NotificationType.COMPLIANCE_NOTICE,
-            subject="Assessment approved by State",
-            body="State validation approved the certificate request.",
-            context_data={"assessment_id": str(request.assessment_id), "certificate_request_id": str(request.id)},
+            category=NotificationCategory.ENFORCEMENT,
+            title="Assessment approved by State",
+            message="State validation approved the certificate request.",
         )
         log_action(action=AuditAction.CERTIFICATE_EVENT, actor=reviewer, target=request, metadata={"event": "certificate_request_approved"})
         return request
@@ -340,10 +340,9 @@ class CertificateService:
         request.assessment.save(update_fields=["status", "updated_at"])
         cls._notify_assessment_people(
             assessment=request.assessment,
-            notification_type=NotificationType.COMPLIANCE_NOTICE,
-            subject="Assessment rejected by State",
-            body="State validation rejected the certificate request.",
-            context_data={"assessment_id": str(request.assessment_id), "certificate_request_id": str(request.id)},
+            category=NotificationCategory.ENFORCEMENT,
+            title="Assessment rejected by State",
+            message="State validation rejected the certificate request.",
         )
         log_action(action=AuditAction.CERTIFICATE_EVENT, actor=reviewer, target=request, metadata={"event": "certificate_request_rejected"})
         return request
@@ -462,94 +461,138 @@ class CertificateService:
         pdf.setTitle(certificate.certificate_number)
 
         accent_color = template.accent_color if template and template.accent_color else "#0f5132"
-        pdf.setFillColor(colors.HexColor(accent_color))
-        pdf.rect(0, height - 92, width, 92, stroke=0, fill=1)
+        deep_green = colors.HexColor(accent_color)
+        pale_green = colors.HexColor("#edf7ef")
+        ink = colors.HexColor("#17201b")
+        muted = colors.HexColor("#52645a")
+
+        # A restrained security pattern keeps the document formal without
+        # competing with the certificate text when printed in grayscale.
         pdf.setFillColor(colors.white)
-        pdf.setFont("Helvetica-Bold", 20)
-        pdf.drawString(54, height - 40, template.ministry_name[:54])
-        pdf.setFont("Helvetica-Bold", 12)
-        pdf.drawString(54, height - 62, f"{certificate.issuing_state.name} State Ministry of Health")
-        pdf.setFont("Helvetica", 9)
-        pdf.drawString(54, height - 78, template.subtitle[:80])
+        pdf.rect(0, 0, width, height, stroke=0, fill=1)
+        pdf.setStrokeColor(colors.HexColor("#e2efe5"))
+        pdf.setLineWidth(0.35)
+        for offset in range(-260, 760, 18):
+            pdf.line(26, offset, width - 26, offset + 420)
+            pdf.line(26, offset + 420, width - 26, offset)
 
-        status_label = certificate.effective_status.replace("_", " ").upper()
-        pdf.setFillColor(colors.HexColor("#dff5e7") if certificate.effective_status == CertificateStatus.ACTIVE else colors.HexColor("#fee2e2"))
-        pdf.roundRect(width - 180, height - 64, 126, 30, 5, stroke=0, fill=1)
-        pdf.setFillColor(colors.HexColor("#0f5132") if certificate.effective_status == CertificateStatus.ACTIVE else colors.HexColor("#991b1b"))
+        pdf.setStrokeColor(deep_green)
+        pdf.setLineWidth(3)
+        pdf.rect(22, 22, width - 44, height - 44, stroke=1, fill=0)
+        pdf.setLineWidth(0.9)
+        pdf.rect(30, 30, width - 60, height - 60, stroke=1, fill=0)
+        pdf.setLineWidth(0.45)
+        pdf.rect(36, 36, width - 72, height - 72, stroke=1, fill=0)
+
+        for x, y in [(36, 36), (width - 36, 36), (36, height - 36), (width - 36, height - 36)]:
+            pdf.setFillColor(deep_green)
+            pdf.circle(x, y, 3.5, stroke=0, fill=1)
+
+        coat_of_arms = Path(__file__).resolve().parent / "assets" / "nigeria-coat-of-arms.png"
+        if coat_of_arms.exists():
+            pdf.drawImage(
+                ImageReader(str(coat_of_arms)),
+                width / 2 - 36,
+                height - 129,
+                width=72,
+                height=62,
+                preserveAspectRatio=True,
+                mask="auto",
+                anchor="c",
+            )
+
+        pdf.setFillColor(ink)
+        pdf.setFont("Helvetica-Bold", 13)
+        pdf.drawCentredString(width / 2, height - 148, "FEDERAL REPUBLIC OF NIGERIA")
         pdf.setFont("Helvetica-Bold", 10)
-        pdf.drawCentredString(width - 117, height - 45, status_label)
+        pdf.drawCentredString(width / 2, height - 164, f"{certificate.issuing_state.name.upper()} STATE MINISTRY OF HEALTH")
+        pdf.setStrokeColor(deep_green)
+        pdf.setLineWidth(0.8)
+        pdf.line(104, height - 178, width - 104, height - 178)
 
-        pdf.setStrokeColor(colors.HexColor(accent_color))
-        pdf.setLineWidth(1.4)
-        pdf.rect(36, 42, width - 72, height - 126, stroke=1, fill=0)
-
-        pdf.setFillColor(colors.HexColor("#111827"))
-        pdf.setFont("Helvetica-Bold", 18)
-        pdf.drawCentredString(width / 2, height - 136, "Certificate of Fitness to Handle Food")
-        pdf.setFont("Helvetica", 10)
-        pdf.drawCentredString(width / 2, height - 154, "Issued after State validation of a completed medical assessment")
+        pdf.setFillColor(deep_green)
+        pdf.setFont("Times-BoldItalic", 24)
+        pdf.drawCentredString(width / 2, height - 215, "Food Handler Certificate")
+        pdf.setFillColor(ink)
+        pdf.setFont("Helvetica-Bold", 11)
+        pdf.drawCentredString(width / 2, height - 237, "MEDICAL FITNESS TO HANDLE FOOD")
+        pdf.setFillColor(muted)
+        pdf.setFont("Helvetica", 8.5)
+        pdf.drawCentredString(width / 2, height - 253, "Issued under the FoodCert NG national food handler certification programme")
 
         qr_path = _media_path_from_url(certificate.qr_code_url)
         if qr_path and qr_path.exists():
-            pdf.drawImage(ImageReader(str(qr_path)), width - 184, height - 312, width=112, height=112, preserveAspectRatio=True, mask="auto")
-        pdf.setFont("Helvetica-Bold", 8)
-        pdf.setFillColor(colors.HexColor("#475569"))
-        pdf.drawCentredString(width - 128, height - 324, "Scan to verify")
+            pdf.drawImage(ImageReader(str(qr_path)), 72, 91, width=86, height=86, preserveAspectRatio=True, mask="auto")
+        pdf.setFont("Helvetica-Bold", 7.5)
+        pdf.setFillColor(muted)
+        pdf.drawCentredString(115, 82, "SCAN TO VERIFY")
 
-        photo = getattr(certificate.food_handler, "passport_photo", None)
-        if photo and getattr(photo, "path", ""):
-            photo_path = Path(photo.path)
-            if photo_path.exists():
-                pdf.drawImage(ImageReader(str(photo_path)), 72, height - 312, width=96, height=112, preserveAspectRatio=True, mask="auto")
-        pdf.setStrokeColor(colors.HexColor("#cbd5e1"))
-        pdf.rect(72, height - 312, 96, 112, stroke=1, fill=0)
-
-        doctor_name = certificate.doctor.get_full_name() or certificate.doctor.email
-        doctor_registration = getattr(certificate.doctor, "professional_registration_number", "") or "Not provided"
         branch_name = certificate.business_branch.name if certificate.business_branch_id else "Not linked"
         employer_name = certificate.employer.business_name if certificate.employer_id else "Not linked"
-        assessment_date = timezone.localtime(certificate.assessment.created_at).date()
-        hash_preview = f"{certificate.digital_signature_hash[:16]}..."
+        pdf.setFillColor(ink)
+        pdf.setFont("Times-Roman", 12)
+        pdf.drawCentredString(width / 2, height - 292, "This is to certify that")
+        pdf.setFillColor(deep_green)
+        pdf.setFont("Times-Bold", 22)
+        pdf.drawCentredString(width / 2, height - 324, certificate.food_handler.full_name.upper()[:52])
+        pdf.setStrokeColor(deep_green)
+        pdf.setLineWidth(0.6)
+        pdf.line(116, height - 334, width - 116, height - 334)
+        pdf.setFillColor(ink)
+        pdf.setFont("Times-Roman", 11)
+        pdf.drawCentredString(width / 2, height - 358, "has completed the required medical assessment and is certified")
+        pdf.drawCentredString(width / 2, height - 375, "fit to handle food within the validity period stated below.")
+
+        pdf.setFillColor(pale_green)
+        pdf.roundRect(72, height - 524, width - 144, 112, 4, stroke=0, fill=1)
         details = [
-            ("Certificate number", certificate.certificate_number),
-            ("Food handler", certificate.food_handler.full_name),
-            ("Masked NIN", certificate.food_handler.masked_nin),
-            ("Food handler ID", certificate.food_handler.system_identifier),
+            ("Certificate No.", certificate.certificate_number),
+            ("Food Handler ID", certificate.food_handler.system_identifier),
             ("Employer", employer_name),
-            ("Business branch", branch_name),
-            ("Medical facility", certificate.facility.facility_name),
-            ("Doctor", doctor_name),
-            ("Doctor registration", doctor_registration),
-            ("Assessment date", str(assessment_date)),
-            ("Issue date", str(certificate.issue_date)),
-            ("Expiry date", str(certificate.expiry_date)),
-            ("Fitness status", str(certificate.assessment.final_decision).replace("_", " ").title()),
-            ("Verification URL", certificate.verification_url),
-            ("Digital signature", hash_preview),
+            ("Business Branch", branch_name),
+            ("Medical Facility", certificate.facility.facility_name),
+            ("Issuing State", certificate.issuing_state.name),
+            ("Issue Date", certificate.issue_date.strftime("%d %b %Y")),
+            ("Expiry Date", certificate.expiry_date.strftime("%d %b %Y")),
         ]
+        for index, (label, value) in enumerate(details):
+            column = index % 2
+            row = index // 2
+            x = 88 + column * 225
+            y = height - 434 - row * 24
+            pdf.setFillColor(muted)
+            pdf.setFont("Helvetica-Bold", 7)
+            pdf.drawString(x, y, label.upper())
+            pdf.setFillColor(ink)
+            pdf.setFont("Helvetica-Bold", 8.6)
+            pdf.drawString(x, y - 11, str(value or "Not provided")[:42])
 
-        y = height - 210
-        x_label = 192
-        x_value = 322
-        for label, value in details:
-            pdf.setFillColor(colors.HexColor("#64748b"))
-            pdf.setFont("Helvetica-Bold", 8.5)
-            pdf.drawString(x_label, y, label.upper())
-            pdf.setFillColor(colors.HexColor("#0f172a"))
-            pdf.setFont("Helvetica", 10)
-            pdf.drawString(x_value, y, str(value or "Not provided")[:72])
-            y -= 22
+        status_label = certificate.effective_status.replace("_", " ").upper()
+        status_fill = colors.HexColor("#dff5e7") if certificate.effective_status == CertificateStatus.ACTIVE else colors.HexColor("#fee2e2")
+        status_ink = colors.HexColor("#0f5132") if certificate.effective_status == CertificateStatus.ACTIVE else colors.HexColor("#991b1b")
+        pdf.setFillColor(status_fill)
+        pdf.roundRect(width - 172, height - 567, 100, 21, 3, stroke=0, fill=1)
+        pdf.setFillColor(status_ink)
+        pdf.setFont("Helvetica-Bold", 8)
+        pdf.drawCentredString(width - 122, height - 560, status_label)
 
-        pdf.setFillColor(colors.HexColor("#0f172a"))
-        pdf.setFont("Helvetica-Bold", 11)
-        pdf.drawString(72, 126, template.signatory_title or "Authorized Issuing Authority")
-        pdf.setFont("Helvetica", 10)
-        pdf.drawString(72, 108, template.signatory_name or f"{certificate.issuing_state.name} State Ministry of Health")
-        pdf.line(72, 96, 260, 96)
+        signature_name = template.signatory_name or f"{certificate.issuing_state.name} State Ministry of Health"
+        pdf.setStrokeColor(ink)
+        pdf.setLineWidth(0.7)
+        pdf.line(width - 286, 148, width - 74, 148)
+        pdf.setFillColor(ink)
+        pdf.setFont("Helvetica-Bold", 9)
+        pdf.drawCentredString(width - 180, 134, signature_name[:42])
         pdf.setFont("Helvetica", 8)
-        pdf.setFillColor(colors.HexColor("#64748b"))
-        pdf.drawString(72, 78, (template.footer_note or "This certificate confirms fitness status only.")[:118])
-        pdf.drawString(72, 64, "Verify authenticity using the QR code or public verification URL.")
+        pdf.drawCentredString(width - 180, 122, (template.signatory_title or "Authorized Issuing Authority")[:48])
+
+        pdf.setFont("Helvetica", 7.2)
+        pdf.setFillColor(muted)
+        footer_lines = wrap(template.footer_note or "This certificate confirms fitness status only.", width=112)[:2]
+        for index, line in enumerate(footer_lines):
+            pdf.drawString(72, 70 - index * 10, line)
+        pdf.drawString(72, 48, "Verify authenticity using the QR code or public verification URL. Alteration renders this certificate invalid.")
+        pdf.drawRightString(width - 72, 40, f"Serial: {certificate.certificate_number}")
         pdf.showPage()
         pdf.save()
         output_path.write_bytes(buffer.getvalue())
@@ -757,28 +800,22 @@ class CertificateLifecycleJobService:
             recipients.append(certificate.employer.user)
         sent = 0
         for recipient in recipients:
-            context = {
-                "certificate_id": str(certificate.id),
-                "certificate_number": certificate.certificate_number,
-                "reminder_key": reminder_key,
-            }
-            if days is not None:
-                context["days_until_expiry"] = days
             exists = Notification.objects.filter(
                 recipient=recipient,
-                notification_type=NotificationType.CERTIFICATE_EXPIRY_REMINDER,
-                context_data__certificate_id=str(certificate.id),
-                context_data__reminder_key=reminder_key,
+                category=NotificationCategory.CERTIFICATE,
+                related_object_type="certificate",
+                related_object_id=str(certificate.id),
+                title=subject,
             ).exists()
             if exists:
                 continue
             Notification.objects.create(
                 recipient=recipient,
-                notification_type=NotificationType.CERTIFICATE_EXPIRY_REMINDER,
-                channel=NotificationChannel.IN_APP,
-                subject=subject,
-                body=body,
-                context_data=context,
+                category=NotificationCategory.CERTIFICATE,
+                title=subject,
+                message=body,
+                related_object_type="certificate",
+                related_object_id=certificate.id,
             )
             sent += 1
         return sent
