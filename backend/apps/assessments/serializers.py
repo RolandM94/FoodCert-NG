@@ -1,7 +1,10 @@
+import copy
+
 from django.contrib.auth import get_user_model
+from django.core.exceptions import ValidationError as DjangoValidationError
 from rest_framework import serializers
 
-from apps.assessments.models import Appointment, FitnessDecision, HealthDeclaration, MedicalAssessment, PhysicalExamination
+from apps.assessments.models import AssessmentFormQuestion, AssessmentFormResponse, AssessmentFormSection, AssessmentFormTemplate, AssessmentRequirementSet, AssessmentType, Appointment, FitnessDecision, HealthDeclaration, MedicalAssessment, PhysicalExamination
 from apps.facilities.models import MedicalFacility
 from apps.food_handlers.models import FoodHandlerProfile
 from apps.lab_tests.serializers import LabTestSerializer
@@ -9,6 +12,135 @@ from apps.payments.models import PaymentTransaction
 from apps.vaccinations.serializers import VaccinationRecordSerializer
 
 User = get_user_model()
+
+
+def validate_model(instance):
+    try:
+        instance.full_clean()
+    except DjangoValidationError as exc:
+        raise serializers.ValidationError(exc.message_dict if hasattr(exc, "message_dict") else exc.messages) from exc
+
+
+class AssessmentFormQuestionSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = AssessmentFormQuestion
+        fields = (
+            "id", "section", "key", "label", "help_text", "placeholder", "question_type", "required",
+            "options", "validation_rules", "conditional_logic", "risk_flag_rules", "privacy_classification",
+            "respondent_role", "sort_order", "is_active", "created_at", "updated_at",
+        )
+        read_only_fields = ("id", "created_at", "updated_at")
+
+    def validate(self, attrs):
+        instance = copy.copy(self.instance) if self.instance else AssessmentFormQuestion()
+        for field, value in attrs.items():
+            setattr(instance, field, value)
+        validate_model(instance)
+        return attrs
+
+
+class AssessmentFormSectionSerializer(serializers.ModelSerializer):
+    questions = AssessmentFormQuestionSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = AssessmentFormSection
+        fields = ("id", "template", "key", "title", "description", "sort_order", "visibility_rules", "required_completion", "questions", "created_at", "updated_at")
+        read_only_fields = ("id", "questions", "created_at", "updated_at")
+
+    def validate(self, attrs):
+        instance = copy.copy(self.instance) if self.instance else AssessmentFormSection()
+        for field, value in attrs.items():
+            setattr(instance, field, value)
+        validate_model(instance)
+        return attrs
+
+
+class AssessmentFormTemplateSerializer(serializers.ModelSerializer):
+    sections = AssessmentFormSectionSerializer(many=True, read_only=True)
+    state_name = serializers.CharField(source="state.name", read_only=True)
+    facility_name = serializers.CharField(source="facility.facility_name", read_only=True)
+
+    class Meta:
+        model = AssessmentFormTemplate
+        fields = (
+            "id", "name", "description", "form_type", "scope", "state", "state_name", "facility", "facility_name",
+            "owner_organization", "version", "status", "is_mandatory", "requires_approval", "approved_by",
+            "approved_at", "published_at", "effective_from", "effective_to", "created_by", "parent_template",
+            "sections", "created_at", "updated_at",
+        )
+        read_only_fields = (
+            "id", "version", "status", "approved_by", "approved_at", "published_at", "created_by",
+            "parent_template", "sections", "created_at", "updated_at",
+        )
+
+    def validate(self, attrs):
+        instance = copy.copy(self.instance) if self.instance else AssessmentFormTemplate()
+        for field, value in attrs.items():
+            setattr(instance, field, value)
+        validate_model(instance)
+        return attrs
+
+
+class AssessmentFormRejectionSerializer(serializers.Serializer):
+    reason = serializers.CharField()
+
+
+class AssessmentRequirementSetSerializer(serializers.ModelSerializer):
+    state_name = serializers.CharField(source="state.name", read_only=True)
+    facility_name = serializers.CharField(source="facility.facility_name", read_only=True)
+
+    class Meta:
+        model = AssessmentRequirementSet
+        fields = (
+            "id", "name", "description", "scope", "state", "state_name", "facility", "facility_name",
+            "assessment_type", "food_handler_category", "employer_category", "illness_condition",
+            "required_forms", "required_documents", "required_lab_tests", "required_vaccinations",
+            "required_approvals", "blocking_requirements", "advisory_requirements", "version", "status",
+            "effective_from", "effective_to", "created_by", "created_at", "updated_at",
+        )
+        read_only_fields = ("id", "version", "status", "created_by", "created_at", "updated_at")
+
+    def validate(self, attrs):
+        instance = copy.copy(self.instance) if self.instance else AssessmentRequirementSet()
+        for field, value in attrs.items():
+            if field != "required_forms":
+                setattr(instance, field, value)
+        validate_model(instance)
+        return attrs
+
+    def validate_required_forms(self, templates):
+        for template in templates:
+            if template.status not in {"published", "active"}:
+                raise serializers.ValidationError("Requirement sets can only reference published or active form templates.")
+        return templates
+
+
+class AssessmentRequirementResolveSerializer(serializers.Serializer):
+    assessment = serializers.PrimaryKeyRelatedField(queryset=MedicalAssessment.objects.all())
+    assessment_type = serializers.ChoiceField(choices=AssessmentType.choices, required=False)
+
+
+class AssessmentFormResponseSerializer(serializers.ModelSerializer):
+    template_name = serializers.CharField(source="template.name", read_only=True)
+    form_type = serializers.CharField(source="template.form_type", read_only=True)
+
+    class Meta:
+        model = AssessmentFormResponse
+        fields = (
+            "id", "assessment", "template", "template_name", "form_type", "template_version", "respondent",
+            "respondent_role", "status", "response_data", "question_snapshot", "risk_flags", "is_required",
+            "is_locked", "version", "previous_response", "submitted_at", "validated_by", "validated_at",
+            "created_at", "updated_at",
+        )
+        read_only_fields = fields
+
+
+class AssessmentFormResponseDraftSerializer(serializers.Serializer):
+    response_data = serializers.DictField()
+
+
+class AssessmentFormResponseReopenSerializer(serializers.Serializer):
+    reason = serializers.CharField(required=False, allow_blank=True)
 
 
 class AppointmentSerializer(serializers.ModelSerializer):
@@ -134,6 +266,7 @@ class MedicalAssessmentSerializer(serializers.ModelSerializer):
             "appointment",
             "assessment_date",
             "payment_transaction",
+            "assessment_type",
             "status",
             "declaration_status",
             "physical_exam_status",
@@ -307,6 +440,7 @@ class CreateMedicalAssessmentSerializer(serializers.Serializer):
         allow_null=True,
     )
     appointment = serializers.PrimaryKeyRelatedField(queryset=Appointment.objects.all(), required=False, allow_null=True)
+    assessment_type = serializers.ChoiceField(choices=AssessmentType.choices, required=False, default=AssessmentType.STANDARD)
 
 
 class HealthDeclarationSerializer(serializers.ModelSerializer):

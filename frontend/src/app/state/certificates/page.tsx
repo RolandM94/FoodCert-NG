@@ -6,6 +6,7 @@ import { useState } from "react";
 import { CertificateAuditTimeline, CertificateLifecycleModal, CertificateRegistryTable } from "@/components/certificates/certificate-widgets";
 import { PortalShell } from "@/components/layout/portal-shell";
 import { StatusCell } from "@/components/ui/data-table";
+import { downloadCertificatePdf } from "@/lib/api/certificates";
 import {
   fetchStateCertificates,
   downloadStateCertificateExport,
@@ -142,15 +143,16 @@ export default function Page() {
               {
                 key: "actions",
                 header: "Actions",
-                render: (row) => canManage(row) ? (
+                render: (row) => (
                   <div className="flex flex-wrap gap-2">
-                    {row.status === "active" ? <button className="h-8 rounded border border-slate-200 px-3 text-xs font-bold text-slate-700 hover:bg-slate-50" onClick={() => setActionTarget({ certificate: row, action: "suspend" })} type="button">Suspend</button> : null}
-                    {row.status === "suspended" ? <button className="h-8 rounded border border-emerald-200 px-3 text-xs font-bold text-emerald-700 hover:bg-emerald-50" onClick={() => setActionTarget({ certificate: row, action: "reinstate" })} type="button">Reinstate</button> : null}
-                    {row.status !== "revoked" ? <button className="h-8 rounded border border-amber-200 px-3 text-xs font-bold text-amber-800 hover:bg-amber-50" onClick={() => setActionTarget({ certificate: row, action: "replace" })} type="button">Replace</button> : null}
-                    <button className="h-8 rounded border border-red-200 px-3 text-xs font-bold text-red-700 hover:bg-red-50" onClick={() => setActionTarget({ certificate: row, action: "revoke" })} type="button">Revoke</button>
+                    <button className="inline-flex h-8 items-center gap-1 rounded border border-slate-200 px-3 text-xs font-bold text-slate-700 hover:bg-slate-50" onClick={() => void downloadCertificatePdf(row.id, row.certificate_number)} type="button"><Download size={13} /> PDF</button>
+                    {canManage(row) && row.status === "active" ? <button className="h-8 rounded border border-slate-200 px-3 text-xs font-bold text-slate-700 hover:bg-slate-50" onClick={() => setActionTarget({ certificate: row, action: "suspend" })} type="button">Suspend</button> : null}
+                    {canManage(row) && row.status === "suspended" ? <button className="h-8 rounded border border-emerald-200 px-3 text-xs font-bold text-emerald-700 hover:bg-emerald-50" onClick={() => setActionTarget({ certificate: row, action: "reinstate" })} type="button">Reinstate</button> : null}
+                    {canManage(row) && row.status !== "revoked" ? <button className="h-8 rounded border border-amber-200 px-3 text-xs font-bold text-amber-800 hover:bg-amber-50" onClick={() => setActionTarget({ certificate: row, action: "replace" })} type="button">Replace</button> : null}
+                    {canManage(row) ? <button className="h-8 rounded border border-red-200 px-3 text-xs font-bold text-red-700 hover:bg-red-50" onClick={() => setActionTarget({ certificate: row, action: "revoke" })} type="button">Revoke</button> : null}
                     <button className="h-8 rounded border border-slate-200 px-3 text-xs font-bold text-slate-700 hover:bg-slate-50" onClick={() => setAuditTarget(row)} type="button">Audit</button>
                   </div>
-                ) : <button className="h-8 rounded border border-slate-200 px-3 text-xs font-bold text-slate-700 hover:bg-slate-50" onClick={() => setAuditTarget(row)} type="button">Audit</button>,
+                ),
               },
             ]}
             rows={certificates}

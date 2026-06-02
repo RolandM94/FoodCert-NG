@@ -16,6 +16,7 @@ import {
   AlertCircle,
 } from "lucide-react";
 import { login } from "@/lib/api/auth";
+import { getApiErrorMessage } from "@/lib/api/client";
 import { ROLE_HOME } from "@/lib/navigation/portal-nav";
 import type { UserRole } from "@/types/auth";
 
@@ -64,9 +65,7 @@ export default function LoginPage() {
 
       router.push(ROLE_HOME[tokens.user.role as UserRole]);
     } catch (err) {
-      setError(
-        err instanceof Error ? err.message : "Unable to sign in. Check your credentials."
-      );
+      setError(getApiErrorMessage(err, "Unable to sign in. Check your credentials."));
     } finally {
       setLoading(false);
     }

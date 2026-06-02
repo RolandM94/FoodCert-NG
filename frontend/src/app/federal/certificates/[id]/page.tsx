@@ -1,10 +1,11 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { ShieldCheck } from "lucide-react";
+import { Download, ShieldCheck } from "lucide-react";
 import { useParams } from "next/navigation";
 import { PortalShell } from "@/components/layout/portal-shell";
 import { StatusCell } from "@/components/ui/data-table";
+import { downloadCertificatePdf } from "@/lib/api/certificates";
 import { fetchFederalCertificate } from "@/lib/api/federal";
 
 function dateLabel(value?: string | null) {
@@ -52,6 +53,12 @@ export default function Page() {
             <div className="flex items-center gap-2 rounded border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-800">
               <ShieldCheck size={16} />
               Federal detail access is recorded in the audit trail.
+            </div>
+            <div>
+              <button className="inline-flex h-10 items-center gap-2 rounded bg-brand-green px-4 text-sm font-bold text-white hover:bg-brand-deep" onClick={() => void downloadCertificatePdf(certificate.id, certificate.certificate_number)} type="button">
+                <Download size={16} />
+                Download PDF certificate
+              </button>
             </div>
           </div>
         ) : (

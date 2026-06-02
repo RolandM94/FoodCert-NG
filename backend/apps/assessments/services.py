@@ -1,13 +1,25 @@
 import hashlib
 
 from django.conf import settings
-from django.db import transaction
+from django.db import models, transaction
 from django.db.models import Q
 from django.utils import timezone
 from rest_framework.exceptions import NotFound, PermissionDenied, ValidationError
 
 from apps.accounts.models import UserRole
 from apps.assessments.models import (
+    AssessmentFormQuestion,
+    AssessmentFormResponse,
+    AssessmentFormResponseStatus,
+    AssessmentFormScope,
+    AssessmentFormSection,
+    AssessmentFormStatus,
+    AssessmentFormTemplate,
+    AssessmentFormType,
+    AssessmentRespondentRole,
+    AssessmentRequirementSet,
+    AssessmentRequirementSetStatus,
+    AssessmentType,
     AssessmentStatus,
     AppointmentStatus,
     FitnessDecision,
@@ -16,6 +28,7 @@ from apps.assessments.models import (
     PhysicalExamination,
     StepStatus,
 )
+from apps.assessments.permissions import can_approve_assessment_form_template, can_manage_assessment_form_template, can_manage_assessment_requirement_set
 from apps.audit.models import AuditAction, AuditLog
 from apps.audit.services import log_action
 from apps.food_handlers.models import FoodHandlerStatus
@@ -57,6 +70,551 @@ def ensure_assigned_doctor_for_assessment(user, assessment):
     ensure_doctor_for_facility(user, assessment.facility)
     if assessment.doctor_id != user.id:
         raise PermissionDenied("Doctors can only perform clinical actions on assigned assessments.")
+
+
+class AssessmentFormTemplateService:
+    EDITABLE_STATUSES = {AssessmentFormStatus.DRAFT, AssessmentFormStatus.REJECTED}
+    IMMUTABLE_STATUSES = {
+        AssessmentFormStatus.PUBLISHED,
+        AssessmentFormStatus.ACTIVE,
+        AssessmentFormStatus.RETIRED,
+        AssessmentFormStatus.ARCHIVED,
+    }
+
+    @classmethod
+    def ensure_can_manage(cls, *, template, actor):
+        if not can_manage_assessment_form_template(actor, template):
+            raise PermissionDenied("You cannot manage this assessment form template.")
+
+    @classmethod
+    def ensure_can_edit(cls, *, template, actor):
+        cls.ensure_can_manage(template=template, actor=actor)
+        if template.status not in cls.EDITABLE_STATUSES:
+            raise ValidationError("Only draft or rejected assessment form templates can be edited.")
+
+    @classmethod
+    def ensure_can_approve(cls, *, template, actor):
+        if not can_approve_assessment_form_template(actor, template):
+            raise PermissionDenied("You cannot approve this assessment form template.")
+
+    @classmethod
+    @transaction.atomic
+    def submit_for_approval(cls, *, template, actor):
+        cls.ensure_can_edit(template=template, actor=actor)
+        template.status = AssessmentFormStatus.PENDING_APPROVAL
+        template.save(update_fields=["status", "updated_at"])
+        log_action(action=AuditAction.WORKFLOW_TRANSITION, actor=actor, target=template, metadata={"event": "assessment_form_submitted_for_approval"})
+        return template
+
+    @classmethod
+    @transaction.atomic
+    def approve(cls, *, template, actor):
+        cls.ensure_can_approve(template=template, actor=actor)
+        if template.status != AssessmentFormStatus.PENDING_APPROVAL:
+            raise ValidationError("Only pending assessment form templates can be approved.")
+        template.status = AssessmentFormStatus.APPROVED
+        template.approved_by = actor
+        template.approved_at = timezone.now()
+        template.save(update_fields=["status", "approved_by", "approved_at", "updated_at"])
+        log_action(action=AuditAction.WORKFLOW_TRANSITION, actor=actor, target=template, metadata={"event": "assessment_form_approved"})
+        return template
+
+    @classmethod
+    @transaction.atomic
+    def reject(cls, *, template, actor, reason=""):
+        cls.ensure_can_approve(template=template, actor=actor)
+        if template.status != AssessmentFormStatus.PENDING_APPROVAL:
+            raise ValidationError("Only pending assessment form templates can be rejected.")
+        template.status = AssessmentFormStatus.REJECTED
+        template.approved_by = None
+        template.approved_at = None
+        template.save(update_fields=["status", "approved_by", "approved_at", "updated_at"])
+        log_action(action=AuditAction.WORKFLOW_TRANSITION, actor=actor, target=template, metadata={"event": "assessment_form_rejected", "reason": reason})
+        return template
+
+    @classmethod
+    @transaction.atomic
+    def publish(cls, *, template, actor):
+        cls.ensure_can_approve(template=template, actor=actor)
+        if template.status != AssessmentFormStatus.APPROVED:
+            raise ValidationError("Only approved assessment form templates can be published.")
+        template.status = AssessmentFormStatus.PUBLISHED
+        template.published_at = timezone.now()
+        template.save(update_fields=["status", "published_at", "updated_at"])
+        log_action(action=AuditAction.WORKFLOW_TRANSITION, actor=actor, target=template, metadata={"event": "assessment_form_published"})
+        return template
+
+    @classmethod
+    @transaction.atomic
+    def activate(cls, *, template, actor):
+        cls.ensure_can_approve(template=template, actor=actor)
+        if template.status != AssessmentFormStatus.PUBLISHED:
+            raise ValidationError("Only published assessment form templates can be activated.")
+        template.status = AssessmentFormStatus.ACTIVE
+        template.save(update_fields=["status", "updated_at"])
+        log_action(action=AuditAction.WORKFLOW_TRANSITION, actor=actor, target=template, metadata={"event": "assessment_form_activated"})
+        return template
+
+    @classmethod
+    @transaction.atomic
+    def retire(cls, *, template, actor):
+        cls.ensure_can_approve(template=template, actor=actor)
+        if template.status not in {AssessmentFormStatus.PUBLISHED, AssessmentFormStatus.ACTIVE}:
+            raise ValidationError("Only published or active assessment form templates can be retired.")
+        template.status = AssessmentFormStatus.RETIRED
+        template.save(update_fields=["status", "updated_at"])
+        log_action(action=AuditAction.WORKFLOW_TRANSITION, actor=actor, target=template, metadata={"event": "assessment_form_retired"})
+        return template
+
+    @classmethod
+    @transaction.atomic
+    def duplicate(cls, *, template, actor):
+        cls.ensure_can_manage(template=template, actor=actor)
+        root = template.parent_template or template
+        version = AssessmentFormTemplate.objects.filter(models.Q(id=root.id) | models.Q(parent_template=root)).aggregate(models.Max("version"))["version__max"] + 1
+        duplicate = AssessmentFormTemplate.objects.create(
+            name=template.name,
+            description=template.description,
+            form_type=template.form_type,
+            scope=template.scope,
+            state=template.state,
+            facility=template.facility,
+            owner_organization=template.owner_organization,
+            version=version,
+            status=AssessmentFormStatus.DRAFT,
+            is_mandatory=template.is_mandatory,
+            requires_approval=template.requires_approval,
+            effective_from=template.effective_from,
+            effective_to=template.effective_to,
+            created_by=actor,
+            parent_template=root,
+        )
+        for section in template.sections.all():
+            new_section = AssessmentFormSection.objects.create(
+                template=duplicate,
+                key=section.key,
+                title=section.title,
+                description=section.description,
+                sort_order=section.sort_order,
+                visibility_rules=section.visibility_rules,
+                required_completion=section.required_completion,
+            )
+            AssessmentFormQuestion.objects.bulk_create(
+                [
+                    AssessmentFormQuestion(
+                        section=new_section,
+                        key=question.key,
+                        label=question.label,
+                        help_text=question.help_text,
+                        placeholder=question.placeholder,
+                        question_type=question.question_type,
+                        required=question.required,
+                        options=question.options,
+                        validation_rules=question.validation_rules,
+                        conditional_logic=question.conditional_logic,
+                        risk_flag_rules=question.risk_flag_rules,
+                        privacy_classification=question.privacy_classification,
+                        respondent_role=question.respondent_role,
+                        sort_order=question.sort_order,
+                        is_active=question.is_active,
+                    )
+                    for question in section.questions.all()
+                ]
+            )
+        log_action(action=AuditAction.CREATE, actor=actor, target=duplicate, metadata={"event": "assessment_form_duplicated", "source_template_id": str(template.id)})
+        return duplicate
+
+
+class AssessmentRequirementResolutionService:
+    SCOPE_ORDER = {
+        AssessmentFormScope.SYSTEM: 0,
+        AssessmentFormScope.NATIONAL: 1,
+        AssessmentFormScope.STATE: 2,
+        AssessmentFormScope.FACILITY: 3,
+    }
+
+    @staticmethod
+    def _append_unique(target, values):
+        for value in values:
+            if value not in target:
+                target.append(value)
+
+    @classmethod
+    def ensure_can_manage(cls, *, requirement_set, actor):
+        if not can_manage_assessment_requirement_set(actor, requirement_set):
+            raise PermissionDenied("You cannot manage this assessment requirement set.")
+
+    @classmethod
+    @transaction.atomic
+    def publish(cls, *, requirement_set, actor):
+        cls.ensure_can_manage(requirement_set=requirement_set, actor=actor)
+        if requirement_set.status not in {AssessmentRequirementSetStatus.DRAFT, AssessmentRequirementSetStatus.PUBLISHED}:
+            raise ValidationError("Only draft or published requirement sets can be activated.")
+        requirement_set.status = AssessmentRequirementSetStatus.ACTIVE
+        requirement_set.save(update_fields=["status", "updated_at"])
+        log_action(action=AuditAction.WORKFLOW_TRANSITION, actor=actor, target=requirement_set, metadata={"event": "assessment_requirement_set_published"})
+        return requirement_set
+
+    @classmethod
+    @transaction.atomic
+    def retire(cls, *, requirement_set, actor):
+        cls.ensure_can_manage(requirement_set=requirement_set, actor=actor)
+        if requirement_set.status not in {AssessmentRequirementSetStatus.PUBLISHED, AssessmentRequirementSetStatus.ACTIVE}:
+            raise ValidationError("Only published or active requirement sets can be retired.")
+        requirement_set.status = AssessmentRequirementSetStatus.RETIRED
+        requirement_set.save(update_fields=["status", "updated_at"])
+        log_action(action=AuditAction.WORKFLOW_TRANSITION, actor=actor, target=requirement_set, metadata={"event": "assessment_requirement_set_retired"})
+        return requirement_set
+
+    @classmethod
+    def applicable_sets(cls, *, assessment, assessment_type=None):
+        assessment_type = assessment_type or assessment.assessment_type
+        today = timezone.localdate()
+        illness_conditions = set(
+            IllnessReport.objects.filter(food_handler=assessment.food_handler)
+            .exclude(clearance_status__in=[ClearanceStatus.CLEARED, ClearanceStatus.REJECTED])
+            .exclude(suspected_condition="")
+            .values_list("suspected_condition", flat=True)
+        )
+        queryset = (
+            AssessmentRequirementSet.objects.filter(
+                status=AssessmentRequirementSetStatus.ACTIVE,
+            )
+            .filter(Q(effective_from__isnull=True) | Q(effective_from__lte=today))
+            .filter(Q(effective_to__isnull=True) | Q(effective_to__gte=today))
+            .filter(Q(scope__in=[AssessmentFormScope.SYSTEM, AssessmentFormScope.NATIONAL]) | Q(scope=AssessmentFormScope.STATE, state=assessment.facility.state) | Q(scope=AssessmentFormScope.FACILITY, facility=assessment.facility))
+            .filter(Q(assessment_type="") | Q(assessment_type=assessment_type))
+            .filter(Q(food_handler_category="") | Q(food_handler_category=assessment.food_handler.food_handler_category))
+            .filter(Q(employer_category="") | Q(employer_category=getattr(assessment.employer, "establishment_category", "")))
+            .prefetch_related("required_forms")
+        )
+        requirement_sets = [
+            requirement_set
+            for requirement_set in queryset
+            if not requirement_set.illness_condition or requirement_set.illness_condition in illness_conditions
+        ]
+        return sorted(requirement_sets, key=lambda requirement_set: (cls.SCOPE_ORDER[requirement_set.scope], requirement_set.created_at, str(requirement_set.id)))
+
+    @classmethod
+    def resolve(cls, *, assessment, actor=None, assessment_type=None):
+        requirement_sets = cls.applicable_sets(assessment=assessment, assessment_type=assessment_type)
+        output = {
+            "assessment_id": str(assessment.id),
+            "assessment_type": assessment_type or assessment.assessment_type,
+            "applied_requirement_sets": [],
+            "required_forms": [],
+            "required_documents": [],
+            "required_lab_tests": [],
+            "required_vaccinations": [],
+            "required_approvals": [],
+            "blocking_requirements": [],
+            "advisory_requirements": [],
+        }
+        seen_forms = set()
+        for requirement_set in requirement_sets:
+            output["applied_requirement_sets"].append(
+                {
+                    "id": str(requirement_set.id),
+                    "name": requirement_set.name,
+                    "scope": requirement_set.scope,
+                    "version": requirement_set.version,
+                }
+            )
+            for template in requirement_set.required_forms.filter(status__in=[AssessmentFormStatus.PUBLISHED, AssessmentFormStatus.ACTIVE]):
+                if template.id not in seen_forms:
+                    output["required_forms"].append(
+                        {
+                            "id": str(template.id),
+                            "name": template.name,
+                            "form_type": template.form_type,
+                            "scope": template.scope,
+                            "version": template.version,
+                            "mandatory": template.is_mandatory or requirement_set.scope in {AssessmentFormScope.SYSTEM, AssessmentFormScope.NATIONAL, AssessmentFormScope.STATE},
+                        }
+                    )
+                    seen_forms.add(template.id)
+            cls._append_unique(output["required_documents"], requirement_set.required_documents)
+            cls._append_unique(output["required_lab_tests"], requirement_set.required_lab_tests)
+            cls._append_unique(output["required_vaccinations"], requirement_set.required_vaccinations)
+            cls._append_unique(output["required_approvals"], requirement_set.required_approvals)
+            cls._append_unique(output["blocking_requirements"], requirement_set.blocking_requirements)
+            cls._append_unique(output["advisory_requirements"], requirement_set.advisory_requirements)
+        log_action(
+            action=AuditAction.WORKFLOW_TRANSITION,
+            actor=actor,
+            target=assessment,
+            metadata={"event": "assessment_requirements_resolved", "requirement_set_ids": [item["id"] for item in output["applied_requirement_sets"]]},
+        )
+        return output
+
+    @classmethod
+    @transaction.atomic
+    def assign_forms(cls, *, assessment, actor=None):
+        resolved = cls.resolve(assessment=assessment, actor=actor)
+        assigned = []
+        for required_form in resolved["required_forms"]:
+            template = AssessmentFormTemplate.objects.get(id=required_form["id"])
+            response = AssessmentFormResponseService.assign(
+                assessment=assessment,
+                template=template,
+                is_required=required_form["mandatory"],
+                actor=actor,
+            )
+            assigned.append(response)
+        return assigned
+
+
+class AssessmentFormResponseService:
+    EDITABLE_STATUSES = {
+        AssessmentFormResponseStatus.NOT_STARTED,
+        AssessmentFormResponseStatus.DRAFT,
+        AssessmentFormResponseStatus.REOPENED,
+        AssessmentFormResponseStatus.CLARIFICATION_REQUESTED,
+    }
+    CURRENT_STATUSES = set(AssessmentFormResponseStatus.values) - {
+        AssessmentFormResponseStatus.SUPERSEDED,
+        AssessmentFormResponseStatus.ARCHIVED,
+    }
+    RESPONDENT_ROLES_BY_FORM_TYPE = {
+        AssessmentFormType.DOCTOR_CLINICAL_REVIEW: AssessmentRespondentRole.DOCTOR,
+        AssessmentFormType.LAB_RESULT: AssessmentRespondentRole.LAB_STAFF,
+        AssessmentFormType.STATE_VALIDATION_CHECKLIST: AssessmentRespondentRole.STATE_USER,
+        AssessmentFormType.INSPECTION_SUPPORT: AssessmentRespondentRole.INSPECTOR,
+        AssessmentFormType.FACILITY_INTAKE: AssessmentRespondentRole.FACILITY_STAFF,
+    }
+
+    @classmethod
+    def snapshot_template(cls, template):
+        return {
+            "template_id": str(template.id),
+            "template_version": template.version,
+            "name": template.name,
+            "description": template.description,
+            "form_type": template.form_type,
+            "sections": [
+                {
+                    "id": str(section.id),
+                    "key": section.key,
+                    "title": section.title,
+                    "description": section.description,
+                    "sort_order": section.sort_order,
+                    "visibility_rules": section.visibility_rules,
+                    "required_completion": section.required_completion,
+                    "questions": [
+                        {
+                            "id": str(question.id),
+                            "key": question.key,
+                            "label": question.label,
+                            "help_text": question.help_text,
+                            "placeholder": question.placeholder,
+                            "question_type": question.question_type,
+                            "required": question.required,
+                            "options": question.options,
+                            "validation_rules": question.validation_rules,
+                            "conditional_logic": question.conditional_logic,
+                            "risk_flag_rules": question.risk_flag_rules,
+                            "privacy_classification": question.privacy_classification,
+                            "respondent_role": question.respondent_role,
+                            "sort_order": question.sort_order,
+                        }
+                        for question in section.questions.filter(is_active=True)
+                    ],
+                }
+                for section in template.sections.all()
+            ],
+        }
+
+    @classmethod
+    def respondent_role_for_template(cls, template):
+        roles = list(
+            template.sections.values_list("questions__respondent_role", flat=True)
+            .exclude(questions__respondent_role__isnull=True)
+            .exclude(questions__respondent_role="")
+            .distinct()
+        )
+        if len(roles) == 1:
+            return roles[0]
+        return cls.RESPONDENT_ROLES_BY_FORM_TYPE.get(template.form_type, AssessmentRespondentRole.FOOD_HANDLER)
+
+    @classmethod
+    def initial_respondent(cls, *, assessment, respondent_role):
+        if respondent_role == AssessmentRespondentRole.FOOD_HANDLER:
+            return assessment.food_handler.user
+        if respondent_role == AssessmentRespondentRole.DOCTOR:
+            return assessment.doctor
+        return None
+
+    @classmethod
+    def can_view(cls, *, response, actor):
+        if not actor or not actor.is_authenticated:
+            return False
+        assessment = response.assessment
+        if actor.role == UserRole.SUPER_ADMIN:
+            return True
+        if actor.role == UserRole.FOOD_HANDLER:
+            return assessment.food_handler.user_id == actor.id
+        if actor.role in {UserRole.STATE_ADMIN, UserRole.INSPECTOR}:
+            return actor.state_id and assessment.facility.state_id == actor.state_id
+        if actor.role in {UserRole.FACILITY_ADMIN, UserRole.DOCTOR, UserRole.LAB_STAFF}:
+            return actor.organization_id and assessment.facility.organization_id == actor.organization_id
+        return False
+
+    @classmethod
+    def ensure_can_view(cls, *, response, actor):
+        if not cls.can_view(response=response, actor=actor):
+            raise PermissionDenied("You cannot access this assessment form response.")
+
+    @classmethod
+    def ensure_can_edit(cls, *, response, actor):
+        cls.ensure_can_view(response=response, actor=actor)
+        if response.is_locked or response.status not in cls.EDITABLE_STATUSES:
+            raise ValidationError("This assessment form response is locked.")
+        role = response.respondent_role
+        assessment = response.assessment
+        allowed = actor.role == UserRole.SUPER_ADMIN
+        if role == AssessmentRespondentRole.FOOD_HANDLER:
+            allowed = allowed or (actor.role == UserRole.FOOD_HANDLER and assessment.food_handler.user_id == actor.id)
+        elif role == AssessmentRespondentRole.DOCTOR:
+            allowed = allowed or (actor.role == UserRole.DOCTOR and assessment.doctor_id == actor.id)
+        elif role == AssessmentRespondentRole.LAB_STAFF:
+            allowed = allowed or (actor.role == UserRole.LAB_STAFF and assessment.facility.organization_id == actor.organization_id)
+        elif role == AssessmentRespondentRole.FACILITY_STAFF:
+            allowed = allowed or (actor.role == UserRole.FACILITY_ADMIN and assessment.facility.organization_id == actor.organization_id)
+        elif role == AssessmentRespondentRole.STATE_USER:
+            allowed = allowed or (actor.role == UserRole.STATE_ADMIN and assessment.facility.state_id == actor.state_id)
+        elif role == AssessmentRespondentRole.INSPECTOR:
+            allowed = allowed or (actor.role == UserRole.INSPECTOR and assessment.facility.state_id == actor.state_id)
+        if not allowed:
+            raise PermissionDenied("You cannot complete this assessment form response.")
+
+    @classmethod
+    def ensure_can_review(cls, *, response, actor):
+        cls.ensure_can_view(response=response, actor=actor)
+        assessment = response.assessment
+        if actor.role == UserRole.SUPER_ADMIN:
+            return
+        if actor.role == UserRole.DOCTOR and assessment.doctor_id == actor.id:
+            return
+        if actor.role == UserRole.STATE_ADMIN and assessment.facility.state_id == actor.state_id:
+            return
+        raise PermissionDenied("You cannot review this assessment form response.")
+
+    @classmethod
+    @transaction.atomic
+    def assign(cls, *, assessment, template, is_required=True, actor=None):
+        existing = (
+            AssessmentFormResponse.objects.filter(
+                assessment=assessment,
+                template=template,
+                status__in=cls.CURRENT_STATUSES,
+            )
+            .order_by("-version")
+            .first()
+        )
+        if existing:
+            return existing
+        respondent_role = cls.respondent_role_for_template(template)
+        response = AssessmentFormResponse.objects.create(
+            assessment=assessment,
+            template=template,
+            template_version=template.version,
+            respondent=cls.initial_respondent(assessment=assessment, respondent_role=respondent_role),
+            respondent_role=respondent_role,
+            question_snapshot=cls.snapshot_template(template),
+            is_required=is_required,
+        )
+        log_action(
+            action=AuditAction.WORKFLOW_TRANSITION,
+            actor=actor,
+            target=response,
+            metadata={"event": "assessment_form_response_assigned", "assessment_id": str(assessment.id), "template_id": str(template.id)},
+        )
+        return response
+
+    @classmethod
+    @transaction.atomic
+    def save_draft(cls, *, response, response_data, actor):
+        cls.ensure_can_edit(response=response, actor=actor)
+        response.response_data = response_data
+        response.respondent = actor
+        if response.status != AssessmentFormResponseStatus.REOPENED:
+            response.status = AssessmentFormResponseStatus.DRAFT
+        response.save(update_fields=["response_data", "respondent", "status", "updated_at"])
+        log_action(action=AuditAction.UPDATE, actor=actor, target=response, metadata={"event": "assessment_form_response_draft_saved", "assessment_id": str(response.assessment_id)})
+        return response
+
+    @classmethod
+    @transaction.atomic
+    def submit(cls, *, response, actor):
+        cls.ensure_can_edit(response=response, actor=actor)
+        response.respondent = actor
+        response.status = AssessmentFormResponseStatus.RESUBMITTED if response.version > 1 else AssessmentFormResponseStatus.SUBMITTED
+        response.submitted_at = timezone.now()
+        response.is_locked = True
+        response.save(update_fields=["respondent", "status", "submitted_at", "is_locked", "updated_at"])
+        log_action(action=AuditAction.WORKFLOW_TRANSITION, actor=actor, target=response, metadata={"event": "assessment_form_response_submitted", "assessment_id": str(response.assessment_id)})
+        return response
+
+    @classmethod
+    @transaction.atomic
+    def mark_under_review(cls, *, response, actor):
+        cls.ensure_can_review(response=response, actor=actor)
+        if response.status not in {AssessmentFormResponseStatus.SUBMITTED, AssessmentFormResponseStatus.RESUBMITTED}:
+            raise ValidationError("Only submitted responses can be marked under review.")
+        response.status = AssessmentFormResponseStatus.UNDER_REVIEW
+        response.save(update_fields=["status", "updated_at"])
+        return response
+
+    @classmethod
+    @transaction.atomic
+    def validate(cls, *, response, actor):
+        cls.ensure_can_review(response=response, actor=actor)
+        if response.status not in {AssessmentFormResponseStatus.SUBMITTED, AssessmentFormResponseStatus.RESUBMITTED, AssessmentFormResponseStatus.UNDER_REVIEW}:
+            raise ValidationError("Only submitted responses can be validated.")
+        response.status = AssessmentFormResponseStatus.VALIDATED
+        response.is_locked = True
+        response.validated_by = actor
+        response.validated_at = timezone.now()
+        response.save(update_fields=["status", "is_locked", "validated_by", "validated_at", "updated_at"])
+        log_action(action=AuditAction.WORKFLOW_TRANSITION, actor=actor, target=response, metadata={"event": "assessment_form_response_validated", "assessment_id": str(response.assessment_id)})
+        return response
+
+    @classmethod
+    @transaction.atomic
+    def reopen(cls, *, response, actor, reason=""):
+        cls.ensure_can_review(response=response, actor=actor)
+        if response.status not in {
+            AssessmentFormResponseStatus.SUBMITTED,
+            AssessmentFormResponseStatus.RESUBMITTED,
+            AssessmentFormResponseStatus.UNDER_REVIEW,
+            AssessmentFormResponseStatus.VALIDATED,
+            AssessmentFormResponseStatus.LOCKED,
+        }:
+            raise ValidationError("Only submitted or validated responses can be reopened.")
+        response.status = AssessmentFormResponseStatus.SUPERSEDED
+        response.is_locked = True
+        response.save(update_fields=["status", "is_locked", "updated_at"])
+        reopened = AssessmentFormResponse.objects.create(
+            assessment=response.assessment,
+            template=response.template,
+            template_version=response.template_version,
+            respondent=response.respondent,
+            respondent_role=response.respondent_role,
+            response_data=response.response_data,
+            question_snapshot=response.question_snapshot,
+            risk_flags=response.risk_flags,
+            is_required=response.is_required,
+            status=AssessmentFormResponseStatus.REOPENED,
+            version=response.version + 1,
+            previous_response=response,
+        )
+        log_action(
+            action=AuditAction.WORKFLOW_TRANSITION,
+            actor=actor,
+            target=reopened,
+            metadata={"event": "assessment_form_response_reopened", "assessment_id": str(response.assessment_id), "previous_response_id": str(response.id), "reason": reason},
+        )
+        return reopened
 
 
 class AssessmentService:
@@ -603,7 +1161,7 @@ class AssessmentService:
 
     @classmethod
     @transaction.atomic
-    def create_assessment(cls, *, food_handler, facility, payment_transaction=None, appointment=None, actor=None):
+    def create_assessment(cls, *, food_handler, facility, payment_transaction=None, appointment=None, assessment_type=AssessmentType.STANDARD, actor=None):
         ensure_approved_facility(facility)
         if payment_transaction and payment_transaction.status == PaymentStatus.SUCCESS:
             status = AssessmentStatus.PAYMENT_CONFIRMED
@@ -616,6 +1174,7 @@ class AssessmentService:
             appointment=appointment,
             assessment_date=appointment.appointment_date if appointment else None,
             payment_transaction=payment_transaction,
+            assessment_type=assessment_type,
             status=status,
         )
         log_action(
@@ -624,6 +1183,7 @@ class AssessmentService:
             target=assessment,
             metadata={"event": "assessment_created", "status": status},
         )
+        AssessmentRequirementResolutionService.assign_forms(assessment=assessment, actor=actor)
         return assessment
 
     @classmethod

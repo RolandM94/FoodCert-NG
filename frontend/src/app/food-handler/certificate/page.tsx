@@ -99,7 +99,7 @@ export default function Page() {
                   <div className="flex items-center justify-between gap-3"><dt className="text-slate-500">Status</dt><dd><StatusBadge status={latestCertificate.effective_status} /></dd></div>
                 </dl>
                 <div className="mt-5 flex flex-wrap gap-2">
-                  {latestCertificate.pdf_url ? <button className="inline-flex h-10 items-center gap-2 rounded bg-brand-green px-4 text-sm font-bold text-white" onClick={() => void handleDownload(latestCertificate)} type="button"><Download size={16} /> PDF</button> : null}
+                  {latestCertificate.pdf_url ? <button className="inline-flex h-10 items-center gap-2 rounded bg-brand-green px-4 text-sm font-bold text-white" onClick={() => void handleDownload(latestCertificate)} type="button"><Download size={16} /> Download PDF certificate</button> : null}
                   {latestCertificate.verification_url ? <a className="inline-flex h-10 items-center gap-2 rounded border border-slate-200 px-4 text-sm font-bold text-slate-700" href={latestCertificate.verification_url}><ExternalLink size={16} /> Verify</a> : null}
                   {latestCertificate.verification_url ? <button className="inline-flex h-10 items-center gap-2 rounded border border-slate-200 px-4 text-sm font-bold text-slate-700" onClick={() => void handleCopy(latestCertificate.verification_url)} type="button"><Copy size={16} /> Share</button> : null}
                   <Link className="inline-flex h-10 items-center gap-2 rounded border border-slate-200 px-4 text-sm font-bold text-slate-700" href="/food-handler/assessments">Assessments</Link>

@@ -34,7 +34,7 @@ export default function Page() {
     setLoading(true);
     setError("");
     try {
-      const res = await apiClient.get("/api/dashboard/inspector/");
+      const res = await apiClient.get("/dashboard/inspector/");
       setData(res.data.data);
     } catch {
       setError("Could not load inspector dashboard.");

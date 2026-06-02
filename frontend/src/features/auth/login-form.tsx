@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { LogIn } from "lucide-react";
 import { login } from "@/lib/api/auth";
+import { getApiErrorMessage } from "@/lib/api/client";
 import { ROLE_HOME } from "@/lib/navigation/portal-nav";
 import type { UserRole } from "@/types/auth";
 
@@ -25,7 +26,7 @@ export function LoginForm() {
       window.localStorage.setItem("foodcert_user_role", tokens.user.role);
       router.push(ROLE_HOME[tokens.user.role as UserRole]);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Unable to sign in. Check your credentials and try again.");
+      setError(getApiErrorMessage(err, "Unable to sign in. Check your credentials and try again."));
     } finally {
       setLoading(false);
     }

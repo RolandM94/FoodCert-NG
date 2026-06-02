@@ -5,7 +5,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { AlertCircle, Award, ClipboardList, Download, RefreshCw } from "lucide-react";
 import { PortalShell } from "@/components/layout/portal-shell";
 import { StatusBadge } from "@/components/status/status-badge";
-import { listCertificateRequests, listCertificates } from "@/lib/api/certificates";
+import { downloadCertificatePdf, listCertificateRequests, listCertificates } from "@/lib/api/certificates";
 import { getCurrentMedicalFacility } from "@/lib/api/facilities";
 import type { Certificate, CertificateRequest, CertificateRequestStatus } from "@/types/certificates";
 import type { MedicalFacility } from "@/types/facilities";
@@ -136,7 +136,7 @@ export default function Page() {
                     <td className="p-3">{row.food_handler_name}</td>
                     <td className="p-3"><StatusBadge status={row.effective_status} /><p className="mt-1 text-xs text-slate-500">Expires {formatDate(row.expiry_date)}</p></td>
                     <td className="p-3">{row.verification_url ? <a className="font-bold text-brand-deep underline" href={row.verification_url} rel="noreferrer" target="_blank">Verify</a> : "Not available"}</td>
-                    <td className="p-3">{row.pdf_url ? <a className="inline-flex items-center gap-1 font-bold text-brand-deep underline" href={row.pdf_url} rel="noreferrer" target="_blank"><Download size={14} /> Download</a> : "Not available"}</td>
+                    <td className="p-3"><button className="inline-flex items-center gap-1 font-bold text-brand-deep underline" onClick={() => void downloadCertificatePdf(row.id, row.certificate_number)} type="button"><Download size={14} /> Download</button></td>
                   </tr>
                 )) : (
                   <tr><td className="p-3 text-slate-500" colSpan={5}>No certificates have been issued for this facility yet.</td></tr>

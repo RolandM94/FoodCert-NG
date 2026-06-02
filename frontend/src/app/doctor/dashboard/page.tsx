@@ -47,7 +47,7 @@ export default function Page() {
     setLoading(true);
     setError("");
     try {
-      const res = await apiClient.get("/api/dashboard/doctor/");
+      const res = await apiClient.get("/dashboard/doctor/");
       setData(res.data.data);
     } catch {
       setError("Could not load doctor dashboard.");

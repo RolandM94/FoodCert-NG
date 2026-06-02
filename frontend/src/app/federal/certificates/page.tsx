@@ -6,6 +6,7 @@ import Link from "next/link";
 import { useState } from "react";
 import { PortalShell } from "@/components/layout/portal-shell";
 import { DataTable, StatusCell } from "@/components/ui/data-table";
+import { downloadCertificatePdf } from "@/lib/api/certificates";
 import { fetchFederalCertificateAnalytics, fetchFederalCertificates, flagFederalCertificate, type FederalCertificateRegistryItem } from "@/lib/api/federal";
 import { downloadCsv } from "@/lib/export/csv";
 
@@ -116,6 +117,7 @@ export default function Page() {
               { key: "actions", header: "Actions", render: (row) => (
                 <div className="flex flex-wrap gap-2">
                   <Link className="inline-flex h-8 items-center gap-1 rounded border border-slate-200 px-2 text-xs font-bold text-slate-700 hover:bg-slate-50" href={`/federal/certificates/${row.id}`}><Eye size={13} /> View</Link>
+                  <button className="inline-flex h-8 items-center gap-1 rounded border border-slate-200 px-2 text-xs font-bold text-slate-700 hover:bg-slate-50" onClick={() => void downloadCertificatePdf(row.id, row.certificate_number)} type="button"><Download size={13} /> PDF</button>
                   <button className="inline-flex h-8 items-center gap-1 rounded border border-amber-200 px-2 text-xs font-bold text-amber-800 hover:bg-amber-50" onClick={() => setFlagTarget(row)} type="button"><Flag size={13} /> Flag</button>
                 </div>
               ) },

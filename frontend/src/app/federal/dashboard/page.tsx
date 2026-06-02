@@ -34,7 +34,7 @@ export default function Page() {
     setLoading(true);
     setError("");
     try {
-      const res = await apiClient.get("/api/dashboard/federal/");
+      const res = await apiClient.get("/dashboard/federal/");
       setData(res.data.data);
     } catch {
       setError("Could not load federal dashboard.");
@@ -127,14 +127,14 @@ export default function Page() {
               <tbody className="divide-y divide-slate-200">
                 {data?.charts?.state_comparison_table?.length ? (
                   data.charts.state_comparison_table.slice(0, 15).map((row, i) => (
-                    <tr className="hover:bg-slate-50" key={i}>
-                      <td className="p-3 font-bold text-slate-950">{row.state__name as string || "Unknown"}</td>
-                      <td className="p-3">{row.total_food_handlers ?? row.total ?? 0}</td>
-                      <td className="p-3">{row.certified_food_handlers ?? row.certified ?? 0}</td>
-                      <td className="p-3">{row.coverage ?? row.certification_coverage ?? 0}%</td>
-                      <td className="p-3">{row.approved_facilities ?? row.facilities ?? 0}</td>
-                      <td className="p-3">{row.registered_employers ?? row.employers ?? 0}</td>
-                      <td className="p-3">{row.inspections ?? row.inspections_conducted ?? 0}</td>
+                    <tr className="hover:bg-slate-50" key={String(row.state_id ?? i)}>
+                      <td className="p-3 font-bold text-slate-950">{row.state_name as string || "Unknown"}</td>
+                      <td className="p-3">{row.registered_handlers ?? 0}</td>
+                      <td className="p-3">{row.certified_handlers ?? 0}</td>
+                      <td className="p-3">{row.certification_coverage ?? 0}%</td>
+                      <td className="p-3">{row.approved_facilities ?? 0}</td>
+                      <td className="p-3">{row.registered_employers ?? 0}</td>
+                      <td className="p-3">{row.inspection_count ?? 0}</td>
                     </tr>
                   ))
                 ) : (

@@ -29,7 +29,7 @@ export default function Page() {
     setLoading(true);
     setError("");
     try {
-      const res = await apiClient.get("/api/dashboard/lab/");
+      const res = await apiClient.get("/dashboard/lab/");
       setData(res.data.data);
     } catch {
       setError("Could not load lab dashboard.");
