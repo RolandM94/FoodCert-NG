@@ -65,12 +65,14 @@ class AssessmentFormTemplateSerializer(serializers.ModelSerializer):
         fields = (
             "id", "name", "description", "form_type", "scope", "state", "state_name", "facility", "facility_name",
             "owner_organization", "version", "status", "is_mandatory", "requires_approval", "approved_by",
-            "approved_at", "published_at", "effective_from", "effective_to", "created_by", "parent_template",
+            "approved_at", "review_requested_at", "reviewed_by", "reviewed_at", "review_comment", "published_at",
+            "effective_from", "effective_to", "created_by", "parent_template",
             "sections", "created_at", "updated_at",
         )
         read_only_fields = (
-            "id", "version", "status", "approved_by", "approved_at", "published_at", "created_by",
-            "parent_template", "sections", "created_at", "updated_at",
+            "id", "version", "status", "approved_by", "approved_at", "review_requested_at", "reviewed_by",
+            "reviewed_at", "review_comment", "published_at", "created_by", "parent_template", "sections",
+            "created_at", "updated_at",
         )
 
     def validate(self, attrs):
@@ -131,6 +133,20 @@ class AssessmentFormResponseSerializer(serializers.ModelSerializer):
             "respondent_role", "status", "response_data", "question_snapshot", "risk_flags", "is_required",
             "is_locked", "version", "previous_response", "submitted_at", "validated_by", "validated_at",
             "created_at", "updated_at",
+        )
+        read_only_fields = fields
+
+
+class AssessmentFormResponseSummarySerializer(serializers.ModelSerializer):
+    template_name = serializers.CharField(source="template.name", read_only=True)
+    form_type = serializers.CharField(source="template.form_type", read_only=True)
+
+    class Meta:
+        model = AssessmentFormResponse
+        fields = (
+            "id", "assessment", "template", "template_name", "form_type", "template_version",
+            "respondent_role", "status", "is_required", "is_locked", "version", "submitted_at",
+            "validated_at", "created_at", "updated_at",
         )
         read_only_fields = fields
 

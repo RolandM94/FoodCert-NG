@@ -75,6 +75,7 @@ class AssessmentFormStatus(models.TextChoices):
     ACTIVE = "active", "Active"
     RETIRED = "retired", "Retired"
     REJECTED = "rejected", "Rejected"
+    CHANGES_REQUESTED = "changes_requested", "Changes Requested"
     ARCHIVED = "archived", "Archived"
 
 
@@ -275,6 +276,10 @@ class AssessmentFormTemplate(BaseModel):
     requires_approval = models.BooleanField(default=False)
     approved_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="approved_assessment_form_templates")
     approved_at = models.DateTimeField(null=True, blank=True)
+    review_requested_at = models.DateTimeField(null=True, blank=True)
+    reviewed_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="reviewed_assessment_form_templates")
+    reviewed_at = models.DateTimeField(null=True, blank=True)
+    review_comment = models.TextField(blank=True)
     published_at = models.DateTimeField(null=True, blank=True)
     effective_from = models.DateField(null=True, blank=True)
     effective_to = models.DateField(null=True, blank=True)

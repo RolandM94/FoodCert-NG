@@ -1,6 +1,11 @@
 import hashlib
+import re
+from datetime import date, datetime, time, timedelta
+from decimal import Decimal, InvalidOperation
 
 from django.conf import settings
+from django.core.exceptions import ValidationError as DjangoValidationError
+from django.core.validators import validate_email
 from django.db import models, transaction
 from django.db.models import Q
 from django.utils import timezone
@@ -16,6 +21,8 @@ from apps.assessments.models import (
     AssessmentFormStatus,
     AssessmentFormTemplate,
     AssessmentFormType,
+    AssessmentPrivacyClassification,
+    AssessmentQuestionType,
     AssessmentRespondentRole,
     AssessmentRequirementSet,
     AssessmentRequirementSetStatus,
@@ -72,8 +79,357 @@ def ensure_assigned_doctor_for_assessment(user, assessment):
         raise PermissionDenied("Doctors can only perform clinical actions on assigned assessments.")
 
 
+class AssessmentFormValidationService:
+    RISK_FLAGS = {
+        "medical_review_required",
+        "lab_test_required",
+        "vaccination_required",
+        "temporary_exclusion_recommended",
+        "return_to_work_required",
+        "public_health_clearance_required",
+        "state_review_required",
+    }
+    CONDITION_OPERATORS = {
+        "equals",
+        "not_equals",
+        "in",
+        "not_in",
+        "contains",
+        "greater_than",
+        "greater_than_or_equal",
+        "less_than",
+        "less_than_or_equal",
+        "is_truthy",
+        "is_falsy",
+        "exists",
+    }
+    TEXT_TYPES = {
+        AssessmentQuestionType.SHORT_TEXT,
+        AssessmentQuestionType.LONG_TEXT,
+        AssessmentQuestionType.PHONE,
+        AssessmentQuestionType.EMAIL,
+        AssessmentQuestionType.CLINICAL_NOTE,
+        AssessmentQuestionType.DOCTOR_ONLY_NOTE,
+        AssessmentQuestionType.LAB_ONLY_NOTE,
+    }
+    NUMBER_TYPES = {
+        AssessmentQuestionType.NUMBER,
+        AssessmentQuestionType.TEMPERATURE,
+        AssessmentQuestionType.WEIGHT,
+        AssessmentQuestionType.HEIGHT,
+        AssessmentQuestionType.PULSE_RATE,
+        AssessmentQuestionType.VACCINE_DOSE,
+    }
+    SINGLE_CHOICE_TYPES = {
+        AssessmentQuestionType.SINGLE_CHOICE,
+        AssessmentQuestionType.DROPDOWN,
+        AssessmentQuestionType.LAB_RESULT_STATUS,
+    }
+    MULTIPLE_CHOICE_TYPES = {
+        AssessmentQuestionType.MULTIPLE_CHOICE,
+        AssessmentQuestionType.SYMPTOM_CHECKLIST,
+        AssessmentQuestionType.EXPOSURE_HISTORY,
+    }
+    DATE_TYPES = {AssessmentQuestionType.DATE, AssessmentQuestionType.VACCINATION_DATE}
+    FACILITY_ALLOWED_FORM_TYPES = {AssessmentFormType.FACILITY_INTAKE}
+    FACILITY_ALLOWED_PRIVACY_CLASSIFICATIONS = {
+        AssessmentPrivacyClassification.MEDICAL_SENSITIVE,
+        AssessmentPrivacyClassification.RESTRICTED_MEDICAL,
+        AssessmentPrivacyClassification.INTERNAL_ADMINISTRATIVE,
+        AssessmentPrivacyClassification.REGULATORY_RESTRICTED,
+    }
+    MISSING = object()
+
+    @classmethod
+    def _snapshot_questions(cls, snapshot):
+        for section in snapshot.get("sections", []):
+            for question in section.get("questions", []):
+                yield section, question
+
+    @classmethod
+    def _validate_condition(cls, condition, *, question_keys, label):
+        if not condition:
+            return
+        if not isinstance(condition, dict):
+            raise ValidationError({label: "Conditional logic must be an object."})
+        groups = [key for key in ("all", "any") if key in condition]
+        if groups:
+            if len(groups) != 1 or len(condition) != 1:
+                raise ValidationError({label: "Conditional groups must contain exactly one of 'all' or 'any'."})
+            conditions = condition[groups[0]]
+            if not isinstance(conditions, list) or not conditions:
+                raise ValidationError({label: f"Conditional '{groups[0]}' must contain at least one rule."})
+            for child in conditions:
+                cls._validate_condition(child, question_keys=question_keys, label=label)
+            return
+        question = condition.get("question")
+        if question and question not in question_keys:
+            raise ValidationError({label: f"Conditional logic references unknown question '{question}'."})
+        operator = condition.get("operator", "equals")
+        if operator not in cls.CONDITION_OPERATORS:
+            raise ValidationError({label: f"Unsupported conditional operator '{operator}'."})
+        if not question and not condition.get("use_current_answer"):
+            raise ValidationError({label: "Conditional logic must reference a question."})
+        if operator not in {"is_truthy", "is_falsy", "exists"} and "value" not in condition:
+            raise ValidationError({label: f"Conditional operator '{operator}' requires a value."})
+        if operator in {"in", "not_in"} and not isinstance(condition.get("value"), list):
+            raise ValidationError({label: f"Conditional operator '{operator}' requires a list value."})
+
+    @classmethod
+    def _validate_risk_rules(cls, rules, *, question_keys, label):
+        if not rules:
+            return
+        rules = rules if isinstance(rules, list) else [rules]
+        if not all(isinstance(rule, dict) for rule in rules):
+            raise ValidationError({label: "Risk flag rules must be an object or a list of objects."})
+        for rule in rules:
+            flags = rule.get("flags", [])
+            if not isinstance(flags, list) or not flags:
+                raise ValidationError({label: "Each risk rule must contain at least one flag."})
+            invalid = sorted(set(flags) - cls.RISK_FLAGS)
+            if invalid:
+                raise ValidationError({label: f"Unsupported risk flags: {', '.join(invalid)}."})
+            cls._validate_condition(
+                rule.get("when", {"use_current_answer": True, "operator": "is_truthy"}),
+                question_keys=question_keys,
+                label=label,
+            )
+
+    @classmethod
+    def validate_template(cls, template):
+        questions = list(template.sections.prefetch_related("questions").values_list("questions__key", flat=True))
+        question_keys = {key for key in questions if key}
+        for section in template.sections.prefetch_related("questions").all():
+            cls._validate_condition(section.visibility_rules, question_keys=question_keys, label=f"section:{section.key}")
+            for question in section.questions.all():
+                label = f"question:{question.key}"
+                if not isinstance(question.validation_rules, dict):
+                    raise ValidationError({label: "Validation rules must be an object."})
+                if not isinstance(question.conditional_logic, dict):
+                    raise ValidationError({label: "Conditional logic must be an object."})
+                if question.question_type in cls.SINGLE_CHOICE_TYPES | cls.MULTIPLE_CHOICE_TYPES and not question.options:
+                    raise ValidationError({label: "Choice questions must contain at least one option."})
+                for condition_name in ("visible_if", "required_if"):
+                    cls._validate_condition(question.conditional_logic.get(condition_name), question_keys=question_keys, label=label)
+                cls._validate_risk_rules(question.risk_flag_rules, question_keys=question_keys, label=label)
+                minimum = question.validation_rules.get("min_value")
+                maximum = question.validation_rules.get("max_value")
+                try:
+                    if minimum is not None:
+                        Decimal(str(minimum))
+                    if maximum is not None:
+                        Decimal(str(maximum))
+                    if minimum is not None and maximum is not None and Decimal(str(minimum)) > Decimal(str(maximum)):
+                        raise ValidationError({label: "Minimum value cannot exceed maximum value."})
+                except InvalidOperation as exc:
+                    raise ValidationError({label: "Minimum and maximum values must be numeric."}) from exc
+                for length_rule in ("min_length", "max_length", "max_size"):
+                    if length_rule in question.validation_rules and (
+                        not isinstance(question.validation_rules[length_rule], int)
+                        or question.validation_rules[length_rule] < 0
+                    ):
+                        raise ValidationError({label: f"'{length_rule}' must be a non-negative integer."})
+                for date_rule in ("date_before", "date_after"):
+                    if question.validation_rules.get(date_rule):
+                        try:
+                            date.fromisoformat(question.validation_rules[date_rule])
+                        except (TypeError, ValueError) as exc:
+                            raise ValidationError({label: f"'{date_rule}' must be an ISO date."}) from exc
+                pattern = question.validation_rules.get("pattern")
+                if pattern:
+                    try:
+                        re.compile(pattern)
+                    except re.error as exc:
+                        raise ValidationError({label: f"Invalid regex pattern: {exc}."}) from exc
+        cls.validate_facility_template_controls(template)
+
+    @classmethod
+    def validate_facility_template_controls(cls, template):
+        if template.scope != AssessmentFormScope.FACILITY:
+            return
+        if template.form_type not in cls.FACILITY_ALLOWED_FORM_TYPES:
+            raise ValidationError({"form_type": "Facility supplementary forms must use the facility intake form type."})
+        if not template.facility_id:
+            raise ValidationError({"facility": "Facility supplementary forms require a facility."})
+        official_question_keys = set(
+            AssessmentFormQuestion.objects.filter(
+                section__template__scope__in=[AssessmentFormScope.NATIONAL, AssessmentFormScope.STATE],
+                section__template__status__in=[AssessmentFormStatus.PUBLISHED, AssessmentFormStatus.ACTIVE],
+                section__template__is_mandatory=True,
+            )
+            .filter(Q(section__template__state__isnull=True) | Q(section__template__state=template.facility.state))
+            .values_list("key", flat=True)
+        )
+        for section in template.sections.prefetch_related("questions").all():
+            for question in section.questions.all():
+                if question.key in official_question_keys:
+                    raise ValidationError({f"question:{question.key}": "Facility forms cannot duplicate or override mandatory national or State questions."})
+                if question.privacy_classification not in cls.FACILITY_ALLOWED_PRIVACY_CLASSIFICATIONS:
+                    raise ValidationError({f"question:{question.key}": "Facility forms cannot mark questionnaire answers as public or employer-visible."})
+
+    @classmethod
+    def _condition_matches(cls, condition, *, data, current_answer=MISSING):
+        if not condition:
+            return True
+        if "all" in condition:
+            return all(cls._condition_matches(child, data=data, current_answer=current_answer) for child in condition["all"])
+        if "any" in condition:
+            return any(cls._condition_matches(child, data=data, current_answer=current_answer) for child in condition["any"])
+        answer = current_answer if condition.get("use_current_answer") else data.get(condition.get("question"), cls.MISSING)
+        operator = condition.get("operator", "equals")
+        expected = condition.get("value")
+        if operator == "exists":
+            return answer is not cls.MISSING and answer not in (None, "")
+        if answer is cls.MISSING:
+            return False
+        if operator == "equals":
+            return answer == expected
+        if operator == "not_equals":
+            return answer != expected
+        if operator in {"in", "not_in", "contains"}:
+            try:
+                if operator == "in":
+                    return answer in expected
+                if operator == "not_in":
+                    return answer not in expected
+                return expected in answer
+            except TypeError:
+                return False
+        if operator == "is_truthy":
+            return bool(answer)
+        if operator == "is_falsy":
+            return not bool(answer)
+        try:
+            actual_number = Decimal(str(answer))
+            expected_number = Decimal(str(expected))
+        except (InvalidOperation, TypeError, ValueError):
+            return False
+        if operator == "greater_than":
+            return actual_number > expected_number
+        if operator == "greater_than_or_equal":
+            return actual_number >= expected_number
+        if operator == "less_than":
+            return actual_number < expected_number
+        return actual_number <= expected_number
+
+    @staticmethod
+    def _is_missing(value):
+        return value is AssessmentFormValidationService.MISSING or value is None or value == "" or value == []
+
+    @classmethod
+    def _validate_answer(cls, *, response, question, value):
+        question_type = question["question_type"]
+        rules = question.get("validation_rules") or {}
+        if question_type in cls.TEXT_TYPES:
+            if not isinstance(value, str):
+                return "Enter text."
+            if question_type == AssessmentQuestionType.EMAIL:
+                try:
+                    validate_email(value)
+                except DjangoValidationError:
+                    return "Enter a valid email address."
+            if rules.get("min_length") is not None and len(value) < rules["min_length"]:
+                return f"Enter at least {rules['min_length']} characters."
+            if rules.get("max_length") is not None and len(value) > rules["max_length"]:
+                return f"Enter no more than {rules['max_length']} characters."
+            if rules.get("pattern") and not re.fullmatch(rules["pattern"], value):
+                return "Enter a value in the required format."
+        elif question_type in cls.NUMBER_TYPES:
+            if isinstance(value, bool):
+                return "Enter a number."
+            try:
+                number = Decimal(str(value))
+            except (InvalidOperation, TypeError, ValueError):
+                return "Enter a number."
+            if rules.get("min_value") is not None and number < Decimal(str(rules["min_value"])):
+                return f"Enter a value greater than or equal to {rules['min_value']}."
+            if rules.get("max_value") is not None and number > Decimal(str(rules["max_value"])):
+                return f"Enter a value less than or equal to {rules['max_value']}."
+        elif question_type in {AssessmentQuestionType.YES_NO, AssessmentQuestionType.CHECKBOX}:
+            if not isinstance(value, bool):
+                return "Select yes or no."
+        elif question_type in cls.SINGLE_CHOICE_TYPES:
+            if value not in (rules.get("allowed_choices") or question.get("options") or []):
+                return "Select one of the allowed options."
+        elif question_type in cls.MULTIPLE_CHOICE_TYPES:
+            allowed = rules.get("allowed_choices") or question.get("options") or []
+            if not isinstance(value, list) or any(item not in allowed for item in value):
+                return "Select only allowed options."
+        elif question_type in cls.DATE_TYPES:
+            try:
+                parsed = date.fromisoformat(value)
+            except (TypeError, ValueError):
+                return "Enter a valid date."
+            if rules.get("date_before") and parsed >= date.fromisoformat(rules["date_before"]):
+                return f"Enter a date before {rules['date_before']}."
+            if rules.get("date_after") and parsed <= date.fromisoformat(rules["date_after"]):
+                return f"Enter a date after {rules['date_after']}."
+        elif question_type == AssessmentQuestionType.TIME:
+            try:
+                time.fromisoformat(value)
+            except (TypeError, ValueError):
+                return "Enter a valid time."
+        elif question_type == AssessmentQuestionType.DATETIME:
+            try:
+                datetime.fromisoformat(value)
+            except (TypeError, ValueError):
+                return "Enter a valid date and time."
+        elif question_type == AssessmentQuestionType.BLOOD_PRESSURE:
+            if not isinstance(value, dict) or not {"systolic", "diastolic"} <= set(value):
+                return "Enter systolic and diastolic blood pressure values."
+            if any(isinstance(value[item], bool) or not isinstance(value[item], (int, float)) or value[item] <= 0 for item in ("systolic", "diastolic")):
+                return "Enter valid systolic and diastolic blood pressure values."
+        elif question_type == AssessmentQuestionType.FILE_UPLOAD:
+            if not isinstance(value, dict) or not value.get("name"):
+                return "Upload a file."
+            allowed_types = rules.get("file_types") or []
+            if allowed_types and value.get("content_type") not in allowed_types:
+                return "Upload a permitted file type."
+            if rules.get("max_size") is not None and value.get("size", 0) > rules["max_size"]:
+                return "Upload a file within the permitted size."
+        if rules.get("unique_within_assessment") and AssessmentFormResponse.objects.filter(
+            assessment=response.assessment,
+            response_data__contains={question["key"]: value},
+        ).exclude(id=response.id).exclude(status__in=[AssessmentFormResponseStatus.SUPERSEDED, AssessmentFormResponseStatus.ARCHIVED]).exists():
+            return "This value must be unique within the assessment."
+        return ""
+
+    @classmethod
+    def validate_response(cls, response):
+        data = response.response_data or {}
+        questions = list(cls._snapshot_questions(response.question_snapshot))
+        known_keys = {question["key"] for _, question in questions}
+        errors = {key: "This question is not part of the assigned form." for key in data if key not in known_keys}
+        risk_flags = set()
+        for section, question in questions:
+            section_visible = cls._condition_matches(section.get("visibility_rules") or {}, data=data)
+            logic = question.get("conditional_logic") or {}
+            visible = section_visible and cls._condition_matches(logic.get("visible_if") or {}, data=data)
+            if not visible:
+                continue
+            value = data.get(question["key"], cls.MISSING)
+            required_if = logic.get("required_if")
+            required = question.get("required", False) or bool(required_if and cls._condition_matches(required_if, data=data))
+            if cls._is_missing(value):
+                if required:
+                    errors[question["key"]] = "This field is required."
+                continue
+            error = cls._validate_answer(response=response, question=question, value=value)
+            if error:
+                errors[question["key"]] = error
+                continue
+            rules = question.get("risk_flag_rules") or []
+            for rule in rules if isinstance(rules, list) else [rules]:
+                when = rule.get("when", {"use_current_answer": True, "operator": "is_truthy"})
+                if cls._condition_matches(when, data=data, current_answer=value):
+                    risk_flags.update(rule.get("flags", []))
+        if errors:
+            raise ValidationError(errors)
+        return sorted(risk_flags)
+
+
 class AssessmentFormTemplateService:
-    EDITABLE_STATUSES = {AssessmentFormStatus.DRAFT, AssessmentFormStatus.REJECTED}
+    EDITABLE_STATUSES = {AssessmentFormStatus.DRAFT, AssessmentFormStatus.REJECTED, AssessmentFormStatus.CHANGES_REQUESTED}
     IMMUTABLE_STATUSES = {
         AssessmentFormStatus.PUBLISHED,
         AssessmentFormStatus.ACTIVE,
@@ -102,7 +458,11 @@ class AssessmentFormTemplateService:
     def submit_for_approval(cls, *, template, actor):
         cls.ensure_can_edit(template=template, actor=actor)
         template.status = AssessmentFormStatus.PENDING_APPROVAL
-        template.save(update_fields=["status", "updated_at"])
+        template.review_requested_at = timezone.now()
+        template.reviewed_by = None
+        template.reviewed_at = None
+        template.review_comment = ""
+        template.save(update_fields=["status", "review_requested_at", "reviewed_by", "reviewed_at", "review_comment", "updated_at"])
         log_action(action=AuditAction.WORKFLOW_TRANSITION, actor=actor, target=template, metadata={"event": "assessment_form_submitted_for_approval"})
         return template
 
@@ -112,11 +472,17 @@ class AssessmentFormTemplateService:
         cls.ensure_can_approve(template=template, actor=actor)
         if template.status != AssessmentFormStatus.PENDING_APPROVAL:
             raise ValidationError("Only pending assessment form templates can be approved.")
+        if template.scope == AssessmentFormScope.FACILITY:
+            AssessmentFormValidationService.validate_template(template)
         template.status = AssessmentFormStatus.APPROVED
         template.approved_by = actor
         template.approved_at = timezone.now()
-        template.save(update_fields=["status", "approved_by", "approved_at", "updated_at"])
+        template.reviewed_by = actor
+        template.reviewed_at = timezone.now()
+        template.review_comment = ""
+        template.save(update_fields=["status", "approved_by", "approved_at", "reviewed_by", "reviewed_at", "review_comment", "updated_at"])
         log_action(action=AuditAction.WORKFLOW_TRANSITION, actor=actor, target=template, metadata={"event": "assessment_form_approved"})
+        AssessmentFormNotificationService.notify_template_review(template=template, event="approved")
         return template
 
     @classmethod
@@ -128,8 +494,29 @@ class AssessmentFormTemplateService:
         template.status = AssessmentFormStatus.REJECTED
         template.approved_by = None
         template.approved_at = None
-        template.save(update_fields=["status", "approved_by", "approved_at", "updated_at"])
+        template.reviewed_by = actor
+        template.reviewed_at = timezone.now()
+        template.review_comment = reason
+        template.save(update_fields=["status", "approved_by", "approved_at", "reviewed_by", "reviewed_at", "review_comment", "updated_at"])
         log_action(action=AuditAction.WORKFLOW_TRANSITION, actor=actor, target=template, metadata={"event": "assessment_form_rejected", "reason": reason})
+        AssessmentFormNotificationService.notify_template_review(template=template, event="rejected", message_suffix=reason)
+        return template
+
+    @classmethod
+    @transaction.atomic
+    def request_changes(cls, *, template, actor, reason=""):
+        cls.ensure_can_approve(template=template, actor=actor)
+        if template.status != AssessmentFormStatus.PENDING_APPROVAL:
+            raise ValidationError("Only pending assessment form templates can have changes requested.")
+        template.status = AssessmentFormStatus.CHANGES_REQUESTED
+        template.approved_by = None
+        template.approved_at = None
+        template.reviewed_by = actor
+        template.reviewed_at = timezone.now()
+        template.review_comment = reason
+        template.save(update_fields=["status", "approved_by", "approved_at", "reviewed_by", "reviewed_at", "review_comment", "updated_at"])
+        log_action(action=AuditAction.WORKFLOW_TRANSITION, actor=actor, target=template, metadata={"event": "assessment_form_changes_requested", "reason": reason})
+        AssessmentFormNotificationService.notify_template_review(template=template, event="changes_requested", message_suffix=reason)
         return template
 
     @classmethod
@@ -138,10 +525,13 @@ class AssessmentFormTemplateService:
         cls.ensure_can_approve(template=template, actor=actor)
         if template.status != AssessmentFormStatus.APPROVED:
             raise ValidationError("Only approved assessment form templates can be published.")
+        AssessmentFormValidationService.validate_template(template)
         template.status = AssessmentFormStatus.PUBLISHED
         template.published_at = timezone.now()
         template.save(update_fields=["status", "published_at", "updated_at"])
         log_action(action=AuditAction.WORKFLOW_TRANSITION, actor=actor, target=template, metadata={"event": "assessment_form_published"})
+        if template.parent_template_id:
+            AssessmentFormNotificationService.notify_template_review(template=template, event="new_version_published")
         return template
 
     @classmethod
@@ -223,6 +613,211 @@ class AssessmentFormTemplateService:
             )
         log_action(action=AuditAction.CREATE, actor=actor, target=duplicate, metadata={"event": "assessment_form_duplicated", "source_template_id": str(template.id)})
         return duplicate
+
+
+class AssessmentFormNotificationService:
+    @staticmethod
+    def _create(*, recipient, category, title, message, related_object, action_url=""):
+        if not recipient:
+            return None
+        return Notification.objects.create(
+            recipient=recipient,
+            organization=getattr(recipient, "organization", None),
+            category=category,
+            title=title,
+            message=message,
+            action_url=action_url,
+            related_object_type=related_object.__class__.__name__,
+            related_object_id=related_object.id,
+        )
+
+    @classmethod
+    def notify_assignment(cls, *, response):
+        cls._create(
+            recipient=response.respondent,
+            category=NotificationCategory.ASSESSMENT,
+            title="Assessment form assigned",
+            message=f"{response.template.name} has been assigned for completion.",
+            related_object=response,
+            action_url=f"/forms/{response.id}",
+        )
+
+    @classmethod
+    def notify_submission(cls, *, response):
+        cls._create(
+            recipient=response.assessment.doctor,
+            category=NotificationCategory.ASSESSMENT,
+            title="Assessment form submitted",
+            message=f"{response.template.name} has been submitted for review.",
+            related_object=response,
+            action_url=f"/doctor/forms?assessment={response.assessment_id}",
+        )
+
+    @classmethod
+    def notify_clarification(cls, *, response):
+        cls._create(
+            recipient=response.respondent,
+            category=NotificationCategory.ASSESSMENT,
+            title="Assessment form requires clarification",
+            message=f"{response.template.name} has been reopened for clarification.",
+            related_object=response,
+            action_url=f"/forms/{response.id}",
+        )
+
+    @classmethod
+    def notify_template_review(cls, *, template, event, message_suffix=""):
+        event_labels = {
+            "approved": ("Facility form approved", "approved"),
+            "rejected": ("Facility form rejected", "rejected"),
+            "changes_requested": ("Facility form changes requested", "returned for changes"),
+            "new_version_published": ("Assessment form version published", "published as a new version"),
+        }
+        title, status_text = event_labels[event]
+        suffix = f" Reason: {message_suffix}" if message_suffix else ""
+        cls._create(
+            recipient=template.created_by,
+            category=NotificationCategory.FACILITY_ACCREDITATION if template.scope == AssessmentFormScope.FACILITY else NotificationCategory.ASSESSMENT,
+            title=title,
+            message=f"{template.name} was {status_text}.{suffix}",
+            related_object=template,
+            action_url=f"/facility/forms?template={template.id}" if template.scope == AssessmentFormScope.FACILITY else f"/state/forms?template={template.id}",
+        )
+
+    @classmethod
+    def send_reminders(cls, *, actor=None, older_than_days=3):
+        cutoff = timezone.now() - timedelta(days=older_than_days)
+        queryset = AssessmentFormResponse.objects.select_related("template", "respondent").filter(
+            is_required=True,
+            status__in=[
+                AssessmentFormResponseStatus.NOT_STARTED,
+                AssessmentFormResponseStatus.DRAFT,
+                AssessmentFormResponseStatus.REOPENED,
+                AssessmentFormResponseStatus.CLARIFICATION_REQUESTED,
+            ],
+            created_at__lte=cutoff,
+            respondent__isnull=False,
+        )
+        sent = []
+        for response in queryset:
+            exists = Notification.objects.filter(
+                recipient=response.respondent,
+                related_object_type=response.__class__.__name__,
+                related_object_id=response.id,
+                title="Assessment form reminder",
+                created_at__gte=timezone.now() - timedelta(days=1),
+            ).exists()
+            if exists:
+                continue
+            notification = cls._create(
+                recipient=response.respondent,
+                category=NotificationCategory.ASSESSMENT,
+                title="Assessment form reminder",
+                message=f"{response.template.name} is still pending completion.",
+                related_object=response,
+                action_url=f"/forms/{response.id}",
+            )
+            if notification:
+                sent.append(notification)
+                log_action(
+                    action=AuditAction.WORKFLOW_TRANSITION,
+                    actor=actor,
+                    target=response,
+                    metadata={"event": "assessment_form_response_reminder_sent", "assessment_id": str(response.assessment_id)},
+                )
+        return sent
+
+
+class AssessmentFormAnalyticsService:
+    @classmethod
+    def responses_for_actor(cls, actor):
+        queryset = AssessmentFormResponse.objects.select_related("assessment", "assessment__facility", "assessment__employer", "template")
+        if actor.role == UserRole.SUPER_ADMIN:
+            return queryset
+        if actor.role == UserRole.FEDERAL_ADMIN:
+            return queryset
+        if actor.role in {UserRole.STATE_ADMIN, UserRole.INSPECTOR} and actor.state_id:
+            return queryset.filter(assessment__facility__state_id=actor.state_id)
+        if actor.role == UserRole.EMPLOYER and hasattr(actor, "employer"):
+            return queryset.filter(assessment__employer=actor.employer)
+        if actor.role == UserRole.FOOD_HANDLER:
+            return queryset.filter(assessment__food_handler__user=actor)
+        if actor.role in {UserRole.FACILITY_ADMIN, UserRole.DOCTOR, UserRole.LAB_STAFF} and actor.organization_id:
+            return queryset.filter(assessment__facility__organization_id=actor.organization_id)
+        return queryset.none()
+
+    @staticmethod
+    def _increment(target, key, amount=1):
+        target[key] = target.get(key, 0) + amount
+
+    @classmethod
+    def aggregate(cls, *, actor):
+        queryset = cls.responses_for_actor(actor)
+        total = queryset.count()
+        submitted_statuses = {
+            AssessmentFormResponseStatus.SUBMITTED,
+            AssessmentFormResponseStatus.UNDER_REVIEW,
+            AssessmentFormResponseStatus.RESUBMITTED,
+            AssessmentFormResponseStatus.VALIDATED,
+            AssessmentFormResponseStatus.LOCKED,
+        }
+        incomplete_statuses = {
+            AssessmentFormResponseStatus.NOT_STARTED,
+            AssessmentFormResponseStatus.DRAFT,
+            AssessmentFormResponseStatus.CLARIFICATION_REQUESTED,
+            AssessmentFormResponseStatus.REOPENED,
+        }
+        status_counts = {}
+        risk_flag_counts = {}
+        usage_by_template = {}
+        usage_by_form_type = {}
+        version_counts = {}
+        clarification_counts = {
+            AssessmentFormResponseStatus.CLARIFICATION_REQUESTED: 0,
+            AssessmentFormResponseStatus.REOPENED: 0,
+            AssessmentFormResponseStatus.RESUBMITTED: 0,
+        }
+        overdue_cutoff = timezone.now() - timedelta(days=7)
+        overdue = 0
+        submitted = 0
+
+        for response in queryset:
+            cls._increment(status_counts, response.status)
+            if response.status in submitted_statuses:
+                submitted += 1
+            if response.status in incomplete_statuses and response.created_at <= overdue_cutoff:
+                overdue += 1
+            if response.status in clarification_counts:
+                clarification_counts[response.status] += 1
+            template_key = str(response.template_id)
+            if template_key not in usage_by_template:
+                usage_by_template[template_key] = {
+                    "template_id": template_key,
+                    "name": response.template.name,
+                    "form_type": response.template.form_type,
+                    "assigned": 0,
+                    "submitted": 0,
+                }
+            usage_by_template[template_key]["assigned"] += 1
+            if response.status in submitted_statuses:
+                usage_by_template[template_key]["submitted"] += 1
+            cls._increment(usage_by_form_type, response.template.form_type)
+            cls._increment(version_counts, f"{template_key}:v{response.template_version}")
+            for flag in response.risk_flags or []:
+                cls._increment(risk_flag_counts, flag)
+
+        completion_rate = round((submitted / total) * 100, 2) if total else 0
+        return {
+            "total_responses": total,
+            "submitted_responses": submitted,
+            "completion_rate": completion_rate,
+            "overdue_responses": overdue,
+            "status_counts": status_counts,
+            "risk_flag_counts": risk_flag_counts,
+            "usage_by_template": list(usage_by_template.values()),
+            "usage_by_form_type": usage_by_form_type,
+            "version_counts": version_counts,
+            "clarification_counts": clarification_counts,
+        }
 
 
 class AssessmentRequirementResolutionService:
@@ -529,6 +1124,7 @@ class AssessmentFormResponseService:
             target=response,
             metadata={"event": "assessment_form_response_assigned", "assessment_id": str(assessment.id), "template_id": str(template.id)},
         )
+        AssessmentFormNotificationService.notify_assignment(response=response)
         return response
 
     @classmethod
@@ -547,12 +1143,14 @@ class AssessmentFormResponseService:
     @transaction.atomic
     def submit(cls, *, response, actor):
         cls.ensure_can_edit(response=response, actor=actor)
+        response.risk_flags = AssessmentFormValidationService.validate_response(response)
         response.respondent = actor
         response.status = AssessmentFormResponseStatus.RESUBMITTED if response.version > 1 else AssessmentFormResponseStatus.SUBMITTED
         response.submitted_at = timezone.now()
         response.is_locked = True
-        response.save(update_fields=["respondent", "status", "submitted_at", "is_locked", "updated_at"])
+        response.save(update_fields=["respondent", "status", "risk_flags", "submitted_at", "is_locked", "updated_at"])
         log_action(action=AuditAction.WORKFLOW_TRANSITION, actor=actor, target=response, metadata={"event": "assessment_form_response_submitted", "assessment_id": str(response.assessment_id)})
+        AssessmentFormNotificationService.notify_submission(response=response)
         return response
 
     @classmethod
@@ -614,6 +1212,7 @@ class AssessmentFormResponseService:
             target=reopened,
             metadata={"event": "assessment_form_response_reopened", "assessment_id": str(response.assessment_id), "previous_response_id": str(response.id), "reason": reason},
         )
+        AssessmentFormNotificationService.notify_clarification(response=reopened)
         return reopened
 
 

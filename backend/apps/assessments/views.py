@@ -18,6 +18,7 @@ from apps.assessments.serializers import (
     AssessmentFormResponseDraftSerializer,
     AssessmentFormResponseReopenSerializer,
     AssessmentFormResponseSerializer,
+    AssessmentFormResponseSummarySerializer,
     AssessmentFormSectionSerializer,
     AssessmentFormTemplateSerializer,
     AssessmentRequirementResolveSerializer,
@@ -42,7 +43,7 @@ from apps.assessments.serializers import (
     PhysicalExaminationSerializer,
     PhysicalExaminationSubmitSerializer,
 )
-from apps.assessments.services import AssessmentFormResponseService, AssessmentFormTemplateService, AssessmentRequirementResolutionService, AssessmentService, ensure_approved_facility, ensure_assigned_doctor_for_assessment
+from apps.assessments.services import AssessmentFormAnalyticsService, AssessmentFormResponseService, AssessmentFormTemplateService, AssessmentRequirementResolutionService, AssessmentService, ensure_approved_facility, ensure_assigned_doctor_for_assessment
 from apps.audit.models import AuditAction
 from apps.audit.services import log_action
 from apps.certificates.serializers import CertificateRequestSerializer, RequestCertificateSerializer
@@ -112,9 +113,32 @@ def assessment_form_responses_for_user(user):
         return queryset.filter(assessment__food_handler__user=user)
     if user.role in {UserRole.STATE_ADMIN, UserRole.INSPECTOR} and user.state_id:
         return queryset.filter(assessment__facility__state_id=user.state_id)
+    if user.role == UserRole.EMPLOYER and hasattr(user, "employer"):
+        return queryset.filter(assessment__employer=user.employer)
     if user.role in {UserRole.FACILITY_ADMIN, UserRole.DOCTOR, UserRole.LAB_STAFF} and user.organization_id:
         return queryset.filter(assessment__facility__organization_id=user.organization_id)
     return queryset.none()
+
+
+def uses_operational_form_response_summary(user):
+    return user.role in {UserRole.EMPLOYER, UserRole.INSPECTOR}
+
+
+def audit_sensitive_form_response_access(*, request, response, event):
+    if uses_operational_form_response_summary(request.user):
+        return
+    log_action(
+        action=AuditAction.MEDICAL_RECORD_ACCESS,
+        actor=request.user,
+        target=response,
+        request=request,
+        metadata={
+            "event": event,
+            "assessment_id": str(response.assessment_id),
+            "template_id": str(response.template_id),
+            "response_id": str(response.id),
+        },
+    )
 
 
 class AssessmentFormTemplateViewSet(viewsets.ModelViewSet):
@@ -175,6 +199,13 @@ class AssessmentFormTemplateViewSet(viewsets.ModelViewSet):
         serializer = AssessmentFormRejectionSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         template = AssessmentFormTemplateService.reject(template=self.get_object(), actor=request.user, reason=serializer.validated_data["reason"])
+        return Response(self.get_serializer(template).data)
+
+    @action(detail=True, methods=["post"], url_path="request-changes")
+    def request_changes(self, request, pk=None):
+        serializer = AssessmentFormRejectionSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        template = AssessmentFormTemplateService.request_changes(template=self.get_object(), actor=request.user, reason=serializer.validated_data["reason"])
         return Response(self.get_serializer(template).data)
 
     @action(detail=True, methods=["post"], url_path="publish")
@@ -335,6 +366,13 @@ class AssessmentRequirementResolveView(APIView):
         )
 
 
+class AssessmentFormAnalyticsView(APIView):
+    permission_classes = [IsAuthenticated, IsActiveUser]
+
+    def get(self, request):
+        return Response(AssessmentFormAnalyticsService.aggregate(actor=request.user))
+
+
 class AssessmentFormResponseViewSet(viewsets.ModelViewSet):
     queryset = AssessmentFormResponse.objects.all()
     serializer_class = AssessmentFormResponseSerializer
@@ -346,6 +384,23 @@ class AssessmentFormResponseViewSet(viewsets.ModelViewSet):
         if getattr(self, "swagger_fake_view", False):
             return self.queryset
         return assessment_form_responses_for_user(self.request.user)
+
+    def get_serializer_class(self):
+        if getattr(self, "swagger_fake_view", False):
+            return self.serializer_class
+        if uses_operational_form_response_summary(self.request.user):
+            return AssessmentFormResponseSummarySerializer
+        return self.serializer_class
+
+    def retrieve(self, request, *args, **kwargs):
+        response = self.get_object()
+        audit_sensitive_form_response_access(
+            request=request,
+            response=response,
+            event="assessment_form_response_read",
+        )
+        serializer = self.get_serializer(response)
+        return Response(serializer.data)
 
     def create(self, request, *args, **kwargs):
         raise ValidationError("Assessment form responses are assigned from resolved requirements.")
@@ -392,6 +447,11 @@ class AssessmentFormResponseViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=["get"], url_path="versions")
     def versions(self, request, pk=None):
         response = self.get_object()
+        audit_sensitive_form_response_access(
+            request=request,
+            response=response,
+            event="assessment_form_response_versions_read",
+        )
         versions = assessment_form_responses_for_user(request.user).filter(
             assessment=response.assessment,
             template=response.template,

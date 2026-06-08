@@ -33,7 +33,7 @@ class PhysicalExaminationAdmin(admin.ModelAdmin):
 
 @admin.register(AssessmentFormTemplate)
 class AssessmentFormTemplateAdmin(admin.ModelAdmin):
-    list_display = ("name", "form_type", "scope", "version", "status", "is_mandatory")
+    list_display = ("name", "form_type", "scope", "version", "status", "is_mandatory", "reviewed_by", "reviewed_at")
     list_filter = ("scope", "form_type", "status", "is_mandatory")
     search_fields = ("name", "description")
 

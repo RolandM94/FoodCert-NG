@@ -7,6 +7,7 @@ import {
   Bell,
   Building2,
   CalendarDays,
+  FileStack,
   ClipboardCheck,
   ClipboardList,
   FileCheck2,
@@ -54,6 +55,7 @@ export const PORTAL_NAV: Record<UserRole, PortalNavItem[]> = {
     { label: "Appointments", href: "/food-handler/appointments", icon: CalendarDays },
     { label: "Declaration", href: "/food-handler/declaration", icon: ClipboardList },
     { label: "Assessments", href: "/food-handler/assessments", icon: Stethoscope },
+    { label: "Forms", href: "/food-handler/forms", icon: FileStack },
     { label: "Vaccinations", href: "/food-handler/vaccinations", icon: Syringe },
     { label: "Certificate", href: "/food-handler/certificate", icon: BadgeCheck },
     { label: "Illness Report", href: "/food-handler/illness-report", icon: HeartPulse },
@@ -85,6 +87,7 @@ export const PORTAL_NAV: Record<UserRole, PortalNavItem[]> = {
     { label: "Departments", href: "/facility/departments", icon: Network },
     { label: "Appointments", href: "/facility/appointments", icon: CalendarDays },
     { label: "Assessments", href: "/facility/assessments", icon: Stethoscope },
+    { label: "Forms", href: "/facility/forms", icon: FileStack },
     { label: "Lab Tests", href: "/facility/lab-tests", icon: FlaskConical },
     { label: "Certificates", href: "/facility/certificates", icon: BadgeCheck },
     { label: "Settlements", href: "/facility/settlements", icon: Banknote },
@@ -94,17 +97,20 @@ export const PORTAL_NAV: Record<UserRole, PortalNavItem[]> = {
   ],
   doctor: [
     { label: "Dashboard", href: "/doctor/dashboard", icon: Activity },
-    { label: "Assessments", href: "/doctor/assessments", icon: Stethoscope }
+    { label: "Assessments", href: "/doctor/assessments", icon: Stethoscope },
+    { label: "Forms", href: "/doctor/forms", icon: FileStack }
   ],
   lab_staff: [
     { label: "Dashboard", href: "/lab/dashboard", icon: Activity },
     { label: "Test Requests", href: "/lab/test-requests", icon: FlaskConical },
-    { label: "Results", href: "/lab/results", icon: FileCheck2 }
+    { label: "Results", href: "/lab/results", icon: FileCheck2 },
+    { label: "Forms", href: "/lab/forms", icon: FileStack }
   ],
   state_admin: [
     { label: "Dashboard", href: "/state/dashboard", icon: Activity },
     { label: "Units & Offices", href: "/state/units", icon: Network },
     { label: "Facilities", href: "/state/facilities", icon: Building2 },
+    { label: "Forms", href: "/state/forms", icon: FileStack },
     { label: "Accreditation", href: "/state/facilities/accreditation", icon: ShieldCheck },
     { label: "Certificate Queue", href: "/state/certificate-requests", icon: BadgeCheck },
     { label: "Certificates", href: "/state/certificates", icon: FileCheck2 },
@@ -127,6 +133,7 @@ export const PORTAL_NAV: Record<UserRole, PortalNavItem[]> = {
     { label: "States", href: "/federal/states", icon: MapPin },
     { label: "Certificates", href: "/federal/certificates", icon: BadgeCheck },
     { label: "Facilities", href: "/federal/facilities", icon: Building2 },
+    { label: "Forms", href: "/federal/forms", icon: FileStack },
     { label: "Employers", href: "/federal/employers", icon: UsersRound },
     { label: "Analytics", href: "/federal/analytics", icon: BarChart3 },
     { label: "Data Quality", href: "/federal/data-quality", icon: ShieldCheck },

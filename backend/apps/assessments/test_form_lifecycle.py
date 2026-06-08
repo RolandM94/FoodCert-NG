@@ -2,10 +2,21 @@ from django.contrib.auth import get_user_model
 from rest_framework.test import APITestCase
 
 from apps.accounts.models import UserRole
-from apps.assessments.models import AssessmentFormStatus, AssessmentFormTemplate
+from apps.assessments.models import (
+    AssessmentFormQuestion,
+    AssessmentFormScope,
+    AssessmentFormSection,
+    AssessmentFormStatus,
+    AssessmentFormTemplate,
+    AssessmentFormType,
+    AssessmentPrivacyClassification,
+    AssessmentQuestionType,
+    AssessmentRespondentRole,
+)
 from apps.audit.models import AuditLog
 from apps.facilities.models import FacilityType, MedicalFacility, OwnershipType
 from apps.locations.models import State
+from apps.notifications.models import Notification
 from apps.organizations.models import Organization, OrganizationType
 
 
@@ -183,6 +194,157 @@ class AssessmentFormLifecycleApiTests(APITestCase):
         self.client.force_authenticate(self.state_admin)
         approved = self.client.post(f"/api/forms/templates/{form_id}/approve/", format="json")
         self.assertEqual(approved.status_code, 200, approved.data)
+        self.assertTrue(
+            Notification.objects.filter(
+                recipient=self.facility_admin,
+                related_object_id=form_id,
+                title="Facility form approved",
+            ).exists()
+        )
+
+    def test_facility_form_state_change_request_resubmission_and_publishing_flow(self):
+        self.client.force_authenticate(self.facility_admin)
+        created = self.client.post(
+            "/api/forms/templates/",
+            {
+                "name": "Facility Intake",
+                "description": "Supplementary intake questions for local workflow.",
+                "form_type": "facility_intake",
+                "scope": "facility",
+                "facility": str(self.facility.id),
+                "requires_approval": True,
+            },
+            format="json",
+        )
+        self.assertEqual(created.status_code, 201, created.data)
+        form_id = payload(created)["id"]
+        self.add_section_and_question(form_id)
+        submitted = self.client.post(f"/api/forms/templates/{form_id}/submit-for-approval/", format="json")
+        self.assertEqual(submitted.status_code, 200, submitted.data)
+        self.assertEqual(payload(submitted)["status"], AssessmentFormStatus.PENDING_APPROVAL)
+        blocked_publish = self.client.post(f"/api/forms/templates/{form_id}/publish/", format="json")
+        self.assertEqual(blocked_publish.status_code, 403)
+
+        self.client.force_authenticate(self.state_admin)
+        changes = self.client.post(
+            f"/api/forms/templates/{form_id}/request-changes/",
+            {"reason": "Clarify why this intake question is needed."},
+            format="json",
+        )
+        self.assertEqual(changes.status_code, 200, changes.data)
+        self.assertEqual(payload(changes)["status"], AssessmentFormStatus.CHANGES_REQUESTED)
+        self.assertEqual(payload(changes)["review_comment"], "Clarify why this intake question is needed.")
+        self.assertTrue(
+            Notification.objects.filter(
+                recipient=self.facility_admin,
+                related_object_id=form_id,
+                title="Facility form changes requested",
+            ).exists()
+        )
+
+        self.client.force_authenticate(self.facility_admin)
+        edited = self.client.patch(f"/api/forms/templates/{form_id}/", {"description": "Reviewed intake purpose."}, format="json")
+        self.assertEqual(edited.status_code, 200, edited.data)
+        resubmitted = self.client.post(f"/api/forms/templates/{form_id}/submit-for-approval/", format="json")
+        self.assertEqual(resubmitted.status_code, 200, resubmitted.data)
+
+        self.client.force_authenticate(self.state_admin)
+        approved = self.client.post(f"/api/forms/templates/{form_id}/approve/", format="json")
+        self.assertEqual(approved.status_code, 200, approved.data)
+        self.assertEqual(payload(approved)["status"], AssessmentFormStatus.APPROVED)
+        published = self.client.post(f"/api/forms/templates/{form_id}/publish/", format="json")
+        self.assertEqual(published.status_code, 200, published.data)
+        self.assertEqual(payload(published)["status"], AssessmentFormStatus.PUBLISHED)
+        activated = self.client.post(f"/api/forms/templates/{form_id}/activate/", format="json")
+        self.assertEqual(payload(activated)["status"], AssessmentFormStatus.ACTIVE)
+
+    def test_facility_form_rejection_returns_to_editable_resubmittable_state(self):
+        self.client.force_authenticate(self.facility_admin)
+        created = self.client.post(
+            "/api/forms/templates/",
+            {"name": "Facility Intake", "form_type": "facility_intake", "scope": "facility", "facility": str(self.facility.id)},
+            format="json",
+        )
+        form_id = payload(created)["id"]
+        self.add_section_and_question(form_id)
+        self.client.post(f"/api/forms/templates/{form_id}/submit-for-approval/", format="json")
+
+        self.client.force_authenticate(self.state_admin)
+        rejected = self.client.post(f"/api/forms/templates/{form_id}/reject/", {"reason": "Unclear purpose."}, format="json")
+        self.assertEqual(rejected.status_code, 200, rejected.data)
+        self.assertEqual(payload(rejected)["status"], AssessmentFormStatus.REJECTED)
+        self.assertTrue(
+            Notification.objects.filter(
+                recipient=self.facility_admin,
+                related_object_id=form_id,
+                title="Facility form rejected",
+            ).exists()
+        )
+        self.assertEqual(payload(rejected)["review_comment"], "Unclear purpose.")
+
+        self.client.force_authenticate(self.facility_admin)
+        edited = self.client.patch(f"/api/forms/templates/{form_id}/", {"description": "Purpose now documented."}, format="json")
+        self.assertEqual(edited.status_code, 200, edited.data)
+        resubmitted = self.client.post(f"/api/forms/templates/{form_id}/submit-for-approval/", format="json")
+        self.assertEqual(payload(resubmitted)["status"], AssessmentFormStatus.PENDING_APPROVAL)
+
+    def test_state_cannot_approve_facility_forms_that_conflict_or_expose_answers_to_employers(self):
+        official = AssessmentFormTemplate.objects.create(
+            name="Mandatory National Declaration",
+            form_type=AssessmentFormType.HEALTH_DECLARATION,
+            scope=AssessmentFormScope.NATIONAL,
+            status=AssessmentFormStatus.ACTIVE,
+            is_mandatory=True,
+        )
+        official_section = AssessmentFormSection.objects.create(template=official, key="mandatory", title="Mandatory")
+        AssessmentFormQuestion.objects.create(
+            section=official_section,
+            key="recent_diarrhoea_vomiting",
+            label="Have you experienced diarrhoea or vomiting recently?",
+            question_type=AssessmentQuestionType.YES_NO,
+            privacy_classification=AssessmentPrivacyClassification.MEDICAL_SENSITIVE,
+            respondent_role=AssessmentRespondentRole.FOOD_HANDLER,
+        )
+
+        self.client.force_authenticate(self.facility_admin)
+        duplicate = self.client.post(
+            "/api/forms/templates/",
+            {"name": "Duplicate Facility Intake", "form_type": "facility_intake", "scope": "facility", "facility": str(self.facility.id)},
+            format="json",
+        )
+        duplicate_id = payload(duplicate)["id"]
+        self.add_section_and_question(duplicate_id)
+        self.client.post(f"/api/forms/templates/{duplicate_id}/submit-for-approval/", format="json")
+
+        visible = self.client.post(
+            "/api/forms/templates/",
+            {"name": "Employer Visible Intake", "form_type": "facility_intake", "scope": "facility", "facility": str(self.facility.id)},
+            format="json",
+        )
+        visible_id = payload(visible)["id"]
+        section = self.client.post("/api/forms/sections/", {"template": visible_id, "key": "visibility", "title": "Visibility"}, format="json")
+        question = self.client.post(
+            "/api/forms/questions/",
+            {
+                "section": payload(section)["id"],
+                "key": "local_screening_note",
+                "label": "Local screening note",
+                "question_type": "long_text",
+                "privacy_classification": "employer_safe_summary",
+                "respondent_role": "food_handler",
+            },
+            format="json",
+        )
+        self.assertEqual(question.status_code, 201, question.data)
+        self.client.post(f"/api/forms/templates/{visible_id}/submit-for-approval/", format="json")
+
+        self.client.force_authenticate(self.state_admin)
+        duplicate_approval = self.client.post(f"/api/forms/templates/{duplicate_id}/approve/", format="json")
+        self.assertEqual(duplicate_approval.status_code, 400)
+        self.assertIn("question:recent_diarrhoea_vomiting", payload(duplicate_approval))
+        visible_approval = self.client.post(f"/api/forms/templates/{visible_id}/approve/", format="json")
+        self.assertEqual(visible_approval.status_code, 400)
+        self.assertIn("question:local_screening_note", payload(visible_approval))
 
     def test_rejected_template_returns_to_editable_state(self):
         template = self.create_national_template()

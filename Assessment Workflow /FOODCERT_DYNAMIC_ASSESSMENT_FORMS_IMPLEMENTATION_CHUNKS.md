@@ -83,6 +83,8 @@ This roadmap breaks the Dynamic Assessment Forms & Verification Requirements Mod
 
 ## Chunk 5: Validation, Logic, and Risk Flags
 
+**Status:** Implemented and verified.
+
 ### Scope
 
 - Expand backend validation for medical field types.
@@ -101,6 +103,8 @@ This roadmap breaks the Dynamic Assessment Forms & Verification Requirements Mod
 
 ## Chunk 6: Facility Approval Workflow
 
+**Status:** Implemented and verified.
+
 ### Scope
 
 - Allow facilities to create supplementary intake forms.
@@ -116,6 +120,8 @@ This roadmap breaks the Dynamic Assessment Forms & Verification Requirements Mod
 - Add conflict and privacy-rule tests.
 
 ## Chunk 7: Workflow Screens
+
+**Status:** Implemented and verified.
 
 ### Scope
 
@@ -136,6 +142,8 @@ This roadmap breaks the Dynamic Assessment Forms & Verification Requirements Mod
 - Verify form previews and dynamic rendering.
 
 ## Chunk 8: Privacy, Audit, and Analytics
+
+**Status:** Implemented and verified.
 
 ### Scope
 

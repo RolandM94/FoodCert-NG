@@ -1,7 +1,7 @@
 from django.urls import path
 from rest_framework.routers import DefaultRouter
 
-from apps.assessments.views import AssessmentFormQuestionViewSet, AssessmentFormResponseViewSet, AssessmentFormSectionViewSet, AssessmentFormTemplateViewSet, AssessmentRequirementResolveView, AssessmentRequirementSetViewSet, AppointmentViewSet, DoctorAssessmentViewSet, HealthDeclarationViewSet, MedicalAssessmentViewSet
+from apps.assessments.views import AssessmentFormAnalyticsView, AssessmentFormQuestionViewSet, AssessmentFormResponseViewSet, AssessmentFormSectionViewSet, AssessmentFormTemplateViewSet, AssessmentRequirementResolveView, AssessmentRequirementSetViewSet, AppointmentViewSet, DoctorAssessmentViewSet, HealthDeclarationViewSet, MedicalAssessmentViewSet
 
 
 router = DefaultRouter()
@@ -16,5 +16,6 @@ router.register("forms/requirement-sets", AssessmentRequirementSetViewSet, basen
 router.register("form-responses", AssessmentFormResponseViewSet, basename="assessment-form-responses")
 
 urlpatterns = [
+    path("forms/analytics/", AssessmentFormAnalyticsView.as_view(), name="assessment-forms-analytics"),
     path("forms/requirements/resolve/", AssessmentRequirementResolveView.as_view(), name="assessment-requirements-resolve"),
 ] + router.urls

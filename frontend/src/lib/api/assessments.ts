@@ -2,6 +2,11 @@ import { apiClient, unwrap, type ApiEnvelope } from "@/lib/api/client";
 import type {
   Appointment,
   AssessmentAuditTimelineItem,
+  AssessmentFormQuestion,
+  AssessmentFormResponse,
+  AssessmentFormSection,
+  AssessmentFormTemplate,
+  AssessmentRequirementResolution,
   AssessmentStatusSnapshot,
   FitnessDecision,
   HealthDeclaration,
@@ -10,6 +15,10 @@ import type {
   PhysicalExamination,
   VaccinationRecord
 } from "@/types/assessments";
+
+function normalizeList<T>(value: T[] | { results?: T[] }): T[] {
+  return Array.isArray(value) ? value : value.results ?? [];
+}
 
 export async function createAppointment(payload: Record<string, unknown>): Promise<Appointment> {
   const response = await apiClient.post<ApiEnvelope<Appointment>>("/appointments/", payload);
@@ -63,7 +72,7 @@ export async function createAssessment(payload: Record<string, unknown>): Promis
 
 export async function listAssessments(): Promise<MedicalAssessment[]> {
   const response = await apiClient.get<ApiEnvelope<MedicalAssessment[]>>("/assessments/");
-  return unwrap(response.data);
+  return normalizeList(unwrap(response.data));
 }
 
 export async function listFacilityAssessments(facilityId: string, params?: Record<string, string>): Promise<MedicalAssessment[]> {
@@ -108,7 +117,7 @@ export async function assignFacilityAssessmentDoctor(facilityId: string, assessm
 
 export async function listDoctorAssessments(): Promise<MedicalAssessment[]> {
   const response = await apiClient.get<ApiEnvelope<MedicalAssessment[]>>("/doctor/assessments/");
-  return unwrap(response.data);
+  return normalizeList(unwrap(response.data));
 }
 
 export async function getDoctorAssessment(assessmentId: string): Promise<MedicalAssessment> {
@@ -240,5 +249,85 @@ export async function setDoctorFitnessDecision(
   payload: { final_decision: FitnessDecision; return_to_work_date?: string; doctor_notes?: string; digital_signature_confirmation?: boolean }
 ): Promise<MedicalAssessment> {
   const response = await apiClient.patch<ApiEnvelope<MedicalAssessment>>(`/doctor/assessments/${id}/fitness-decision/`, payload);
+  return unwrap(response.data);
+}
+
+export async function listAssessmentFormTemplates(params?: Record<string, string>): Promise<AssessmentFormTemplate[]> {
+  const response = await apiClient.get<ApiEnvelope<AssessmentFormTemplate[] | { results?: AssessmentFormTemplate[] }>>("/forms/templates/", { params });
+  return normalizeList(unwrap(response.data));
+}
+
+export async function createAssessmentFormTemplate(payload: Record<string, unknown>): Promise<AssessmentFormTemplate> {
+  const response = await apiClient.post<ApiEnvelope<AssessmentFormTemplate>>("/forms/templates/", payload);
+  return unwrap(response.data);
+}
+
+export async function updateAssessmentFormTemplate(id: string, payload: Record<string, unknown>): Promise<AssessmentFormTemplate> {
+  const response = await apiClient.patch<ApiEnvelope<AssessmentFormTemplate>>(`/forms/templates/${id}/`, payload);
+  return unwrap(response.data);
+}
+
+export async function duplicateAssessmentFormTemplate(id: string): Promise<AssessmentFormTemplate> {
+  const response = await apiClient.post<ApiEnvelope<AssessmentFormTemplate>>(`/forms/templates/${id}/duplicate/`);
+  return unwrap(response.data);
+}
+
+export async function transitionAssessmentFormTemplate(id: string, action: "submit-for-approval" | "approve" | "reject" | "request-changes" | "publish" | "activate" | "retire", payload: Record<string, unknown> = {}): Promise<AssessmentFormTemplate> {
+  const response = await apiClient.post<ApiEnvelope<AssessmentFormTemplate>>(`/forms/templates/${id}/${action}/`, payload);
+  return unwrap(response.data);
+}
+
+export async function createAssessmentFormSection(payload: Record<string, unknown>): Promise<AssessmentFormSection> {
+  const response = await apiClient.post<ApiEnvelope<AssessmentFormSection>>("/forms/sections/", payload);
+  return unwrap(response.data);
+}
+
+export async function createAssessmentFormQuestion(payload: Record<string, unknown>): Promise<AssessmentFormQuestion> {
+  const response = await apiClient.post<ApiEnvelope<AssessmentFormQuestion>>("/forms/questions/", payload);
+  return unwrap(response.data);
+}
+
+export async function getAssessmentRequirements(assessmentId: string): Promise<AssessmentRequirementResolution> {
+  const response = await apiClient.get<ApiEnvelope<AssessmentRequirementResolution>>(`/assessments/${assessmentId}/requirements/`);
+  return unwrap(response.data);
+}
+
+export async function listAssessmentFormResponses(params?: Record<string, string>): Promise<AssessmentFormResponse[]> {
+  const response = await apiClient.get<ApiEnvelope<AssessmentFormResponse[] | { results?: AssessmentFormResponse[] }>>("/form-responses/", { params });
+  return normalizeList(unwrap(response.data));
+}
+
+export async function listAssignedAssessmentForms(assessmentId: string): Promise<AssessmentFormResponse[]> {
+  const response = await apiClient.get<ApiEnvelope<AssessmentFormResponse[]>>(`/assessments/${assessmentId}/forms/`);
+  return normalizeList(unwrap(response.data));
+}
+
+export async function assignAssessmentForms(assessmentId: string): Promise<AssessmentFormResponse[]> {
+  const response = await apiClient.post<ApiEnvelope<AssessmentFormResponse[]>>(`/assessments/${assessmentId}/forms/assign/`);
+  return normalizeList(unwrap(response.data));
+}
+
+export async function saveAssessmentFormResponse(responseId: string, responseData: Record<string, unknown>): Promise<AssessmentFormResponse> {
+  const response = await apiClient.patch<ApiEnvelope<AssessmentFormResponse>>(`/form-responses/${responseId}/`, { response_data: responseData });
+  return unwrap(response.data);
+}
+
+export async function submitAssessmentFormResponse(responseId: string): Promise<AssessmentFormResponse> {
+  const response = await apiClient.post<ApiEnvelope<AssessmentFormResponse>>(`/form-responses/${responseId}/submit/`);
+  return unwrap(response.data);
+}
+
+export async function reviewAssessmentFormResponse(responseId: string): Promise<AssessmentFormResponse> {
+  const response = await apiClient.post<ApiEnvelope<AssessmentFormResponse>>(`/form-responses/${responseId}/review/`);
+  return unwrap(response.data);
+}
+
+export async function validateAssessmentFormResponse(responseId: string): Promise<AssessmentFormResponse> {
+  const response = await apiClient.post<ApiEnvelope<AssessmentFormResponse>>(`/form-responses/${responseId}/validate/`);
+  return unwrap(response.data);
+}
+
+export async function reopenAssessmentFormResponse(responseId: string, reason: string): Promise<AssessmentFormResponse> {
+  const response = await apiClient.post<ApiEnvelope<AssessmentFormResponse>>(`/form-responses/${responseId}/reopen/`, { reason });
   return unwrap(response.data);
 }

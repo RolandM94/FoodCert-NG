@@ -40,7 +40,7 @@ function StatCard({ label, value, icon: Icon, color }: { label: string; value: n
           <p className="mt-2 text-2xl font-bold text-slate-950">{formatNumber(value)}</p>
         </div>
         <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg ${color || "bg-emerald-50 text-brand-deep"}`}>
-          <Icon aria-hidden="true" size={20} />
+          <Icon aria-hidden={true} size={20} />
         </div>
       </div>
     </div>
