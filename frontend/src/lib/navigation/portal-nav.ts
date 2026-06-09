@@ -24,7 +24,6 @@ import {
   ShieldCheck,
   Stethoscope,
   Syringe,
-  UserPlus,
   UsersRound
 } from "lucide-react";
 import type { UserRole } from "@/types/auth";
@@ -64,11 +63,8 @@ export const PORTAL_NAV: Record<UserRole, PortalNavItem[]> = {
   employer: [
     { label: "Dashboard", href: "/employer/dashboard", icon: Activity },
     { label: "Business Profile", href: "/employer/business-profile", icon: Building2 },
-    { label: "Branches", href: "/employer/branches", icon: GitBranch },
+    { label: "Stakeholder Management", href: "/employer/stakeholder-management", icon: UsersRound },
     { label: "Food Handlers", href: "/employer/food-handlers", icon: UsersRound },
-    { label: "Invite", href: "/employer/food-handlers/invite", icon: UserPlus },
-    { label: "Users", href: "/employer/users", icon: UsersRound },
-    { label: "Invites", href: "/employer/invites", icon: UserPlus },
     { label: "Compliance", href: "/employer/compliance", icon: ClipboardCheck },
     { label: "Vaccinations", href: "/employer/vaccinations", icon: Syringe },
     { label: "Illness Reports", href: "/employer/illness-reports", icon: HeartPulse },
@@ -83,8 +79,8 @@ export const PORTAL_NAV: Record<UserRole, PortalNavItem[]> = {
   facility_admin: [
     { label: "Dashboard", href: "/facility/dashboard", icon: Activity },
     { label: "Profile", href: "/facility/profile", icon: Building2 },
+    { label: "Stakeholder Management", href: "/facility/stakeholder-management", icon: UsersRound },
     { label: "Accreditation", href: "/facility/accreditation", icon: ShieldCheck },
-    { label: "Departments", href: "/facility/departments", icon: Network },
     { label: "Appointments", href: "/facility/appointments", icon: CalendarDays },
     { label: "Assessments", href: "/facility/assessments", icon: Stethoscope },
     { label: "Forms", href: "/facility/forms", icon: FileStack },
@@ -92,8 +88,6 @@ export const PORTAL_NAV: Record<UserRole, PortalNavItem[]> = {
     { label: "Certificates", href: "/facility/certificates", icon: BadgeCheck },
     { label: "Settlements", href: "/facility/settlements", icon: Banknote },
     { label: "Reports", href: "/facility/reports", icon: BarChart3 },
-    { label: "Staff", href: "/facility/staff", icon: UsersRound },
-    { label: "Invites", href: "/facility/invites", icon: UserPlus }
   ],
   doctor: [
     { label: "Dashboard", href: "/doctor/dashboard", icon: Activity },
@@ -108,7 +102,7 @@ export const PORTAL_NAV: Record<UserRole, PortalNavItem[]> = {
   ],
   state_admin: [
     { label: "Dashboard", href: "/state/dashboard", icon: Activity },
-    { label: "Units & Offices", href: "/state/units", icon: Network },
+    { label: "Stakeholder Management", href: "/state/stakeholder-management", icon: UsersRound },
     { label: "Facilities", href: "/state/facilities", icon: Building2 },
     { label: "Forms", href: "/state/forms", icon: FileStack },
     { label: "Accreditation", href: "/state/facilities/accreditation", icon: ShieldCheck },
@@ -125,11 +119,10 @@ export const PORTAL_NAV: Record<UserRole, PortalNavItem[]> = {
     { label: "Fees", href: "/state/fees", icon: Banknote },
     { label: "Revenue", href: "/state/revenue", icon: Landmark },
     { label: "Reports", href: "/state/reports", icon: BarChart3 },
-    { label: "Users", href: "/state/users", icon: UsersRound },
-    { label: "Invites", href: "/state/invites", icon: UserPlus }
   ],
   federal_admin: [
     { label: "Dashboard", href: "/federal/dashboard", icon: Activity },
+    { label: "Stakeholder Management", href: "/federal/stakeholder-management", icon: UsersRound },
     { label: "States", href: "/federal/states", icon: MapPin },
     { label: "Certificates", href: "/federal/certificates", icon: BadgeCheck },
     { label: "Facilities", href: "/federal/facilities", icon: Building2 },
@@ -142,7 +135,7 @@ export const PORTAL_NAV: Record<UserRole, PortalNavItem[]> = {
     { label: "Queries", href: "/federal/queries", icon: Bell },
     { label: "Reports", href: "/federal/reports", icon: ClipboardList },
     { label: "Policy Config", href: "/federal/policy-config", icon: Landmark },
-    { label: "Templates", href: "/admin/certificate-templates", icon: Settings }
+    { label: "Templates", href: "/admin/certificate-templates", icon: Settings },
   ],
   inspector: [
     { label: "Dashboard", href: "/inspector/dashboard", icon: Activity },
@@ -153,6 +146,7 @@ export const PORTAL_NAV: Record<UserRole, PortalNavItem[]> = {
   ],
   super_admin: [
     { label: "Dashboard", href: "/federal/dashboard", icon: Activity },
+    { label: "Stakeholder Management", href: "/admin/stakeholder-management", icon: UsersRound },
     { label: "States", href: "/federal/states", icon: MapPin },
     { label: "Certificates", href: "/federal/certificates", icon: BadgeCheck },
     { label: "Facilities", href: "/federal/facilities", icon: Building2 },

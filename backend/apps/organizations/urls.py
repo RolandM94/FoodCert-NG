@@ -5,6 +5,7 @@ from apps.organizations.views import OrganizationUnitViewSet, OrganizationViewSe
 from apps.organizations.views_membership import OrganizationMembershipViewSet
 from apps.organizations.views_permissions import PermissionViewSet
 from apps.organizations.views_roles import RoleViewSet
+from apps.organizations.views_stakeholder import StakeholderContextView, StakeholderSummaryView
 
 router = DefaultRouter()
 router.register("organizations", OrganizationViewSet, basename="organizations")
@@ -30,6 +31,8 @@ membership_toggle_unit_restriction = OrganizationMembershipViewSet.as_view({"pat
 roles_by_organization_type = RoleViewSet.as_view({"get": "list"})
 
 urlpatterns = [
+    path("stakeholder-management/context/", StakeholderContextView.as_view(), name="stakeholder-context"),
+    path("stakeholder-management/summary/", StakeholderSummaryView.as_view(), name="stakeholder-summary"),
     path("organization-types/<str:organization_type>/roles/", roles_by_organization_type, name="organization-type-roles"),
     path("organizations/<uuid:organization_id>/units/", unit_list, name="organization-units"),
     path("organizations/<uuid:organization_id>/units/tree/", unit_tree, name="organization-unit-tree"),

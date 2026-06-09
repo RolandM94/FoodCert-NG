@@ -306,3 +306,73 @@ export async function toggleMembershipUnitRestriction(organizationId: string, me
   );
   return unwrap(res.data);
 }
+
+// ── Stakeholder Management Context ──
+
+export type StakeholderContext = {
+  organization: {
+    id: string;
+    name: string;
+    organization_type: string;
+    status: string;
+    state?: string;
+    state_name?: string;
+    lga_name?: string;
+  };
+  membership: {
+    id: string;
+    role?: string;
+    role_name?: string;
+    unit?: string;
+    unit_name?: string;
+    unit_restricted: boolean;
+    status: string;
+  };
+  labels: {
+    module_title: string;
+    stakeholders: string;
+    units: string;
+    unit: string;
+    invite_button: string;
+  };
+  permissions: {
+    can_view_users: boolean;
+    can_invite_users: boolean;
+    can_view_roles: boolean;
+    can_view_units: boolean;
+    can_view_invites: boolean;
+    can_view_audit_logs: boolean;
+  };
+};
+
+export async function fetchStakeholderContext() {
+  const res = await apiClient.get<ApiEnvelope<StakeholderContext>>("/stakeholder-management/context/");
+  return unwrap(res.data);
+}
+
+export type StakeholderSummary = {
+  summary: {
+    total_users: number;
+    active_users: number;
+    pending_invites: number;
+    suspended_users: number;
+    total_units: number;
+    active_units: number;
+    roles_in_use: number;
+    users_without_unit: number;
+    users_with_unit_restriction: number;
+  };
+  recent_activity: {
+    id: string;
+    user_name: string;
+    role_name?: string;
+    unit_name?: string;
+    status: string;
+    updated_at: string;
+  }[];
+};
+
+export async function fetchStakeholderSummary() {
+  const res = await apiClient.get<ApiEnvelope<StakeholderSummary>>("/stakeholder-management/summary/");
+  return unwrap(res.data);
+}
