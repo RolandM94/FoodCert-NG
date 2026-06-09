@@ -4,6 +4,7 @@ from django.db import IntegrityError, transaction
 from rest_framework.test import APITestCase
 
 from apps.accounts.models import UserRole
+from apps.audit.models import AuditLog
 from apps.locations.models import State, LGA
 from apps.organizations.models import (
     MembershipStatus,
@@ -21,6 +22,7 @@ from apps.organizations.models import (
     RolePermission,
 )
 from apps.organizations.permission_codes import PERMISSION_CODES
+from apps.organizations.services_access import EffectiveAccessService
 
 User = get_user_model()
 
@@ -211,6 +213,253 @@ class StakeholderRoleSeedCommandTests(APITestCase):
         self.assertEqual(Permission.objects.count(), counts["permissions"])
         self.assertEqual(Role.objects.count(), counts["roles"])
         self.assertEqual(RolePermission.objects.count(), counts["role_permissions"])
+
+
+class OrganizationMembershipApiTests(APITestCase):
+    def setUp(self):
+        call_command("seed_roles_and_permissions", verbosity=0)
+        self.state = State.objects.create(name="Lagos", code="LA")
+        self.org = Organization.objects.create(
+            name="MegaChow",
+            organization_type=OrganizationType.EMPLOYER,
+            state=self.state,
+        )
+        self.branch = OrganizationUnit.objects.create(
+            organization=self.org,
+            name="Ikeja Branch",
+            unit_type=OrganizationUnitType.BRANCH,
+        )
+        self.other_branch = OrganizationUnit.objects.create(
+            organization=self.org,
+            name="Surulere Branch",
+            unit_type=OrganizationUnitType.BRANCH,
+        )
+        self.super_admin = User.objects.create_user(
+            username="membership-super",
+            email="membership-super@example.com",
+            password="StrongPass123!",
+            role=UserRole.SUPER_ADMIN,
+        )
+        self.target_user = User.objects.create_user(
+            username="membership-user",
+            email="membership-user@example.com",
+            password="StrongPass123!",
+            role=UserRole.FOOD_HANDLER,
+        )
+        self.employer_role = Role.objects.get(code="employer")
+        self.branch_manager_role = Role.objects.get(code="branch_manager")
+
+    def create_membership(self):
+        self.client.force_authenticate(self.super_admin)
+        response = self.client.post(
+            f"/api/organizations/{self.org.id}/memberships/",
+            {
+                "user": str(self.target_user.id),
+                "role": str(self.employer_role.id),
+                "unit": str(self.branch.id),
+                "unit_restricted": False,
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, 201, response.data)
+        return OrganizationMembership.objects.get(id=data(response)["id"])
+
+    def test_create_list_detail_and_me_include_membership_and_permissions(self):
+        membership = self.create_membership()
+        self.target_user.refresh_from_db()
+        self.assertEqual(self.target_user.organization, self.org)
+        self.assertEqual(self.target_user.unit, self.branch)
+        self.assertEqual(self.target_user.role, UserRole.EMPLOYER)
+
+        list_response = self.client.get(f"/api/organizations/{self.org.id}/memberships/")
+        self.assertEqual(list_response.status_code, 200, list_response.data)
+        self.assertEqual(data(list_response)[0]["user_email"], "membership-user@example.com")
+        self.assertEqual(data(list_response)[0]["role_code"], "employer")
+
+        detail = self.client.get(f"/api/organizations/{self.org.id}/memberships/{membership.id}/")
+        self.assertEqual(detail.status_code, 200, detail.data)
+        self.assertIn("employer.manage_branch", data(detail)["permissions"])
+        self.assertTrue(data(detail)["audit_log"])
+
+        self.client.force_authenticate(self.target_user)
+        me = self.client.get("/api/users/me/")
+        self.assertEqual(me.status_code, 200, me.data)
+        self.assertEqual(data(me)["current_membership"]["role_code"], "employer")
+        self.assertIn("employer.manage_branch", data(me)["effective_permissions"])
+
+    def test_membership_lifecycle_actions_sync_compat_user_fields_and_audit(self):
+        membership = self.create_membership()
+
+        changed_role = self.client.patch(
+            f"/api/organizations/{self.org.id}/memberships/{membership.id}/change-role/",
+            {"role": str(self.branch_manager_role.id)},
+            format="json",
+        )
+        self.assertEqual(changed_role.status_code, 200, changed_role.data)
+        self.assertEqual(data(changed_role)["role_code"], "branch_manager")
+
+        changed_unit = self.client.patch(
+            f"/api/organizations/{self.org.id}/memberships/{membership.id}/change-unit/",
+            {"unit": str(self.other_branch.id), "unit_restricted": True},
+            format="json",
+        )
+        self.assertEqual(changed_unit.status_code, 200, changed_unit.data)
+        self.target_user.refresh_from_db()
+        self.assertEqual(self.target_user.unit, self.other_branch)
+        self.assertTrue(self.target_user.unit_restricted)
+
+        toggled = self.client.patch(f"/api/organizations/{self.org.id}/memberships/{membership.id}/toggle-unit-restriction/", format="json")
+        self.assertEqual(toggled.status_code, 200, toggled.data)
+        self.assertFalse(data(toggled)["unit_restricted"])
+
+        suspended = self.client.patch(f"/api/organizations/{self.org.id}/memberships/{membership.id}/suspend/", format="json")
+        self.assertEqual(suspended.status_code, 200, suspended.data)
+        self.assertEqual(data(suspended)["status"], MembershipStatus.SUSPENDED)
+        self.target_user.refresh_from_db()
+        self.assertIsNone(self.target_user.organization)
+
+        reactivated = self.client.patch(f"/api/organizations/{self.org.id}/memberships/{membership.id}/reactivate/", format="json")
+        self.assertEqual(reactivated.status_code, 200, reactivated.data)
+        self.assertEqual(data(reactivated)["status"], MembershipStatus.ACTIVE)
+        self.target_user.refresh_from_db()
+        self.assertEqual(self.target_user.organization, self.org)
+
+        removed = self.client.patch(f"/api/organizations/{self.org.id}/memberships/{membership.id}/remove/", format="json")
+        self.assertEqual(removed.status_code, 200, removed.data)
+        self.assertEqual(data(removed)["status"], MembershipStatus.REMOVED)
+        self.assertTrue(
+            AuditLog.objects.filter(
+                target_id=str(membership.id),
+                metadata__event="membership_removed",
+            ).exists()
+        )
+
+    def test_rejects_duplicate_active_membership_and_wrong_org_unit(self):
+        membership = self.create_membership()
+        duplicate = self.client.post(
+            f"/api/organizations/{self.org.id}/memberships/",
+            {"user": str(self.target_user.id), "role": str(self.employer_role.id)},
+            format="json",
+        )
+        self.assertEqual(duplicate.status_code, 400)
+
+        other_org = Organization.objects.create(name="Other Employer", organization_type=OrganizationType.EMPLOYER, state=self.state)
+        other_unit = OrganizationUnit.objects.create(organization=other_org, name="Other Branch", unit_type=OrganizationUnitType.BRANCH)
+        invalid_unit = self.client.patch(
+            f"/api/organizations/{self.org.id}/memberships/{membership.id}/change-unit/",
+            {"unit": str(other_unit.id), "unit_restricted": True},
+            format="json",
+        )
+        self.assertEqual(invalid_unit.status_code, 400)
+
+
+class EffectiveAccessServiceTests(APITestCase):
+    def setUp(self):
+        call_command("seed_roles_and_permissions", verbosity=0)
+        self.state = State.objects.create(name="Lagos", code="LA")
+        self.org = Organization.objects.create(
+            name="MegaChow",
+            organization_type=OrganizationType.EMPLOYER,
+            state=self.state,
+        )
+        self.branch = OrganizationUnit.objects.create(
+            organization=self.org,
+            name="Ikeja Branch",
+            unit_type=OrganizationUnitType.BRANCH,
+        )
+        self.user = User.objects.create_user(
+            username="access-user",
+            email="access-user@example.com",
+            password="StrongPass123!",
+            role=UserRole.EMPLOYER,
+        )
+        self.super_admin = User.objects.create_user(
+            username="access-super",
+            email="access-super@example.com",
+            password="StrongPass123!",
+            role=UserRole.SUPER_ADMIN,
+        )
+        self.role = Role.objects.get(code="branch_manager")
+        self.membership = OrganizationMembership.objects.create(
+            user=self.user,
+            organization=self.org,
+            role=self.role,
+            unit=self.branch,
+            unit_restricted=True,
+            status=MembershipStatus.ACTIVE,
+        )
+        self.service = EffectiveAccessService()
+
+    def test_role_permissions_and_scope_are_resolved_from_active_membership(self):
+        result = self.service.check(self.user, "employer.view_compliance", organization=self.org)
+
+        self.assertTrue(result.allowed)
+        self.assertEqual(result.scope, "unit")
+        self.assertEqual(result.unit_id, str(self.branch.id))
+        self.assertEqual(result.filters["unit_id"], str(self.branch.id))
+        self.assertEqual(result.role_code, "branch_manager")
+
+    def test_permission_override_can_deny_or_allow(self):
+        permission = Permission.objects.get(code="employer.view_compliance")
+        PermissionOverride.objects.create(
+            membership=self.membership,
+            permission=permission,
+            effect=PermissionOverrideEffect.DENY,
+            granted_by=self.super_admin,
+        )
+
+        denied = self.service.check(self.user, "employer.view_compliance", organization=self.org)
+
+        self.assertFalse(denied.allowed)
+        self.assertEqual(denied.reason, "Denied by permission override.")
+
+        PermissionOverride.objects.filter(membership=self.membership, permission=permission).update(effect=PermissionOverrideEffect.ALLOW)
+        allowed = self.service.check(self.user, "employer.view_compliance", organization=self.org)
+
+        self.assertTrue(allowed.allowed)
+        self.assertEqual(allowed.reason, "Allowed by permission override.")
+
+    def test_missing_membership_and_missing_permission_are_denied(self):
+        no_membership_user = User.objects.create_user(
+            username="no-membership",
+            email="no-membership@example.com",
+            password="StrongPass123!",
+            role=UserRole.EMPLOYER,
+        )
+
+        no_membership = self.service.check(no_membership_user, "employer.view_compliance", organization=self.org)
+        missing_permission = self.service.check(self.user, "permission.override", organization=self.org)
+
+        self.assertFalse(no_membership.allowed)
+        self.assertEqual(no_membership.reason, "No active organization membership found.")
+        self.assertFalse(missing_permission.allowed)
+        self.assertEqual(missing_permission.reason, "Role does not include this permission.")
+
+    def test_super_admin_gets_global_access(self):
+        result = self.service.check(self.super_admin, "permission.override")
+
+        self.assertTrue(result.allowed)
+        self.assertEqual(result.scope, "global")
+
+    def test_effective_access_endpoints(self):
+        self.client.force_authenticate(self.user)
+
+        memberships = self.client.get("/api/me/memberships/")
+        self.assertEqual(memberships.status_code, 200, memberships.data)
+        self.assertEqual(memberships.data[0]["role_code"], "branch_manager")
+
+        permissions = self.client.get(f"/api/me/effective-permissions/?organization_id={self.org.id}")
+        self.assertEqual(permissions.status_code, 200, permissions.data)
+        self.assertIn("employer.view_compliance", data(permissions)["permissions"])
+
+        check = self.client.post(
+            "/api/permissions/check/",
+            {"permission_code": "employer.view_compliance", "organization_id": str(self.org.id)},
+            format="json",
+        )
+        self.assertEqual(check.status_code, 200, check.data)
+        self.assertTrue(data(check)["allowed"])
+        self.assertEqual(data(check)["scope"], "unit")
 
 
 class OrganizationUnitCRUDTests(APITestCase):

@@ -9,6 +9,8 @@ from apps.accounts.models import InviteStatus, UserInvite, UserRole
 from apps.audit.models import AuditAction
 from apps.audit.services import log_action
 from apps.notifications.models import Notification, NotificationCategory
+from apps.organizations.models import Role
+from apps.organizations.services_membership import create_membership
 
 User = get_user_model()
 
@@ -49,11 +51,12 @@ class InviteService:
 
     @classmethod
     @transaction.atomic
-    def create_invite(cls, *, actor, organization, email, role, unit=None, phone="", message="", expires_at=None, ministry_staff_role=""):
+    def create_invite(cls, *, actor, organization, email, role, unit=None, unit_restricted=False, phone="", message="", expires_at=None, ministry_staff_role=""):
         cls.validate_invite_scope(actor=actor, organization=organization, role=role, unit=unit)
         invite = UserInvite.objects.create(
             organization=organization,
             unit=unit,
+            unit_restricted=unit_restricted,
             invited_by=actor,
             email=email.lower(),
             phone=phone,
@@ -64,6 +67,14 @@ class InviteService:
             expires_at=expires_at or timezone.now() + timezone.timedelta(days=7),
         )
         log_action(action=AuditAction.CREATE, actor=actor, target=invite, metadata={"event": "invite_created"})
+        Notification.objects.create(
+            recipient_email=invite.email,
+            category=NotificationCategory.ACCOUNT,
+            title="FoodCert NG invitation",
+            message=f"You have been invited to join {organization.name} on FoodCert NG.",
+            related_object_type=invite.__class__.__name__,
+            related_object_id=invite.id,
+        )
         return invite
 
     @classmethod
@@ -77,6 +88,43 @@ class InviteService:
         invite.save(update_fields=["status", "updated_at"])
         log_action(action=AuditAction.UPDATE, actor=actor, target=invite, metadata={"event": "invite_revoked"})
         return invite
+
+    @classmethod
+    @transaction.atomic
+    def resend(cls, *, invite, actor):
+        if not cls.can_manage_organization(actor=actor, organization=invite.organization):
+            raise PermissionDenied("You cannot resend this invite.")
+        if invite.status != InviteStatus.PENDING:
+            raise ValidationError("Only pending invites can be resent.")
+        invite.token = token_urlsafe(32)
+        invite.expires_at = timezone.now() + timezone.timedelta(days=7)
+        invite.save(update_fields=["token", "expires_at", "updated_at"])
+        Notification.objects.create(
+            recipient_email=invite.email,
+            category=NotificationCategory.ACCOUNT,
+            title="FoodCert NG invitation resent",
+            message=f"Your invitation to join {invite.organization.name} has been resent.",
+            related_object_type=invite.__class__.__name__,
+            related_object_id=invite.id,
+        )
+        log_action(action=AuditAction.UPDATE, actor=actor, target=invite, metadata={"event": "invite_resent"})
+        return invite
+
+    @classmethod
+    @transaction.atomic
+    def decline(cls, *, invite, actor=None):
+        if invite.status != InviteStatus.PENDING:
+            raise ValidationError("Only pending invites can be declined.")
+        invite.status = InviteStatus.DECLINED
+        invite.save(update_fields=["status", "updated_at"])
+        log_action(action=AuditAction.UPDATE, actor=actor, target=invite, metadata={"event": "invite_declined"})
+        return invite
+
+    @classmethod
+    @transaction.atomic
+    def expire_stale_invites(cls):
+        updated = UserInvite.objects.filter(status=InviteStatus.PENDING, expires_at__lte=timezone.now()).update(status=InviteStatus.EXPIRED, updated_at=timezone.now())
+        return updated
 
     @classmethod
     def accept(cls, *, invite, payload, actor=None):
@@ -106,16 +154,25 @@ class InviteService:
                 user.set_password(password)
                 user.save()
 
-        user.organization = invite.organization
-        user.unit = invite.unit
-        user.unit_restricted = bool(invite.unit)
-        user.role = invite.role
         if invite.employer_staff_role:
             user.employer_staff_role = invite.employer_staff_role
         user.state = invite.unit.state if invite.unit and invite.unit.state else invite.organization.state
         if invite.phone and not user.phone:
             user.phone = invite.phone
-        user.save(update_fields=["organization", "unit", "unit_restricted", "role", "employer_staff_role", "state", "phone", "updated_at"])
+        user.save(update_fields=["employer_staff_role", "state", "phone", "updated_at"])
+
+        role = Role.objects.filter(code=invite.role).first()
+        if not role:
+            raise ValidationError("Invite role has not been configured.")
+        create_membership(
+            actor=invite.invited_by,
+            organization=invite.organization,
+            user=user,
+            role=role,
+            unit=invite.unit,
+            unit_restricted=invite.unit_restricted or bool(invite.unit),
+            invited_by=invite.invited_by,
+        )
 
         invite.status = InviteStatus.ACCEPTED
         invite.accepted_by = user

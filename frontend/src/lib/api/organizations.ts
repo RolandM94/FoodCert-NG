@@ -92,6 +92,7 @@ export async function createInvite(
     email: string;
     role: UserRole;
     unit?: string;
+    unit_restricted?: boolean;
     phone?: string;
     message?: string;
     expires_at?: string;
@@ -111,11 +112,28 @@ export async function revokeInvite(organizationId: string, inviteId: string) {
   return unwrap(res.data);
 }
 
+export async function resendInvite(organizationId: string, inviteId: string) {
+  const res = await apiClient.post<ApiEnvelope<UserInvite>>(
+    `/organizations/${organizationId}/invites/${inviteId}/resend/`
+  );
+  return unwrap(res.data);
+}
+
+export async function fetchInvitePreview(token: string) {
+  const res = await apiClient.get<ApiEnvelope<UserInvite>>(`/invites/${token}/preview/`);
+  return unwrap(res.data);
+}
+
 export async function acceptInvite(token: string, data?: { password?: string; username?: string; first_name?: string; last_name?: string; phone?: string }) {
   const res = await apiClient.post<ApiEnvelope<{ user: Record<string, unknown>; invite: UserInvite }>>(
     `/invites/${token}/accept/`,
     data || {}
   );
+  return unwrap(res.data);
+}
+
+export async function declineInvite(token: string) {
+  const res = await apiClient.post<ApiEnvelope<UserInvite>>(`/invites/${token}/decline/`);
   return unwrap(res.data);
 }
 

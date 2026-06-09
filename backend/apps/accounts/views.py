@@ -14,6 +14,7 @@ from apps.accounts.permissions import IsActiveUser, IsSelfOrScopedAdmin
 from apps.accounts.serializers import (
     AcceptInviteSerializer,
     InviteUserSerializer,
+    InvitePreviewSerializer,
     PasswordResetSerializer,
     FoodCertTokenObtainPairSerializer,
     RegisterSerializer,
@@ -27,7 +28,10 @@ from apps.accounts.services import InviteService
 from apps.audit.models import AuditAction
 from apps.audit.services import log_action
 from apps.common.throttles import LoginRateThrottle
-from apps.organizations.models import Organization
+from apps.organizations.models import MembershipStatus, Organization
+from apps.organizations.serializers_access import EffectivePermissionCheckSerializer
+from apps.organizations.serializers_membership import MembershipListSerializer
+from apps.organizations.services_access import EffectiveAccessService
 
 User = get_user_model()
 
@@ -91,6 +95,44 @@ class PasswordResetView(APIView):
         serializer = self.serializer_class(data=request.data)
         serializer.is_valid(raise_exception=True)
         return Response({"detail": "If the email exists, password reset instructions will be sent."})
+
+
+class MyMembershipsView(APIView):
+    permission_classes = [IsAuthenticated, IsActiveUser]
+
+    def get(self, request):
+        memberships = (
+            request.user.memberships.select_related("user", "organization", "role", "unit")
+            .filter(status=MembershipStatus.ACTIVE)
+            .order_by("organization__name", "role__name")
+        )
+        return Response(MembershipListSerializer(memberships, many=True).data)
+
+
+class MyEffectivePermissionsView(APIView):
+    permission_classes = [IsAuthenticated, IsActiveUser]
+
+    def get(self, request):
+        organization_id = request.query_params.get("organization_id")
+        organization = None
+        if organization_id:
+            organization = get_object_or_404(Organization, id=organization_id)
+        permissions = EffectiveAccessService().list_permissions(request.user, organization=organization)
+        return Response({"permissions": permissions})
+
+
+class PermissionCheckView(APIView):
+    permission_classes = [IsAuthenticated, IsActiveUser]
+
+    def post(self, request):
+        serializer = EffectivePermissionCheckSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        result = EffectiveAccessService().check(
+            request.user,
+            serializer.validated_data["permission_code"],
+            organization=serializer.validated_data.get("organization"),
+        )
+        return Response(result.as_dict())
 
 
 class UserViewSet(viewsets.ModelViewSet):
@@ -232,6 +274,7 @@ class OrganizationInviteViewSet(viewsets.ModelViewSet):
             email=serializer.validated_data["email"],
             role=serializer.validated_data["role"],
             unit=serializer.validated_data.get("unit"),
+            unit_restricted=serializer.validated_data.get("unit_restricted", False),
             phone=serializer.validated_data.get("phone", ""),
             message=serializer.validated_data.get("message", ""),
             expires_at=serializer.validated_data.get("expires_at"),
@@ -242,6 +285,16 @@ class OrganizationInviteViewSet(viewsets.ModelViewSet):
     def destroy(self, request, *args, **kwargs):
         invite = self.get_object()
         invite = InviteService.revoke(invite=invite, actor=request.user)
+        return Response(UserInviteSerializer(invite).data)
+
+    @action(detail=True, methods=["post"], url_path="resend")
+    def resend(self, request, organization_id=None, pk=None):
+        invite = InviteService.resend(invite=self.get_object(), actor=request.user)
+        return Response(UserInviteSerializer(invite).data)
+
+    @action(detail=True, methods=["post"], url_path="revoke")
+    def revoke(self, request, organization_id=None, pk=None):
+        invite = InviteService.revoke(invite=self.get_object(), actor=request.user)
         return Response(UserInviteSerializer(invite).data)
 
 
@@ -255,3 +308,21 @@ class AcceptInviteView(APIView):
         serializer.is_valid(raise_exception=True)
         user, invite = InviteService.accept(invite=invite, payload=serializer.validated_data, actor=request.user)
         return Response({"user": UserSerializer(user).data, "invite": UserInviteSerializer(invite).data})
+
+
+class DeclineInviteView(APIView):
+    permission_classes = [AllowAny]
+
+    @extend_schema(request=None, responses=UserInviteSerializer)
+    def post(self, request, token):
+        invite = get_object_or_404(UserInvite.objects.select_related("organization", "unit", "invited_by"), token=token)
+        invite = InviteService.decline(invite=invite, actor=request.user)
+        return Response(UserInviteSerializer(invite).data)
+
+
+class InvitePreviewView(APIView):
+    permission_classes = [AllowAny]
+
+    def get(self, request, token):
+        invite = get_object_or_404(UserInvite.objects.select_related("organization", "unit", "invited_by"), token=token)
+        return Response(InvitePreviewSerializer(invite).data)

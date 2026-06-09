@@ -61,14 +61,16 @@ export type OrganizationUnit = {
   updated_at: string;
 };
 
-export type InviteStatus = "pending" | "accepted" | "expired" | "revoked";
+export type InviteStatus = "pending" | "accepted" | "expired" | "revoked" | "declined" | "failed";
 
 export type UserInvite = {
   id: string;
   organization: string;
   organization_name?: string;
+  organization_type?: OrganizationType;
   unit?: string;
   unit_name?: string;
+  unit_restricted?: boolean;
   invited_by: string;
   invited_by_email?: string;
   invited_by_name?: string;

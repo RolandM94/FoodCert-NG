@@ -114,6 +114,7 @@ class InviteStatus(models.TextChoices):
     ACCEPTED = "accepted", "Accepted"
     EXPIRED = "expired", "Expired"
     REVOKED = "revoked", "Revoked"
+    DECLINED = "declined", "Declined"
     FAILED = "failed", "Failed"
 
 

@@ -265,6 +265,8 @@ class PermissionOverride(BaseModel):
 
 ## Chunk 3: Membership APIs
 
+**Status:** Implemented and verified.
+
 **Purpose:** Build the full CRUD and lifecycle management for `OrganizationMembership`.
 
 ### 3.1 Membership Serializers
@@ -339,6 +341,8 @@ PATCH  /api/organizations/{org_id}/memberships/{id}/toggle-unit-restriction/
 
 ## Chunk 4: Invite Workflow (Refactor)
 
+**Status:** Implemented and verified.
+
 **Purpose:** Update the invite system to wire through `OrganizationMembership` instead of direct `User` FK assignment, and add missing endpoints.
 
 ### 4.1 Update Invite Serializer
@@ -393,6 +397,8 @@ New endpoints to add:
 ---
 
 ## Chunk 5: EffectiveAccessService
+
+**Status:** Implemented and verified.
 
 **Purpose:** The core permission engine. Every access decision flows through this service.
 

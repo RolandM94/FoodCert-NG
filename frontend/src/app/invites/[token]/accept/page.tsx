@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { CheckCircle, Loader2, ShieldCheck } from "lucide-react";
-import { acceptInvite } from "@/lib/api/organizations";
+import { acceptInvite, declineInvite, fetchInvitePreview } from "@/lib/api/organizations";
 import { ROLE_LABELS } from "@/lib/permissions/roles";
 import type { UserInvite } from "@/types/organizations";
 import type { UserRole } from "@/types/auth";
@@ -15,40 +15,18 @@ export default function Page() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
+  const [declined, setDeclined] = useState(false);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [form, setForm] = useState({ username: "", password: "", first_name: "", last_name: "", phone: "" });
 
   useEffect(() => {
     if (!params.token) return;
 
-    // Try to accept without password if already logged in
-    const token = localStorage.getItem("foodcert_access_token");
-    if (token) {
-      acceptInvite(params.token)
-        .then((data) => {
-          setInvite(data.invite as UserInvite);
-          setSuccess(true);
-          setTimeout(() => {
-            const role = data.user?.role as UserRole;
-            const home: Record<UserRole, string> = {
-              food_handler: "/food-handler/dashboard",
-              employer: "/employer/dashboard",
-              facility_admin: "/facility/dashboard",
-              doctor: "/doctor/dashboard",
-              lab_staff: "/lab/dashboard",
-              state_admin: "/state/dashboard",
-              federal_admin: "/federal/dashboard",
-              inspector: "/inspector/dashboard",
-              super_admin: "/federal/dashboard",
-            } as Record<UserRole, string>;
-            router.push(home[role as UserRole] || "/login");
-          }, 2000);
-        })
-        .catch(() => {
-          setLoading(false);
-        });
-    } else {
-      setLoading(false);
-    }
+    setIsAuthenticated(Boolean(localStorage.getItem("foodcert_access_token")));
+    fetchInvitePreview(params.token)
+      .then((data) => setInvite(data as UserInvite))
+      .catch((err: unknown) => setError(err instanceof Error ? err.message : "Could not load invitation."))
+      .finally(() => setLoading(false));
   }, [params.token, router]);
 
   const handleAccept = async () => {
@@ -79,6 +57,32 @@ export default function Page() {
       setLoading(false);
     }
   };
+
+  const handleDecline = async () => {
+    if (!params.token) return;
+    setError(null);
+    setLoading(true);
+    try {
+      const data = await declineInvite(params.token);
+      setInvite(data as UserInvite);
+      setDeclined(true);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Failed to decline invite.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (declined) {
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-[#f7faf8] p-4">
+        <div className="flex w-full max-w-md flex-col items-center gap-4 rounded-lg border border-slate-200 bg-white p-8 text-center shadow-lg">
+          <h1 className="text-xl font-bold text-slate-950">Invitation Declined</h1>
+          <p className="text-sm text-slate-600">This invitation has been declined.</p>
+        </div>
+      </main>
+    );
+  }
 
   if (success) {
     return (
@@ -140,25 +144,29 @@ export default function Page() {
                 value={invite?.email || ""}
               />
             </label>
-            <label className="grid gap-1 text-sm font-semibold text-slate-700">
-              Username
-              <input
-                className="h-10 rounded border border-slate-200 bg-white px-3"
-                required
-                value={form.username}
-                onChange={(e) => setForm((p) => ({ ...p, username: e.target.value }))}
-              />
-            </label>
-            <label className="grid gap-1 text-sm font-semibold text-slate-700">
-              Password
-              <input
-                className="h-10 rounded border border-slate-200 bg-white px-3"
-                type="password"
-                required
-                value={form.password}
-                onChange={(e) => setForm((p) => ({ ...p, password: e.target.value }))}
-              />
-            </label>
+            {!isAuthenticated && (
+              <>
+                <label className="grid gap-1 text-sm font-semibold text-slate-700">
+                  Username
+                  <input
+                    className="h-10 rounded border border-slate-200 bg-white px-3"
+                    required
+                    value={form.username}
+                    onChange={(e) => setForm((p) => ({ ...p, username: e.target.value }))}
+                  />
+                </label>
+                <label className="grid gap-1 text-sm font-semibold text-slate-700">
+                  Password
+                  <input
+                    className="h-10 rounded border border-slate-200 bg-white px-3"
+                    type="password"
+                    required
+                    value={form.password}
+                    onChange={(e) => setForm((p) => ({ ...p, password: e.target.value }))}
+                  />
+                </label>
+              </>
+            )}
             <label className="grid gap-1 text-sm font-semibold text-slate-700">
               Full name
               <input
@@ -184,6 +192,13 @@ export default function Page() {
               className="inline-flex h-10 w-full items-center justify-center gap-2 rounded bg-brand-green text-sm font-bold text-white hover:bg-brand-deep"
             >
               Accept Invitation
+            </button>
+            <button
+              type="button"
+              onClick={handleDecline}
+              className="inline-flex h-10 w-full items-center justify-center gap-2 rounded border border-slate-200 text-sm font-bold text-slate-600 hover:bg-slate-50"
+            >
+              Decline
             </button>
           </form>
         )}

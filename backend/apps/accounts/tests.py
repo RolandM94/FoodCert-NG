@@ -6,7 +6,7 @@ from apps.accounts.models import InviteStatus, UserInvite, UserRole, UserStatus
 from apps.audit.models import AuditAction, AuditLog
 from apps.facilities.models import FacilityStaffProfile, FacilityStaffType, FacilityType, MedicalFacility, OwnershipType
 from apps.locations.models import State
-from apps.organizations.models import Organization, OrganizationType, OrganizationUnit, OrganizationUnitType
+from apps.organizations.models import MembershipStatus, Organization, OrganizationMembership, OrganizationType, OrganizationUnit, OrganizationUnitType
 
 User = get_user_model()
 
@@ -251,7 +251,58 @@ class UserInviteUnitWorkflowTests(APITestCase):
         self.assertEqual(invited.organization, self.org)
         self.assertEqual(invited.unit, self.branch)
         self.assertTrue(invited.unit_restricted)
+        membership = OrganizationMembership.objects.get(user=invited, organization=self.org)
+        self.assertEqual(membership.status, MembershipStatus.ACTIVE)
+        self.assertEqual(membership.role.code, UserRole.EMPLOYER)
+        self.assertEqual(membership.unit, self.branch)
+        self.assertTrue(membership.unit_restricted)
         self.assertEqual(UserInvite.objects.get(token=token).status, InviteStatus.ACCEPTED)
+
+    def test_invite_preview_resend_revoke_and_decline(self):
+        self.client.force_authenticate(self.owner)
+        invite_response = self.client.post(
+            f"/api/organizations/{self.org.id}/invites/",
+            {
+                "email": "preview@example.com",
+                "role": UserRole.EMPLOYER,
+                "unit": str(self.branch.id),
+                "unit_restricted": True,
+                "message": "Join Ikeja branch",
+            },
+            format="json",
+        )
+        self.assertEqual(invite_response.status_code, 201, invite_response.data)
+        invite_id = data(invite_response)["id"]
+        token = data(invite_response)["token"]
+
+        self.client.force_authenticate(user=None)
+        preview = self.client.get(f"/api/invites/{token}/preview/")
+        self.assertEqual(preview.status_code, 200, preview.data)
+        self.assertEqual(data(preview)["organization_name"], "Tasty Foods")
+        self.assertEqual(data(preview)["organization_type"], OrganizationType.EMPLOYER)
+        self.assertEqual(data(preview)["unit_name"], "Ikeja Branch")
+        self.assertTrue(data(preview)["unit_restricted"])
+
+        self.client.force_authenticate(self.owner)
+        resent = self.client.post(f"/api/organizations/{self.org.id}/invites/{invite_id}/resend/", format="json")
+        self.assertEqual(resent.status_code, 200, resent.data)
+        self.assertNotEqual(data(resent)["token"], token)
+
+        declined_token = data(resent)["token"]
+        self.client.force_authenticate(user=None)
+        declined = self.client.post(f"/api/invites/{declined_token}/decline/", format="json")
+        self.assertEqual(declined.status_code, 200, declined.data)
+        self.assertEqual(data(declined)["status"], InviteStatus.DECLINED)
+
+        self.client.force_authenticate(self.owner)
+        second = self.client.post(
+            f"/api/organizations/{self.org.id}/invites/",
+            {"email": "revoke@example.com", "role": UserRole.EMPLOYER},
+            format="json",
+        )
+        revoked = self.client.post(f"/api/organizations/{self.org.id}/invites/{data(second)['id']}/revoke/", format="json")
+        self.assertEqual(revoked.status_code, 200, revoked.data)
+        self.assertEqual(data(revoked)["status"], InviteStatus.REVOKED)
 
     def test_expired_invite_cannot_be_accepted(self):
         invite = UserInvite.objects.create(
@@ -328,6 +379,9 @@ class UserInviteUnitWorkflowTests(APITestCase):
         self.assertEqual(invited.organization, facility_org)
         self.assertEqual(invited.unit, records_department)
         self.assertTrue(invited.unit_restricted)
+        membership = OrganizationMembership.objects.get(user=invited, organization=facility_org)
+        self.assertEqual(membership.role.code, UserRole.FACILITY_ADMIN)
+        self.assertEqual(membership.unit, records_department)
         profile = FacilityStaffProfile.objects.get(user=invited)
         self.assertEqual(profile.facility, facility)
         self.assertEqual(profile.department, records_department)
