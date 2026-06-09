@@ -19,6 +19,7 @@ type InviteForm = {
   email: string;
   role: UserRole;
   unit?: string;
+  unit_restricted: boolean;
   phone: string;
   message: string;
   expires_at?: string;
@@ -43,6 +44,7 @@ export function InviteUserModal({
     email: "",
     role: "food_handler",
     unit: preselectUnit ?? undefined,
+    unit_restricted: false,
     phone: "",
     message: "",
     expires_at: "",
@@ -70,6 +72,7 @@ export function InviteUserModal({
             e.preventDefault();
             onSubmit({
               ...form,
+              unit_restricted: form.unit_restricted,
               expires_at: form.expires_at ? new Date(form.expires_at).toISOString() : undefined,
             });
           }}
@@ -102,21 +105,34 @@ export function InviteUserModal({
           </label>
 
           {units && units.length > 0 && (
-            <label className="grid gap-1 text-sm font-semibold text-slate-700">
-              Unit
-              <select
-                className="h-10 rounded border border-slate-200 bg-white px-3"
-                value={form.unit ?? ""}
-                onChange={(e) => set("unit", e.target.value)}
-              >
-                <option value="">No specific unit</option>
-                {units.map((u) => (
-                  <option key={u.id} value={u.id}>
-                    {u.name}
-                  </option>
-                ))}
-              </select>
-            </label>
+            <>
+              <label className="grid gap-1 text-sm font-semibold text-slate-700">
+                Unit
+                <select
+                  className="h-10 rounded border border-slate-200 bg-white px-3"
+                  value={form.unit ?? ""}
+                  onChange={(e) => set("unit", e.target.value)}
+                >
+                  <option value="">No specific unit</option>
+                  {units.map((u) => (
+                    <option key={u.id} value={u.id}>
+                      {u.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              {form.unit && (
+                <label className="flex items-center gap-2 text-sm font-semibold text-slate-700">
+                  <input
+                    type="checkbox"
+                    className="h-4 w-4 rounded border-slate-300 text-brand-green focus:ring-brand-green"
+                    checked={form.unit_restricted}
+                    onChange={(e) => setForm((prev) => ({ ...prev, unit_restricted: e.target.checked }))}
+                  />
+                  Restrict this user to the selected unit
+                </label>
+              )}
+            </>
           )}
 
           <label className="grid gap-1 text-sm font-semibold text-slate-700">

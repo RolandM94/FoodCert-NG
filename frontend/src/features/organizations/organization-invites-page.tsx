@@ -56,17 +56,25 @@ export function OrganizationInvitesPage({
   role,
   title,
   description,
+  organizationId: passedOrgId,
 }: {
   role: UserRole;
   title: string;
   description: string;
+  organizationId?: string;
 }) {
   const queryClient = useQueryClient();
   const [orgId, setOrgId] = useState<string | null>(null);
   const [inviteOpen, setInviteOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => setOrgId(getOrganizationId()), []);
+  useEffect(() => {
+    if (passedOrgId) {
+      setOrgId(passedOrgId);
+    } else {
+      setOrgId(getOrganizationId());
+    }
+  }, [passedOrgId]);
 
   const unitsQuery = useQuery({
     queryKey: ["organization-units", orgId],

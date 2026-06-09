@@ -3,9 +3,13 @@ from rest_framework.routers import DefaultRouter
 
 from apps.organizations.views import OrganizationUnitViewSet, OrganizationViewSet
 from apps.organizations.views_membership import OrganizationMembershipViewSet
+from apps.organizations.views_permissions import PermissionViewSet
+from apps.organizations.views_roles import RoleViewSet
 
 router = DefaultRouter()
 router.register("organizations", OrganizationViewSet, basename="organizations")
+router.register("roles", RoleViewSet, basename="roles")
+router.register("permissions", PermissionViewSet, basename="permissions")
 
 unit_list = OrganizationUnitViewSet.as_view({"get": "list", "post": "create"})
 unit_detail = OrganizationUnitViewSet.as_view({"get": "retrieve", "patch": "partial_update", "delete": "destroy"})
@@ -23,8 +27,10 @@ membership_remove = OrganizationMembershipViewSet.as_view({"patch": "remove"})
 membership_change_role = OrganizationMembershipViewSet.as_view({"patch": "change_role"})
 membership_change_unit = OrganizationMembershipViewSet.as_view({"patch": "change_unit"})
 membership_toggle_unit_restriction = OrganizationMembershipViewSet.as_view({"patch": "toggle_unit_restriction"})
+roles_by_organization_type = RoleViewSet.as_view({"get": "list"})
 
 urlpatterns = [
+    path("organization-types/<str:organization_type>/roles/", roles_by_organization_type, name="organization-type-roles"),
     path("organizations/<uuid:organization_id>/units/", unit_list, name="organization-units"),
     path("organizations/<uuid:organization_id>/units/tree/", unit_tree, name="organization-unit-tree"),
     path("organizations/<uuid:organization_id>/units/<uuid:pk>/", unit_detail, name="organization-unit-detail"),

@@ -40,4 +40,4 @@ PERMISSIONS = [
 ]
 
 
-PERMISSION_CODES = [permission["code"] for permission in PERMISSIONS]
+PERMISSION_CODES = {p["code"]: p["code"] for p in PERMISSIONS}

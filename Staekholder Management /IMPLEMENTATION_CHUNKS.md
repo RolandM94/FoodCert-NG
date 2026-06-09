@@ -473,6 +473,8 @@ class HasStakeholderPermission(BasePermission):
 
 ## Chunk 6: Role & Permission Management APIs + UI
 
+**Status:** Implemented and verified.
+
 **Purpose:** Provide admin interfaces to view and manage roles and permissions.
 
 ### 6.1 Role APIs (Backend)

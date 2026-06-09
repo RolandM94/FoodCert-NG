@@ -1,5 +1,5 @@
 import { apiClient, unwrap, type ApiEnvelope } from "./client";
-import type { Organization, OrganizationUnit, UserInvite } from "@/types/organizations";
+import type { Organization, OrganizationType, OrganizationUnit, OrganizationMembership, Permission, RoleStatus, StakeholderRole, UserInvite } from "@/types/organizations";
 import type { UserRole } from "@/types/auth";
 
 // ── Organizations ──
@@ -11,6 +11,32 @@ export async function fetchOrganizations(params?: Record<string, string>) {
 
 export async function fetchOrganization(id: string) {
   const res = await apiClient.get<ApiEnvelope<Organization>>(`/organizations/${id}/`);
+  return unwrap(res.data);
+}
+
+export async function updateOrganization(
+  id: string,
+  data: Partial<{
+    name: string;
+    organization_type: string;
+    contact_person_name: string;
+    address: string;
+    phone: string;
+    email: string;
+    website: string;
+  }>
+) {
+  const res = await apiClient.patch<ApiEnvelope<Organization>>(`/organizations/${id}/`, data);
+  return unwrap(res.data);
+}
+
+export async function suspendOrganization(id: string) {
+  const res = await apiClient.patch<ApiEnvelope<Organization>>(`/organizations/${id}/suspend/`);
+  return unwrap(res.data);
+}
+
+export async function reactivateOrganization(id: string) {
+  const res = await apiClient.patch<ApiEnvelope<Organization>>(`/organizations/${id}/reactivate/`);
   return unwrap(res.data);
 }
 
@@ -144,5 +170,139 @@ export async function assignUserUnit(userId: string, unitId: string | null, unit
     unit: unitId,
     unit_restricted: unitRestricted ?? (unitId !== null),
   });
+  return unwrap(res.data);
+}
+
+// ── Roles & Permissions ──
+
+export async function fetchRoles(params?: { organization_type?: OrganizationType; status?: RoleStatus; search?: string }) {
+  const res = await apiClient.get<ApiEnvelope<StakeholderRole[]>>("/roles/", { params });
+  return unwrap(res.data);
+}
+
+export async function fetchRolesByOrganizationType(organizationType: OrganizationType) {
+  const res = await apiClient.get<ApiEnvelope<StakeholderRole[]>>(
+    `/organization-types/${organizationType}/roles/`
+  );
+  return unwrap(res.data);
+}
+
+export async function fetchRole(roleId: string) {
+  const res = await apiClient.get<ApiEnvelope<StakeholderRole>>(`/roles/${roleId}/`);
+  return unwrap(res.data);
+}
+
+export async function createRole(data: {
+  name: string;
+  code: string;
+  organization_type: OrganizationType;
+  description?: string;
+  status?: RoleStatus;
+}) {
+  const res = await apiClient.post<ApiEnvelope<StakeholderRole>>("/roles/", data);
+  return unwrap(res.data);
+}
+
+export async function updateRole(roleId: string, data: Partial<{ name: string; description: string; status: RoleStatus }>) {
+  const res = await apiClient.patch<ApiEnvelope<StakeholderRole>>(`/roles/${roleId}/`, data);
+  return unwrap(res.data);
+}
+
+export async function fetchPermissions(params?: { module?: string; search?: string }) {
+  const res = await apiClient.get<ApiEnvelope<Permission[]>>("/permissions/", { params });
+  return unwrap(res.data);
+}
+
+export async function fetchRolePermissions(roleId: string) {
+  const res = await apiClient.get<ApiEnvelope<Permission[]>>(`/roles/${roleId}/permissions/`);
+  return unwrap(res.data);
+}
+
+export async function addRolePermission(roleId: string, permissionId: string) {
+  const res = await apiClient.post<ApiEnvelope<StakeholderRole>>(`/roles/${roleId}/permissions/`, {
+    permission: permissionId,
+  });
+  return unwrap(res.data);
+}
+
+export async function removeRolePermission(roleId: string, permissionId: string) {
+  await apiClient.delete(`/roles/${roleId}/permissions/${permissionId}/`);
+}
+
+// ── Memberships ──
+
+export async function fetchMemberships(organizationId: string, params?: Record<string, string>) {
+  const res = await apiClient.get<ApiEnvelope<OrganizationMembership[]>>(
+    `/organizations/${organizationId}/memberships/`,
+    { params }
+  );
+  return unwrap(res.data);
+}
+
+export async function fetchMembership(organizationId: string, membershipId: string) {
+  const res = await apiClient.get<ApiEnvelope<OrganizationMembership>>(
+    `/organizations/${organizationId}/memberships/${membershipId}/`
+  );
+  return unwrap(res.data);
+}
+
+export async function updateMembership(
+  organizationId: string,
+  membershipId: string,
+  data: { role?: string; unit?: string | null; unit_restricted?: boolean }
+) {
+  const res = await apiClient.patch<ApiEnvelope<OrganizationMembership>>(
+    `/organizations/${organizationId}/memberships/${membershipId}/`,
+    data
+  );
+  return unwrap(res.data);
+}
+
+export async function suspendMembership(organizationId: string, membershipId: string) {
+  const res = await apiClient.patch<ApiEnvelope<OrganizationMembership>>(
+    `/organizations/${organizationId}/memberships/${membershipId}/suspend/`
+  );
+  return unwrap(res.data);
+}
+
+export async function reactivateMembership(organizationId: string, membershipId: string) {
+  const res = await apiClient.patch<ApiEnvelope<OrganizationMembership>>(
+    `/organizations/${organizationId}/memberships/${membershipId}/reactivate/`
+  );
+  return unwrap(res.data);
+}
+
+export async function removeMembership(organizationId: string, membershipId: string) {
+  const res = await apiClient.patch<ApiEnvelope<OrganizationMembership>>(
+    `/organizations/${organizationId}/memberships/${membershipId}/remove/`
+  );
+  return unwrap(res.data);
+}
+
+export async function changeMembershipRole(organizationId: string, membershipId: string, role: string) {
+  const res = await apiClient.patch<ApiEnvelope<OrganizationMembership>>(
+    `/organizations/${organizationId}/memberships/${membershipId}/change-role/`,
+    { role }
+  );
+  return unwrap(res.data);
+}
+
+export async function changeMembershipUnit(
+  organizationId: string,
+  membershipId: string,
+  unit: string | null,
+  unit_restricted?: boolean
+) {
+  const res = await apiClient.patch<ApiEnvelope<OrganizationMembership>>(
+    `/organizations/${organizationId}/memberships/${membershipId}/change-unit/`,
+    { unit, unit_restricted }
+  );
+  return unwrap(res.data);
+}
+
+export async function toggleMembershipUnitRestriction(organizationId: string, membershipId: string) {
+  const res = await apiClient.patch<ApiEnvelope<OrganizationMembership>>(
+    `/organizations/${organizationId}/memberships/${membershipId}/toggle-unit-restriction/`
+  );
   return unwrap(res.data);
 }

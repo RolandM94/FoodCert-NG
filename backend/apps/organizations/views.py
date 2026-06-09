@@ -12,12 +12,14 @@ from apps.organizations.models import Organization, OrganizationStatus, Organiza
 from apps.organizations.permissions import CanManageOrganizationUnit
 from apps.organizations.serializers import OrganizationSerializer, OrganizationUnitAssignUserSerializer, OrganizationUnitSerializer
 from apps.organizations.services import archive_unit, assign_user_to_unit, create_unit, deactivate_unit, get_unit_tree, reactivate_unit, update_unit
+from apps.organizations.permission_codes import PERMISSION_CODES
 
 
 class OrganizationViewSet(viewsets.ModelViewSet):
     queryset = Organization.objects.select_related("parent", "state", "lga", "created_by").order_by("name")
     serializer_class = OrganizationSerializer
     permission_classes = [IsAuthenticated, IsActiveUser, CanManageOrganization]
+    stakeholder_permission_code = PERMISSION_CODES["organization.view"]
     http_method_names = ["get", "post", "patch", "head", "options"]
 
     def get_queryset(self):
