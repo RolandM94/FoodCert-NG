@@ -6,6 +6,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Activity, Building2, ClipboardCheck, FlaskConical, FolderCheck, GitBranch,
   Mail, MapPin, Network, Phone, RefreshCw, Search, ShieldCheck, UserPlus, UsersRound,
+  Pencil, Plus,
 } from "lucide-react";
 import { PortalShell } from "@/components/layout/portal-shell";
 import { OrganizationStatusBadge } from "@/components/ui/organization-status-badge";
@@ -18,6 +19,7 @@ import { OrganizationUnitTree } from "@/components/ui/organization-unit-tree";
 import { OrganizationUnitDetail } from "@/components/ui/organization-unit-detail";
 import { OrganizationUnitForm } from "@/components/ui/organization-unit-form";
 import { DashboardCard } from "@/components/ui/dashboard-card";
+import { RolePermissionModal } from "@/features/organizations/components/role-permission-modal";
 import {
   fetchStakeholderContext, fetchStakeholderSummary,
   fetchMemberships, fetchMembership,
@@ -251,8 +253,10 @@ function StakeholdersTab({ context, organizationId }: { context: StakeholderCont
 
 // ── Roles Tab ──
 function RolesTab({ context, organizationId }: { context: StakeholderContext; organizationId: string }) {
-  const [expandedRole, setExpandedRole] = useState<StakeholderRole | null>(null);
-  const [error, setError] = useState("");
+  const queryClient = useQueryClient();
+  const [modalOpen, setModalOpen] = useState(false);
+  const [modalMode, setModalMode] = useState<"create"|"edit">("create");
+  const [editingRole, setEditingRole] = useState<StakeholderRole | null>(null);
 
   const { data: roles = [], isLoading } = useQuery({
     queryKey: ["roles-by-type", context.organization.organization_type],
@@ -261,63 +265,103 @@ function RolesTab({ context, organizationId }: { context: StakeholderContext; or
   });
   const { data: permissions } = useQuery({
     queryKey: ["permissions"],
-    queryFn: () => fetchPermissions(),
+    queryFn: async () => fetchPermissions(),
   });
 
-  const permissionsByModule = useMemo(() => (permissions ?? []).reduce<Record<string, Permission[]>>((g, p) => { (g[p.module]??=[]).push(p); return g; }, {}), [permissions]);
+  const totalPermissions = (permissions ?? []).length;
 
-  async function toggleRole(role: StakeholderRole) {
-    if (expandedRole?.id === role.id) { setExpandedRole(null); return; }
-    setError("");
-    try { setExpandedRole(await fetchRole(role.id)); }
-    catch (err) { setError(getApiErrorMessage(err, "Could not load role details.")); }
+  function openCreate() {
+    setEditingRole(null);
+    setModalMode("create");
+    setModalOpen(true);
   }
-
-  const rolePermissionCodes = new Set(expandedRole?.permissions?.map((p) => p.code) ?? []);
+  function openEdit(role: StakeholderRole) {
+    setEditingRole(role);
+    setModalMode("edit");
+    setModalOpen(true);
+  }
 
   return (
     <div className="space-y-4">
-      {error ? <div className="rounded border border-danger-100 bg-danger-50 px-4 py-3 text-sm font-semibold text-danger-700">{error}</div> : null}
-      <section className="overflow-hidden rounded-lg border border-neutral-200 bg-white shadow-sm">
-        <table className="min-w-full divide-y divide-neutral-200 text-sm"><thead className="bg-neutral-50"><tr>
-          <th className="px-4 py-3 text-left text-xs font-bold uppercase tracking-wide text-neutral-500">Role</th>
-          <th className="px-4 py-3 text-left text-xs font-bold uppercase tracking-wide text-neutral-500">Type</th>
-          <th className="px-4 py-3 text-left text-xs font-bold uppercase tracking-wide text-neutral-500">Permissions</th>
-          <th className="px-4 py-3 text-left text-xs font-bold uppercase tracking-wide text-neutral-500">Status</th>
-          <th className="px-4 py-3 text-right text-xs font-bold uppercase tracking-wide text-neutral-500">Actions</th>
-        </tr></thead><tbody className="divide-y divide-neutral-100">
-          {isLoading ? <tr><td className="px-4 py-6 text-neutral-500" colSpan={5}>Loading...</td></tr>
-          : roles.map((r) => (
-            <tr key={r.id}>
-              <td className="px-4 py-3"><div className="font-bold text-neutral-900">{r.name}</div><div className="text-xs text-neutral-500">{r.code}</div></td>
-              <td className="px-4 py-3"><span className="rounded bg-neutral-100 px-2 py-1 text-xs font-bold text-neutral-700">{r.is_system_role ? "System" : "Custom"}</span></td>
-              <td className="px-4 py-3 text-neutral-700">{r.permission_count}</td>
-              <td className="px-4 py-3"><span className={`inline-flex rounded px-2 py-1 text-xs font-bold ring-1 ${r.status === "active" ? "bg-brand-50 text-brand-700 ring-brand-200" : r.status === "deprecated" ? "bg-warning-50 text-warning-700 ring-warning-100" : "bg-neutral-50 text-neutral-600 ring-neutral-200"}`}>{r.status}</span></td>
-              <td className="px-4 py-3 text-right"><button className="rounded border border-neutral-200 px-3 py-2 text-sm font-semibold text-neutral-700 hover:bg-neutral-50" onClick={() => toggleRole(r)} type="button">Permissions</button></td>
-            </tr>))}
-        </tbody></table>
+      <div className="flex justify-end">
+        <button
+          className="inline-flex h-10 items-center gap-2 rounded-lg bg-brand-600 px-4 text-sm font-medium text-white hover:bg-brand-700"
+          onClick={openCreate}
+          type="button"
+        >
+          <Plus size={16} />Create Role
+        </button>
+      </div>
+      <section className="overflow-hidden rounded-xl border border-neutral-200 bg-white shadow-sm">
+        <table className="min-w-full divide-y divide-neutral-200 text-sm">
+          <thead className="bg-neutral-50">
+            <tr>
+              <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-neutral-500">No.</th>
+              <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-neutral-500">Role Name</th>
+              <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-neutral-500">Description</th>
+              <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-neutral-500">Permissions</th>
+              <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-neutral-500">Status</th>
+              <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wide text-neutral-500">Actions</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-neutral-100">
+            {isLoading ? (
+              <tr><td className="px-4 py-8 text-center text-neutral-500" colSpan={6}>Loading roles...</td></tr>
+            ) : roles.length === 0 ? (
+              <tr><td className="px-4 py-8 text-center text-neutral-500" colSpan={6}>No roles defined yet.</td></tr>
+            ) : (
+              roles.map((r, i) => (
+                <tr key={r.id} className="hover:bg-neutral-50">
+                  <td className="px-4 py-3 text-xs text-neutral-500">{String(i + 1).padStart(2, "0")}</td>
+                  <td className="px-4 py-3">
+                    <span className="font-semibold text-neutral-900">{r.name}</span>
+                    <span className="ml-2 text-xs text-neutral-400">{r.code}</span>
+                  </td>
+                  <td className="px-4 py-3 text-sm text-neutral-600 max-w-[200px] truncate">
+                    {r.description || "—"}
+                  </td>
+                  <td className="px-4 py-3">
+                    <span className="rounded-full bg-brand-50 px-3 py-1 text-xs font-bold text-brand-700">
+                      {r.permission_count} / {totalPermissions}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3">
+                    <span className={`inline-flex items-center rounded-md px-2 py-1 text-xs font-medium ${
+                      r.status === "active" ? "bg-brand-100 text-brand-700"
+                      : r.status === "deprecated" ? "bg-warning-100 text-warning-700"
+                      : "bg-neutral-100 text-neutral-600"
+                    }`}>
+                      {r.status}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3 text-right">
+                    <button
+                      className="inline-flex items-center gap-1 rounded-lg border border-neutral-200 px-3 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50"
+                      onClick={() => openEdit(r)}
+                      type="button"
+                    >
+                      <Pencil size={14} />Edit
+                    </button>
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
       </section>
-      {expandedRole ? (
-        <section className="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm">
-          <h3 className="text-base font-bold text-neutral-900">{expandedRole.name}</h3>
-          <p className="text-sm text-neutral-600">{expandedRole.description || "No description."}</p>
-          <div className="mt-4 grid gap-4 md:grid-cols-2">
-            {Object.entries(permissionsByModule).map(([mod, modPerms]: [string, Permission[]]) => (
-              <div className="rounded border border-neutral-100 p-3" key={mod}>
-                <h4 className="text-xs font-bold uppercase tracking-wide text-neutral-500">{mod}</h4>
-                <div className="mt-3 space-y-2">
-                  {modPerms.map((p) => (
-                    <div className="flex items-start justify-between gap-3 text-sm" key={p.id}>
-                      <span className="text-neutral-700">{p.name}</span>
-                      <span className={`shrink-0 rounded px-2 py-1 text-xs font-bold ${rolePermissionCodes.has(p.code)?"bg-brand-50 text-brand-700":"bg-neutral-50 text-neutral-400"}`}>{rolePermissionCodes.has(p.code)?"Allowed":"Off"}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            ))}
-          </div>
-        </section>
-      ) : null}
+
+      <RolePermissionModal
+        open={modalOpen}
+        mode={modalMode}
+        role={editingRole}
+        organizationType={context.organization.organization_type as OrganizationType}
+        onClose={() => { setModalOpen(false); setEditingRole(null); }}
+        onSaved={() => {
+          setModalOpen(false);
+          setEditingRole(null);
+          queryClient.invalidateQueries({ queryKey: ["roles-by-type"] });
+        }}
+      />
     </div>
   );
 }
