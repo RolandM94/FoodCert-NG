@@ -178,6 +178,7 @@ class UserInviteSerializer(serializers.ModelSerializer):
             "organization_name",
             "unit",
             "unit_name",
+            "unit_restricted",
             "invited_by",
             "invited_by_email",
             "email",
