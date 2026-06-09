@@ -75,10 +75,10 @@ export default function Page() {
 
   if (declined) {
     return (
-      <main className="flex min-h-screen items-center justify-center bg-[#f7faf8] p-4">
-        <div className="flex w-full max-w-md flex-col items-center gap-4 rounded-lg border border-slate-200 bg-white p-8 text-center shadow-lg">
-          <h1 className="text-xl font-bold text-slate-950">Invitation Declined</h1>
-          <p className="text-sm text-slate-600">This invitation has been declined.</p>
+      <main className="flex min-h-screen items-center justify-center bg-neutral-50 p-4">
+        <div className="flex w-full max-w-md flex-col items-center gap-4 rounded-lg border border-neutral-200 bg-white p-8 text-center shadow-lg">
+          <h1 className="text-xl font-bold text-neutral-900">Invitation Declined</h1>
+          <p className="text-sm text-neutral-600">This invitation has been declined.</p>
         </div>
       </main>
     );
@@ -86,43 +86,43 @@ export default function Page() {
 
   if (success) {
     return (
-      <main className="flex min-h-screen items-center justify-center bg-[#f7faf8] p-4">
-        <div className="flex flex-col items-center gap-4 rounded-lg border border-emerald-200 bg-white p-8 text-center shadow-lg max-w-md w-full">
-          <div className="flex h-16 w-16 items-center justify-center rounded-full bg-emerald-50 text-brand-green">
+      <main className="flex min-h-screen items-center justify-center bg-neutral-50 p-4">
+        <div className="flex flex-col items-center gap-4 rounded-lg border border-brand-200 bg-white p-8 text-center shadow-lg max-w-md w-full">
+          <div className="flex h-16 w-16 items-center justify-center rounded-full bg-brand-50 text-brand-600">
             <CheckCircle size={36} />
           </div>
-          <h1 className="text-xl font-bold text-slate-950">Invitation Accepted!</h1>
-          <p className="text-sm text-slate-600">
+          <h1 className="text-xl font-bold text-neutral-900">Invitation Accepted!</h1>
+          <p className="text-sm text-neutral-600">
             You have been added to <strong>{invite?.organization_name || invite?.organization}</strong>
             {invite?.unit_name ? ` / ${invite.unit_name}` : ""} as{" "}
             {ROLE_LABELS[invite?.role as UserRole] || invite?.role}.
           </p>
-          <p className="text-xs text-slate-400">Redirecting to your dashboard...</p>
+          <p className="text-xs text-neutral-400">Redirecting to your dashboard...</p>
         </div>
       </main>
     );
   }
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-[#f7faf8] p-4">
-      <div className="w-full max-w-md space-y-6 rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
+    <main className="flex min-h-screen items-center justify-center bg-neutral-50 p-4">
+      <div className="w-full max-w-md space-y-6 rounded-lg border border-neutral-200 bg-white p-6 shadow-sm">
         <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-brand-green text-white">
+          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-brand-600 text-white">
             <ShieldCheck size={20} />
           </div>
           <div>
-            <p className="text-sm font-bold text-slate-950">FoodCert NG</p>
-            <p className="text-xs text-slate-500">Invitation</p>
+            <p className="text-sm font-bold text-neutral-900">FoodCert NG</p>
+            <p className="text-xs text-neutral-500">Invitation</p>
           </div>
         </div>
 
         {invite && (
-          <div className="rounded bg-slate-50 p-4 text-sm">
-            <p className="text-slate-600">
+          <div className="rounded bg-neutral-50 p-4 text-sm">
+            <p className="text-neutral-600">
               You have been invited to join <strong>{invite.organization_name || invite.organization}</strong>
               {invite.unit_name ? ` / ${invite.unit_name}` : ""}
             </p>
-            <p className="mt-1 text-slate-600">
+            <p className="mt-1 text-neutral-600">
               Role: <strong>{ROLE_LABELS[invite.role as UserRole] || invite.role}</strong>
             </p>
           </div>
@@ -136,29 +136,29 @@ export default function Page() {
               handleAccept();
             }}
           >
-            <label className="grid gap-1 text-sm font-semibold text-slate-700">
+            <label className="grid gap-1 text-sm font-semibold text-neutral-700">
               Email
               <input
-                className="h-10 rounded border border-slate-200 bg-slate-50 px-3 text-slate-500"
+                className="h-10 rounded border border-neutral-200 bg-neutral-50 px-3 text-neutral-500"
                 disabled
                 value={invite?.email || ""}
               />
             </label>
             {!isAuthenticated && (
               <>
-                <label className="grid gap-1 text-sm font-semibold text-slate-700">
+                <label className="grid gap-1 text-sm font-semibold text-neutral-700">
                   Username
                   <input
-                    className="h-10 rounded border border-slate-200 bg-white px-3"
+                    className="h-10 rounded border border-neutral-200 bg-white px-3"
                     required
                     value={form.username}
                     onChange={(e) => setForm((p) => ({ ...p, username: e.target.value }))}
                   />
                 </label>
-                <label className="grid gap-1 text-sm font-semibold text-slate-700">
+                <label className="grid gap-1 text-sm font-semibold text-neutral-700">
                   Password
                   <input
-                    className="h-10 rounded border border-slate-200 bg-white px-3"
+                    className="h-10 rounded border border-neutral-200 bg-white px-3"
                     type="password"
                     required
                     value={form.password}
@@ -167,36 +167,36 @@ export default function Page() {
                 </label>
               </>
             )}
-            <label className="grid gap-1 text-sm font-semibold text-slate-700">
+            <label className="grid gap-1 text-sm font-semibold text-neutral-700">
               Full name
               <input
-                className="h-10 rounded border border-slate-200 bg-white px-3"
+                className="h-10 rounded border border-neutral-200 bg-white px-3"
                 value={form.first_name}
                 onChange={(e) => setForm((p) => ({ ...p, first_name: e.target.value }))}
                 placeholder="First name"
               />
             </label>
             <input
-              className="h-10 rounded border border-slate-200 bg-white px-3"
+              className="h-10 rounded border border-neutral-200 bg-white px-3"
               value={form.last_name}
               onChange={(e) => setForm((p) => ({ ...p, last_name: e.target.value }))}
               placeholder="Last name"
             />
 
             {error && (
-              <p className="rounded bg-red-50 px-3 py-2 text-sm font-semibold text-red-700">{error}</p>
+              <p className="rounded bg-danger-50 px-3 py-2 text-sm font-semibold text-danger-700">{error}</p>
             )}
 
             <button
               type="submit"
-              className="inline-flex h-10 w-full items-center justify-center gap-2 rounded bg-brand-green text-sm font-bold text-white hover:bg-brand-deep"
+              className="inline-flex h-10 w-full items-center justify-center gap-2 rounded bg-brand-600 text-sm font-bold text-white hover:bg-brand-700"
             >
               Accept Invitation
             </button>
             <button
               type="button"
               onClick={handleDecline}
-              className="inline-flex h-10 w-full items-center justify-center gap-2 rounded border border-slate-200 text-sm font-bold text-slate-600 hover:bg-slate-50"
+              className="inline-flex h-10 w-full items-center justify-center gap-2 rounded border border-neutral-200 text-sm font-bold text-neutral-600 hover:bg-neutral-50"
             >
               Decline
             </button>
@@ -204,7 +204,7 @@ export default function Page() {
         )}
 
         {loading && (
-          <div className="flex items-center justify-center gap-3 py-6 text-slate-500">
+          <div className="flex items-center justify-center gap-3 py-6 text-neutral-500">
             <Loader2 size={18} className="animate-spin" />
             <span className="text-sm">Processing invitation...</span>
           </div>

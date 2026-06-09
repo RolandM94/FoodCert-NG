@@ -47,14 +47,14 @@ function MetricGrid({ report }: { report?: GeneratedReport }) {
   const cards = report?.summary.cards || {};
   const entries = Object.entries(cards).slice(0, 8);
   if (!entries.length) {
-    return <div className="rounded-lg border border-slate-200 bg-white p-5 text-sm text-slate-500 shadow-sm">Generate a report to preview metrics.</div>;
+    return <div className="rounded-lg border border-neutral-200 bg-white p-5 text-sm text-neutral-500 shadow-sm">Generate a report to preview metrics.</div>;
   }
   return (
     <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
       {entries.map(([key, value]) => (
-        <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm" key={key}>
-          <p className="text-xs font-bold uppercase tracking-wide text-slate-500">{titleize(key)}</p>
-          <p className="mt-2 text-2xl font-bold text-slate-950">{value ?? 0}</p>
+        <div className="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm" key={key}>
+          <p className="text-xs font-bold uppercase tracking-wide text-neutral-500">{titleize(key)}</p>
+          <p className="mt-2 text-2xl font-bold text-neutral-900">{value ?? 0}</p>
         </div>
       ))}
     </div>
@@ -64,20 +64,20 @@ function MetricGrid({ report }: { report?: GeneratedReport }) {
 function GeneratedReportRow({ report }: { report: GeneratedReport }) {
   return (
     <tr>
-      <td className="border-b border-slate-50 py-3 pr-4">
-        <p className="font-semibold text-slate-900">{reportTypeLabel(report.report_type)}</p>
-        <p className="mt-1 text-xs text-slate-500">{formatDate(report.created_at)}</p>
+      <td className="border-b border-neutral-50 py-3 pr-4">
+        <p className="font-semibold text-neutral-900">{reportTypeLabel(report.report_type)}</p>
+        <p className="mt-1 text-xs text-neutral-500">{formatDate(report.created_at)}</p>
       </td>
-      <td className="border-b border-slate-50 py-3 pr-4 text-sm font-semibold uppercase text-slate-600">{report.file_format}</td>
-      <td className="border-b border-slate-50 py-3 pr-4 text-sm capitalize text-slate-600">{report.status}</td>
-      <td className="border-b border-slate-50 py-3 text-right">
+      <td className="border-b border-neutral-50 py-3 pr-4 text-sm font-semibold uppercase text-neutral-600">{report.file_format}</td>
+      <td className="border-b border-neutral-50 py-3 pr-4 text-sm capitalize text-neutral-600">{report.status}</td>
+      <td className="border-b border-neutral-50 py-3 text-right">
         {report.file_url ? (
-          <a className="inline-flex h-9 items-center gap-2 rounded border border-slate-200 px-3 text-sm font-bold text-brand-deep hover:bg-emerald-50" href={report.file_url}>
+          <a className="inline-flex h-9 items-center gap-2 rounded border border-neutral-200 px-3 text-sm font-bold text-brand-700 hover:bg-brand-50" href={report.file_url}>
             <Download size={15} />
             Download
           </a>
         ) : (
-          <span className="text-sm text-slate-400">Preview only</span>
+          <span className="text-sm text-neutral-400">Preview only</span>
         )}
       </td>
     </tr>
@@ -132,85 +132,85 @@ export function ComplianceReportBuilder({ employerId }: { employerId?: string })
 
   return (
     <div className="grid gap-6">
-      <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+      <section className="rounded-lg border border-neutral-200 bg-white p-5 shadow-sm">
         <div className="mb-5 flex items-center gap-2">
-          <FileText className="text-brand-deep" size={18} />
-          <h2 className="text-base font-bold text-slate-950">Report Builder</h2>
+          <FileText className="text-brand-700" size={18} />
+          <h2 className="text-base font-bold text-neutral-900">Report Builder</h2>
         </div>
 
         <div className="grid gap-4 lg:grid-cols-3">
           {reportKinds.map((kind) => (
             <button
               className={`rounded-lg border p-4 text-left transition ${
-                reportKind === kind.value ? "border-emerald-300 bg-emerald-50 text-brand-deep" : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                reportKind === kind.value ? "border-brand-300 bg-brand-50 text-brand-700" : "border-neutral-200 bg-white text-neutral-700 hover:bg-neutral-50"
               }`}
               key={kind.value}
               onClick={() => setReportKind(kind.value)}
               type="button"
             >
               <span className="text-sm font-bold">{kind.label}</span>
-              <span className="mt-2 block text-sm leading-6 text-slate-600">{kind.description}</span>
+              <span className="mt-2 block text-sm leading-6 text-neutral-600">{kind.description}</span>
             </button>
           ))}
         </div>
 
         <div className="mt-5 grid gap-4 md:grid-cols-4">
-          <label className="grid gap-1.5 text-sm font-semibold text-slate-700">
+          <label className="grid gap-1.5 text-sm font-semibold text-neutral-700">
             Format
-            <select className="h-10 rounded border border-slate-200 bg-white px-3 text-sm" value={format} onChange={(event) => setFormat(event.target.value as ReportFormat)}>
+            <select className="h-10 rounded border border-neutral-200 bg-white px-3 text-sm" value={format} onChange={(event) => setFormat(event.target.value as ReportFormat)}>
               {formats.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
             </select>
           </label>
-          <label className="grid gap-1.5 text-sm font-semibold text-slate-700">
+          <label className="grid gap-1.5 text-sm font-semibold text-neutral-700">
             Branch ID
-            <input className="h-10 rounded border border-slate-200 bg-slate-50 px-3 text-sm" value={branch} onChange={(event) => setBranch(event.target.value)} />
+            <input className="h-10 rounded border border-neutral-200 bg-neutral-50 px-3 text-sm" value={branch} onChange={(event) => setBranch(event.target.value)} />
           </label>
-          <label className="grid gap-1.5 text-sm font-semibold text-slate-700">
+          <label className="grid gap-1.5 text-sm font-semibold text-neutral-700">
             State ID
-            <input className="h-10 rounded border border-slate-200 bg-slate-50 px-3 text-sm" value={state} onChange={(event) => setState(event.target.value)} />
+            <input className="h-10 rounded border border-neutral-200 bg-neutral-50 px-3 text-sm" value={state} onChange={(event) => setState(event.target.value)} />
           </label>
-          <label className="grid gap-1.5 text-sm font-semibold text-slate-700">
+          <label className="grid gap-1.5 text-sm font-semibold text-neutral-700">
             LGA ID
-            <input className="h-10 rounded border border-slate-200 bg-slate-50 px-3 text-sm" value={lga} onChange={(event) => setLga(event.target.value)} />
+            <input className="h-10 rounded border border-neutral-200 bg-neutral-50 px-3 text-sm" value={lga} onChange={(event) => setLga(event.target.value)} />
           </label>
-          <label className="grid gap-1.5 text-sm font-semibold text-slate-700">
+          <label className="grid gap-1.5 text-sm font-semibold text-neutral-700">
             Category
-            <input className="h-10 rounded border border-slate-200 bg-slate-50 px-3 text-sm" placeholder="food_preparer" value={category} onChange={(event) => setCategory(event.target.value)} />
+            <input className="h-10 rounded border border-neutral-200 bg-neutral-50 px-3 text-sm" placeholder="food_preparer" value={category} onChange={(event) => setCategory(event.target.value)} />
           </label>
-          <label className="grid gap-1.5 text-sm font-semibold text-slate-700">
+          <label className="grid gap-1.5 text-sm font-semibold text-neutral-700">
             Certificate status
-            <select className="h-10 rounded border border-slate-200 bg-white px-3 text-sm" value={certificateStatus} onChange={(event) => setCertificateStatus(event.target.value)}>
+            <select className="h-10 rounded border border-neutral-200 bg-white px-3 text-sm" value={certificateStatus} onChange={(event) => setCertificateStatus(event.target.value)}>
               <option value="">Any</option>
               {certificateStatuses.map((status) => <option key={status} value={status}>{titleize(status)}</option>)}
             </select>
           </label>
-          <label className="grid gap-1.5 text-sm font-semibold text-slate-700">
+          <label className="grid gap-1.5 text-sm font-semibold text-neutral-700">
             Fitness status
-            <select className="h-10 rounded border border-slate-200 bg-white px-3 text-sm" value={fitnessStatus} onChange={(event) => setFitnessStatus(event.target.value)}>
+            <select className="h-10 rounded border border-neutral-200 bg-white px-3 text-sm" value={fitnessStatus} onChange={(event) => setFitnessStatus(event.target.value)}>
               <option value="">Any</option>
               {fitnessStatuses.map((status) => <option key={status} value={status}>{titleize(status)}</option>)}
             </select>
           </label>
-          <label className="grid gap-1.5 text-sm font-semibold text-slate-700">
+          <label className="grid gap-1.5 text-sm font-semibold text-neutral-700">
             Vaccine
-            <select className="h-10 rounded border border-slate-200 bg-white px-3 text-sm" value={vaccineType} onChange={(event) => setVaccineType(event.target.value)}>
+            <select className="h-10 rounded border border-neutral-200 bg-white px-3 text-sm" value={vaccineType} onChange={(event) => setVaccineType(event.target.value)}>
               <option value="">Any</option>
               <option value="typhoid">Typhoid</option>
               <option value="hepatitis_a">Hepatitis A</option>
             </select>
           </label>
-          <label className="grid gap-1.5 text-sm font-semibold text-slate-700">
+          <label className="grid gap-1.5 text-sm font-semibold text-neutral-700">
             From
-            <input className="h-10 rounded border border-slate-200 bg-slate-50 px-3 text-sm" type="date" value={dateFrom} onChange={(event) => setDateFrom(event.target.value)} />
+            <input className="h-10 rounded border border-neutral-200 bg-neutral-50 px-3 text-sm" type="date" value={dateFrom} onChange={(event) => setDateFrom(event.target.value)} />
           </label>
-          <label className="grid gap-1.5 text-sm font-semibold text-slate-700">
+          <label className="grid gap-1.5 text-sm font-semibold text-neutral-700">
             To
-            <input className="h-10 rounded border border-slate-200 bg-slate-50 px-3 text-sm" type="date" value={dateTo} onChange={(event) => setDateTo(event.target.value)} />
+            <input className="h-10 rounded border border-neutral-200 bg-neutral-50 px-3 text-sm" type="date" value={dateTo} onChange={(event) => setDateTo(event.target.value)} />
           </label>
         </div>
 
         <button
-          className="mt-5 inline-flex h-11 items-center gap-2 rounded-lg bg-brand-green px-5 text-sm font-bold text-white hover:bg-brand-deep disabled:opacity-60"
+          className="mt-5 inline-flex h-11 items-center gap-2 rounded-lg bg-brand-600 px-5 text-sm font-bold text-white hover:bg-brand-700 disabled:opacity-60"
           disabled={!employerId || mutation.isPending}
           onClick={() => mutation.mutate()}
           type="button"
@@ -218,29 +218,29 @@ export function ComplianceReportBuilder({ employerId }: { employerId?: string })
           {mutation.isPending ? <Loader2 className="animate-spin" size={16} /> : <FileSpreadsheet size={16} />}
           {mutation.isPending ? "Generating..." : "Generate Report"}
         </button>
-        {mutation.isError ? <p className="mt-3 text-sm font-semibold text-rose-600">Could not generate report. Check the filters and try again.</p> : null}
+        {mutation.isError ? <p className="mt-3 text-sm font-semibold text-danger-500">Could not generate report. Check the filters and try again.</p> : null}
       </section>
 
       <MetricGrid report={latestReport} />
 
-      <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+      <section className="rounded-lg border border-neutral-200 bg-white p-5 shadow-sm">
         <div className="mb-4 flex items-center justify-between gap-3">
-          <h2 className="text-base font-bold text-slate-950">Generated Reports</h2>
-          <span className="text-sm font-semibold text-slate-500">{generatedReportsQuery.isFetching ? "Loading..." : `${recentReports.length} recent`}</span>
+          <h2 className="text-base font-bold text-neutral-900">Generated Reports</h2>
+          <span className="text-sm font-semibold text-neutral-500">{generatedReportsQuery.isFetching ? "Loading..." : `${recentReports.length} recent`}</span>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full min-w-[640px] text-left text-sm">
-            <thead className="text-xs font-bold uppercase tracking-wide text-slate-500">
+            <thead className="text-xs font-bold uppercase tracking-wide text-neutral-500">
               <tr>
-                <th className="border-b border-slate-100 py-2 pr-4">Report</th>
-                <th className="border-b border-slate-100 py-2 pr-4">Format</th>
-                <th className="border-b border-slate-100 py-2 pr-4">Status</th>
-                <th className="border-b border-slate-100 py-2 text-right">File</th>
+                <th className="border-b border-neutral-100 py-2 pr-4">Report</th>
+                <th className="border-b border-neutral-100 py-2 pr-4">Format</th>
+                <th className="border-b border-neutral-100 py-2 pr-4">Status</th>
+                <th className="border-b border-neutral-100 py-2 text-right">File</th>
               </tr>
             </thead>
             <tbody>
               {recentReports.map((report) => <GeneratedReportRow key={report.id} report={report} />)}
-              {!recentReports.length ? <tr><td className="py-6 text-center text-slate-500" colSpan={4}>No generated employer reports yet.</td></tr> : null}
+              {!recentReports.length ? <tr><td className="py-6 text-center text-neutral-500" colSpan={4}>No generated employer reports yet.</td></tr> : null}
             </tbody>
           </table>
         </div>

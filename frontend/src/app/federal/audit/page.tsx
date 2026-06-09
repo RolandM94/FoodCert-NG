@@ -24,10 +24,10 @@ export default function Page() {
   return (
     <PortalShell role="federal_admin" title="Audit" description="Search privacy-safe national audit summaries for ministry, payment, certificate, and security activity.">
       <div className="grid gap-5">
-        <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+        <section className="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm">
           <div className="grid gap-3 md:grid-cols-[1fr_240px]">
-            <input className="h-10 rounded border border-slate-200 bg-slate-50 px-3 text-sm" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search target, id, or metadata" />
-            <select className="h-10 rounded border border-slate-200 bg-white px-3 text-sm" value={action} onChange={(event) => setAction(event.target.value)}>
+            <input className="h-10 rounded border border-neutral-200 bg-neutral-50 px-3 text-sm" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search target, id, or metadata" />
+            <select className="h-10 rounded border border-neutral-200 bg-white px-3 text-sm" value={action} onChange={(event) => setAction(event.target.value)}>
               <option value="">All actions</option>
               <option value="workflow_transition">Workflow transition</option>
               <option value="payment_event">Payment event</option>
@@ -38,11 +38,11 @@ export default function Page() {
           </div>
         </section>
         <section className="grid gap-3">
-          <div className="flex items-center gap-2"><History className="text-brand-deep" size={18} /><h2 className="text-base font-bold text-slate-950">Recent Audit Activity</h2></div>
+          <div className="flex items-center gap-2"><History className="text-brand-700" size={18} /><h2 className="text-base font-bold text-neutral-900">Recent Audit Activity</h2></div>
           <DataTable<FederalAuditLogItem>
             columns={[
               { key: "time", header: "Time", render: (row) => dateLabel(row.created_at) },
-              { key: "actor", header: "Actor", render: (row) => <div><p className="font-bold text-slate-950">{row.actor_name || "System"}</p><p className="text-xs text-slate-500">{row.actor_email}</p></div> },
+              { key: "actor", header: "Actor", render: (row) => <div><p className="font-bold text-neutral-900">{row.actor_name || "System"}</p><p className="text-xs text-neutral-500">{row.actor_email}</p></div> },
               { key: "action", header: "Action", render: (row) => <StatusCell status={row.action} /> },
               { key: "target", header: "Target", render: (row) => `${row.target_type}:${row.target_id}` },
               { key: "state", header: "State", render: (row) => row.state_name || "National" },

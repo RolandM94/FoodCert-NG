@@ -84,41 +84,41 @@ export default function Page() {
 
   return (
     <PortalShell role="employer" title="Invite Food Handler" description="Send an invitation to a food handler. They will receive a link to register and join your business.">
-      <form className="max-w-xl rounded-lg border border-slate-200 bg-white p-6 shadow-sm" onSubmit={handleSubmit}>
+      <form className="max-w-xl rounded-lg border border-neutral-200 bg-white p-6 shadow-sm" onSubmit={handleSubmit}>
         <div className="grid gap-4">
-          <label className="grid gap-1.5 text-sm font-semibold text-slate-700">
+          <label className="grid gap-1.5 text-sm font-semibold text-neutral-700">
             Email
-            <input className="h-11 rounded-lg border border-slate-200 bg-slate-50 px-3" type="email" required value={form.email} onChange={(e) => update("email", e.target.value)} placeholder="handler@example.com" />
+            <input className="h-11 rounded-lg border border-neutral-200 bg-neutral-50 px-3" type="email" required value={form.email} onChange={(e) => update("email", e.target.value)} placeholder="handler@example.com" />
           </label>
-          <label className="grid gap-1.5 text-sm font-semibold text-slate-700">
+          <label className="grid gap-1.5 text-sm font-semibold text-neutral-700">
             Phone
-            <input className="h-11 rounded-lg border border-slate-200 bg-slate-50 px-3" value={form.phone} onChange={(e) => update("phone", e.target.value)} placeholder="08030000000" />
+            <input className="h-11 rounded-lg border border-neutral-200 bg-neutral-50 px-3" value={form.phone} onChange={(e) => update("phone", e.target.value)} placeholder="08030000000" />
           </label>
-          <label className="grid gap-1.5 text-sm font-semibold text-slate-700">
+          <label className="grid gap-1.5 text-sm font-semibold text-neutral-700">
             Category
-            <select className="h-11 rounded-lg border border-slate-200 bg-white px-3" value={form.food_handler_category} onChange={(e) => update("food_handler_category", e.target.value)}>
+            <select className="h-11 rounded-lg border border-neutral-200 bg-white px-3" value={form.food_handler_category} onChange={(e) => update("food_handler_category", e.target.value)}>
               {categories.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
             </select>
           </label>
           {branches.length > 0 && (
-            <label className="grid gap-1.5 text-sm font-semibold text-slate-700">
+            <label className="grid gap-1.5 text-sm font-semibold text-neutral-700">
               <span className="flex items-center gap-1.5"><MapPin size={14} /> Branch</span>
-              <select className="h-11 rounded-lg border border-slate-200 bg-white px-3" value={form.branch} onChange={(e) => update("branch", e.target.value)}>
+              <select className="h-11 rounded-lg border border-neutral-200 bg-white px-3" value={form.branch} onChange={(e) => update("branch", e.target.value)}>
                 <option value="">All branches (no assignment)</option>
                 {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
               </select>
             </label>
           )}
-          <label className="grid gap-1.5 text-sm font-semibold text-slate-700">
+          <label className="grid gap-1.5 text-sm font-semibold text-neutral-700">
             Message (optional)
-            <textarea className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm" rows={2} value={form.message} onChange={(e) => update("message", e.target.value)} placeholder="Welcome message..." />
+            <textarea className="rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2 text-sm" rows={2} value={form.message} onChange={(e) => update("message", e.target.value)} placeholder="Welcome message..." />
           </label>
         </div>
 
-        {error && <div className="mt-4 flex items-start gap-2 rounded-lg bg-rose-50 p-3 text-sm font-semibold text-rose-800"><AlertCircle size={16} className="mt-0.5 shrink-0" /><span>{error}</span></div>}
-        {success && <div className="mt-4 rounded-lg bg-emerald-50 p-3 text-sm font-semibold text-emerald-800">{success}</div>}
+        {error && <div className="mt-4 flex items-start gap-2 rounded-lg bg-danger-50 p-3 text-sm font-semibold text-danger-700"><AlertCircle size={16} className="mt-0.5 shrink-0" /><span>{error}</span></div>}
+        {success && <div className="mt-4 rounded-lg bg-brand-50 p-3 text-sm font-semibold text-brand-800">{success}</div>}
 
-        <button className="mt-5 inline-flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-brand-green text-sm font-bold text-white hover:bg-brand-deep disabled:opacity-60" disabled={loading} type="submit">
+        <button className="mt-5 inline-flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-brand-600 text-sm font-bold text-white hover:bg-brand-700 disabled:opacity-60" disabled={loading} type="submit">
           <Send size={16} />
           {loading ? "Sending..." : "Send Invitation"}
         </button>

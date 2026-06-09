@@ -39,48 +39,48 @@ export function UserMembershipDetailDrawer({
 
   return (
     <>
-      <div className="fixed inset-0 z-40 bg-slate-900/40" onClick={onClose} />
-      <div className="fixed inset-y-0 right-0 z-50 w-full max-w-lg overflow-y-auto border-l border-slate-200 bg-white shadow-2xl">
-        <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4">
-          <h2 className="text-lg font-bold text-slate-950">Membership Details</h2>
-          <button className="rounded p-1 hover:bg-slate-50" onClick={onClose}>
-            <X size={18} className="text-slate-500" />
+      <div className="fixed inset-0 z-40 bg-neutral-900/40" onClick={onClose} />
+      <div className="fixed inset-y-0 right-0 z-50 w-full max-w-lg overflow-y-auto border-l border-neutral-200 bg-white shadow-2xl">
+        <div className="flex items-center justify-between border-b border-neutral-100 px-6 py-4">
+          <h2 className="text-lg font-bold text-neutral-900">Membership Details</h2>
+          <button className="rounded p-1 hover:bg-neutral-50" onClick={onClose}>
+            <X size={18} className="text-neutral-500" />
           </button>
         </div>
 
         <div className="p-6 space-y-6">
           <div>
-            <h3 className="text-xs font-bold uppercase tracking-wide text-slate-500">User</h3>
-            <p className="mt-1 text-base font-bold text-slate-950">
+            <h3 className="text-xs font-bold uppercase tracking-wide text-neutral-500">User</h3>
+            <p className="mt-1 text-base font-bold text-neutral-900">
               {membership.user_name || membership.user_email || membership.user}
             </p>
             {membership.user_email && (
-              <p className="text-sm text-slate-600">{membership.user_email}</p>
+              <p className="text-sm text-neutral-600">{membership.user_email}</p>
             )}
           </div>
 
           <div className="grid gap-4 sm:grid-cols-2">
             <div>
-              <h3 className="text-xs font-bold uppercase tracking-wide text-slate-500">Role</h3>
-              <p className="mt-1 text-sm font-bold text-slate-800">
+              <h3 className="text-xs font-bold uppercase tracking-wide text-neutral-500">Role</h3>
+              <p className="mt-1 text-sm font-bold text-neutral-800">
                 {membership.role_name || membership.role_code || membership.role}
               </p>
             </div>
             <div>
-              <h3 className="text-xs font-bold uppercase tracking-wide text-slate-500">Status</h3>
+              <h3 className="text-xs font-bold uppercase tracking-wide text-neutral-500">Status</h3>
               <div className="mt-1">
                 <MembershipStatusBadge status={membership.status} />
               </div>
             </div>
             <div>
-              <h3 className="text-xs font-bold uppercase tracking-wide text-slate-500">Unit</h3>
-              <p className="mt-1 text-sm font-bold text-slate-800">
+              <h3 className="text-xs font-bold uppercase tracking-wide text-neutral-500">Unit</h3>
+              <p className="mt-1 text-sm font-bold text-neutral-800">
                 {membership.unit_name || "No unit"}
               </p>
             </div>
             <div>
-              <h3 className="text-xs font-bold uppercase tracking-wide text-slate-500">Unit Restricted</h3>
-              <p className="mt-1 text-sm font-bold text-slate-800">
+              <h3 className="text-xs font-bold uppercase tracking-wide text-neutral-500">Unit Restricted</h3>
+              <p className="mt-1 text-sm font-bold text-neutral-800">
                 {membership.unit_restricted ? "Yes" : "No"}
               </p>
             </div>
@@ -88,26 +88,26 @@ export function UserMembershipDetailDrawer({
 
           <div className="grid gap-3 sm:grid-cols-2">
             <div>
-              <h3 className="text-xs font-bold uppercase tracking-wide text-slate-500">Joined</h3>
-              <p className="mt-1 text-sm text-slate-700">{formatDate(membership.joined_at)}</p>
+              <h3 className="text-xs font-bold uppercase tracking-wide text-neutral-500">Joined</h3>
+              <p className="mt-1 text-sm text-neutral-700">{formatDate(membership.joined_at)}</p>
             </div>
             <div>
-              <h3 className="text-xs font-bold uppercase tracking-wide text-slate-500">Last Active</h3>
-              <p className="mt-1 text-sm text-slate-700">{formatDate(membership.last_active_at)}</p>
+              <h3 className="text-xs font-bold uppercase tracking-wide text-neutral-500">Last Active</h3>
+              <p className="mt-1 text-sm text-neutral-700">{formatDate(membership.last_active_at)}</p>
             </div>
             <div>
-              <h3 className="text-xs font-bold uppercase tracking-wide text-slate-500">Invited By</h3>
-              <p className="mt-1 text-sm text-slate-700">{membership.invited_by_name || "N/A"}</p>
+              <h3 className="text-xs font-bold uppercase tracking-wide text-neutral-500">Invited By</h3>
+              <p className="mt-1 text-sm text-neutral-700">{membership.invited_by_name || "N/A"}</p>
             </div>
           </div>
 
           {isActive && (
             <>
-              <div className="border-t border-slate-100 pt-5">
-                <h3 className="text-sm font-bold text-slate-950 mb-3">Change Role</h3>
+              <div className="border-t border-neutral-100 pt-5">
+                <h3 className="text-sm font-bold text-neutral-900 mb-3">Change Role</h3>
                 <div className="flex gap-2">
                   <select
-                    className="h-10 flex-1 rounded border border-slate-200 bg-white px-3 text-sm"
+                    className="h-10 flex-1 rounded border border-neutral-200 bg-white px-3 text-sm"
                     value={selectedRole}
                     onChange={(e) => setSelectedRole(e.target.value)}
                   >
@@ -118,7 +118,7 @@ export function UserMembershipDetailDrawer({
                     ))}
                   </select>
                   <button
-                    className="inline-flex h-10 items-center gap-2 rounded bg-slate-950 px-4 text-sm font-bold text-white hover:bg-slate-800 disabled:opacity-60"
+                    className="inline-flex h-10 items-center gap-2 rounded bg-neutral-900 px-4 text-sm font-bold text-white hover:bg-neutral-800 disabled:opacity-60"
                     disabled={selectedRole === membership.role}
                     onClick={() => onAction("change-role", { role: selectedRole })}
                     type="button"
@@ -129,11 +129,11 @@ export function UserMembershipDetailDrawer({
                 </div>
               </div>
 
-              <div className="border-t border-slate-100 pt-5">
-                <h3 className="text-sm font-bold text-slate-950 mb-3">Change Unit</h3>
+              <div className="border-t border-neutral-100 pt-5">
+                <h3 className="text-sm font-bold text-neutral-900 mb-3">Change Unit</h3>
                 <div className="flex gap-2">
                   <select
-                    className="h-10 flex-1 rounded border border-slate-200 bg-white px-3 text-sm"
+                    className="h-10 flex-1 rounded border border-neutral-200 bg-white px-3 text-sm"
                     value={selectedUnit}
                     onChange={(e) => setSelectedUnit(e.target.value)}
                   >
@@ -145,7 +145,7 @@ export function UserMembershipDetailDrawer({
                     ))}
                   </select>
                   <button
-                    className="inline-flex h-10 items-center gap-2 rounded bg-slate-950 px-4 text-sm font-bold text-white hover:bg-slate-800 disabled:opacity-60"
+                    className="inline-flex h-10 items-center gap-2 rounded bg-neutral-900 px-4 text-sm font-bold text-white hover:bg-neutral-800 disabled:opacity-60"
                     disabled={selectedUnit === (membership.unit ?? "")}
                     onClick={() => onAction("change-unit", { unit: selectedUnit || null })}
                     type="button"
@@ -156,14 +156,14 @@ export function UserMembershipDetailDrawer({
                 </div>
               </div>
 
-              <div className="flex flex-wrap gap-2 border-t border-slate-100 pt-5">
+              <div className="flex flex-wrap gap-2 border-t border-neutral-100 pt-5">
                 <button
-                  className="inline-flex h-10 items-center gap-2 rounded border border-slate-200 px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                  className="inline-flex h-10 items-center gap-2 rounded border border-neutral-200 px-4 text-sm font-semibold text-neutral-700 hover:bg-neutral-50"
                   onClick={() => onAction("toggle-restriction")}
                   type="button"
                 >
                   {membership.unit_restricted ? (
-                    <ToggleRight size={16} className="text-brand-deep" />
+                    <ToggleRight size={16} className="text-brand-700" />
                   ) : (
                     <ToggleLeft size={16} />
                   )}
@@ -173,10 +173,10 @@ export function UserMembershipDetailDrawer({
             </>
           )}
 
-          <div className="flex flex-wrap gap-2 border-t border-slate-100 pt-5">
+          <div className="flex flex-wrap gap-2 border-t border-neutral-100 pt-5">
             {isActive && (
               <button
-                className="inline-flex h-10 items-center gap-2 rounded border border-rose-200 px-4 text-sm font-semibold text-rose-600 hover:bg-rose-50"
+                className="inline-flex h-10 items-center gap-2 rounded border border-danger-100 px-4 text-sm font-semibold text-danger-500 hover:bg-danger-50"
                 onClick={() => onAction("suspend")}
                 type="button"
               >
@@ -186,7 +186,7 @@ export function UserMembershipDetailDrawer({
             )}
             {isSuspended && (
               <button
-                className="inline-flex h-10 items-center gap-2 rounded border border-emerald-200 px-4 text-sm font-semibold text-emerald-600 hover:bg-emerald-50"
+                className="inline-flex h-10 items-center gap-2 rounded border border-brand-200 px-4 text-sm font-semibold text-brand-600 hover:bg-brand-50"
                 onClick={() => onAction("reactivate")}
                 type="button"
               >
@@ -196,7 +196,7 @@ export function UserMembershipDetailDrawer({
             )}
             {(isActive || isSuspended) && (
               <button
-                className="inline-flex h-10 items-center gap-2 rounded border border-red-200 px-4 text-sm font-semibold text-red-600 hover:bg-red-50"
+                className="inline-flex h-10 items-center gap-2 rounded border border-danger-100 px-4 text-sm font-semibold text-danger-500 hover:bg-danger-50"
                 onClick={() => {
                   if (confirm("Remove this user from the organization? This cannot be undone.")) {
                     onAction("remove");
@@ -211,13 +211,13 @@ export function UserMembershipDetailDrawer({
           </div>
 
           {membership.permissions && membership.permissions.length > 0 && (
-            <div className="border-t border-slate-100 pt-5">
-              <h3 className="text-sm font-bold text-slate-950 mb-2">Effective Permissions</h3>
+            <div className="border-t border-neutral-100 pt-5">
+              <h3 className="text-sm font-bold text-neutral-900 mb-2">Effective Permissions</h3>
               <div className="flex flex-wrap gap-1">
                 {membership.permissions.map((code) => (
                   <span
                     key={code}
-                    className="rounded bg-slate-100 px-2 py-1 text-xs font-mono text-slate-700"
+                    className="rounded bg-neutral-100 px-2 py-1 text-xs font-mono text-neutral-700"
                   >
                     {code}
                   </span>

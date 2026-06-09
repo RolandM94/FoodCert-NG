@@ -114,94 +114,94 @@ export default function Page() {
   return (
     <PortalShell role="employer" title="Illness Reports" description="Report illness among food handlers and monitor exclusion and return-to-work status.">
       <div className="flex items-center justify-between mb-5">
-        <span className="text-sm text-slate-500">{reports.length} report{reports.length !== 1 ? "s" : ""}</span>
+        <span className="text-sm text-neutral-500">{reports.length} report{reports.length !== 1 ? "s" : ""}</span>
         {!showForm && (
-          <button className="inline-flex h-10 items-center gap-2 rounded-lg bg-brand-green px-4 text-sm font-bold text-white hover:bg-brand-deep" onClick={() => setShowForm(true)}>
+          <button className="inline-flex h-10 items-center gap-2 rounded-lg bg-brand-600 px-4 text-sm font-bold text-white hover:bg-brand-700" onClick={() => setShowForm(true)}>
             <HeartPulse size={16} />
             Report Illness
           </button>
         )}
       </div>
 
-      {error && <div className="mb-4 flex items-start gap-2 rounded-lg bg-rose-50 p-3 text-sm font-semibold text-rose-800"><AlertCircle size={16} className="mt-0.5" /><span>{error}</span></div>}
-      {success && <div className="mb-4 flex items-start gap-2 rounded-lg bg-emerald-50 p-3 text-sm font-semibold text-emerald-800"><CheckCircle2 size={16} className="mt-0.5" /><span>{success}</span></div>}
+      {error && <div className="mb-4 flex items-start gap-2 rounded-lg bg-danger-50 p-3 text-sm font-semibold text-danger-700"><AlertCircle size={16} className="mt-0.5" /><span>{error}</span></div>}
+      {success && <div className="mb-4 flex items-start gap-2 rounded-lg bg-brand-50 p-3 text-sm font-semibold text-brand-800"><CheckCircle2 size={16} className="mt-0.5" /><span>{success}</span></div>}
 
       {/* Form */}
       {showForm && (
-        <form className="mb-6 rounded-lg border border-slate-200 bg-white p-5 shadow-sm" onSubmit={handleSubmit}>
+        <form className="mb-6 rounded-lg border border-neutral-200 bg-white p-5 shadow-sm" onSubmit={handleSubmit}>
           <div className="flex items-center justify-between mb-4">
-            <h3 className="text-sm font-bold text-slate-950">Report Illness</h3>
-            <button type="button" className="rounded p-1 hover:bg-slate-50" onClick={() => setShowForm(false)}><X size={16} className="text-slate-400" /></button>
+            <h3 className="text-sm font-bold text-neutral-900">Report Illness</h3>
+            <button type="button" className="rounded p-1 hover:bg-neutral-50" onClick={() => setShowForm(false)}><X size={16} className="text-neutral-400" /></button>
           </div>
           <div className="grid gap-4 sm:grid-cols-2">
-            <label className="grid gap-1.5 text-sm font-semibold text-slate-700">
-              Food handler <span className="text-red-500">*</span>
-              <select className="h-11 rounded-lg border border-slate-200 bg-white px-3" value={fhId} onChange={(e) => setFhId(e.target.value)} required>
+            <label className="grid gap-1.5 text-sm font-semibold text-neutral-700">
+              Food handler <span className="text-danger-500">*</span>
+              <select className="h-11 rounded-lg border border-neutral-200 bg-white px-3" value={fhId} onChange={(e) => setFhId(e.target.value)} required>
                 <option value="">Select handler...</option>
                 {handlers.map((h) => <option key={h.id} value={h.id}>{h.full_name}{h.branch_name ? ` (${h.branch_name})` : ""}</option>)}
               </select>
             </label>
-            <label className="grid gap-1.5 text-sm font-semibold text-slate-700">
-              Suspected condition <span className="text-red-500">*</span>
-              <select className="h-11 rounded-lg border border-slate-200 bg-white px-3" value={condition} onChange={(e) => setCondition(e.target.value)}>
+            <label className="grid gap-1.5 text-sm font-semibold text-neutral-700">
+              Suspected condition <span className="text-danger-500">*</span>
+              <select className="h-11 rounded-lg border border-neutral-200 bg-white px-3" value={condition} onChange={(e) => setCondition(e.target.value)}>
                 {CONDITIONS.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
               </select>
             </label>
-            <label className="grid gap-1.5 text-sm font-semibold text-slate-700">
+            <label className="grid gap-1.5 text-sm font-semibold text-neutral-700">
               Symptom start date
-              <input className="h-11 rounded-lg border border-slate-200 bg-slate-50 px-3" type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
+              <input className="h-11 rounded-lg border border-neutral-200 bg-neutral-50 px-3" type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
             </label>
           </div>
           <div className="mt-4">
-            <p className="text-sm font-semibold text-slate-700 mb-2">Symptoms observed or reported</p>
+            <p className="text-sm font-semibold text-neutral-700 mb-2">Symptoms observed or reported</p>
             <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
               {SYMPTOMS.map((s) => (
-                <label key={s} className="flex items-center gap-2 rounded border border-slate-100 bg-slate-50 px-3 py-2 text-sm cursor-pointer hover:bg-white">
-                  <input type="checkbox" checked={!!symptoms[s]} onChange={() => toggleSymptom(s)} className="h-4 w-4 rounded border-slate-300 text-brand-green" />
-                  <span className="text-slate-700 capitalize">{s.replace(/_/g, " ")}</span>
+                <label key={s} className="flex items-center gap-2 rounded border border-neutral-100 bg-neutral-50 px-3 py-2 text-sm cursor-pointer hover:bg-white">
+                  <input type="checkbox" checked={!!symptoms[s]} onChange={() => toggleSymptom(s)} className="h-4 w-4 rounded border-neutral-300 text-brand-600" />
+                  <span className="text-neutral-700 capitalize">{s.replace(/_/g, " ")}</span>
                 </label>
               ))}
             </div>
           </div>
-          <label className="mt-4 grid gap-1.5 text-sm font-semibold text-slate-700">
+          <label className="mt-4 grid gap-1.5 text-sm font-semibold text-neutral-700">
             Notes
-            <textarea className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm" rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} />
+            <textarea className="rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2 text-sm" rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} />
           </label>
           <div className="mt-4 flex items-center gap-2">
-            <input type="checkbox" id="exclusion" className="h-4 w-4 rounded border-slate-300 text-brand-green" required />
-            <label htmlFor="exclusion" className="text-sm font-semibold text-slate-700">I confirm that this food handler must be excluded from food handling duties.</label>
+            <input type="checkbox" id="exclusion" className="h-4 w-4 rounded border-neutral-300 text-brand-600" required />
+            <label htmlFor="exclusion" className="text-sm font-semibold text-neutral-700">I confirm that this food handler must be excluded from food handling duties.</label>
           </div>
           <div className="mt-5 flex gap-3">
-            <button className="inline-flex h-11 items-center gap-2 rounded-lg bg-brand-green px-6 text-sm font-bold text-white hover:bg-brand-deep disabled:opacity-60" disabled={sending} type="submit">
+            <button className="inline-flex h-11 items-center gap-2 rounded-lg bg-brand-600 px-6 text-sm font-bold text-white hover:bg-brand-700 disabled:opacity-60" disabled={sending} type="submit">
               {sending ? "Submitting..." : "Submit Report"}
             </button>
-            <button type="button" className="inline-flex h-11 items-center gap-2 rounded-lg border border-slate-200 px-4 text-sm font-semibold text-slate-600 hover:bg-slate-50" onClick={() => setShowForm(false)}>Cancel</button>
+            <button type="button" className="inline-flex h-11 items-center gap-2 rounded-lg border border-neutral-200 px-4 text-sm font-semibold text-neutral-600 hover:bg-neutral-50" onClick={() => setShowForm(false)}>Cancel</button>
           </div>
         </form>
       )}
 
       {/* List */}
-      {loading && <p className="text-sm text-slate-500">Loading...</p>}
+      {loading && <p className="text-sm text-neutral-500">Loading...</p>}
       {!loading && reports.length === 0 && !showForm && (
-        <div className="rounded-lg border border-slate-200 bg-white p-10 text-center">
-          <HeartPulse size={32} className="mx-auto text-slate-300" />
-          <p className="mt-3 text-sm font-semibold text-slate-500">No illness reports yet</p>
-          <p className="mt-1 text-xs text-slate-400">When a food handler shows symptoms, report it here to trigger exclusion and medical review.</p>
+        <div className="rounded-lg border border-neutral-200 bg-white p-10 text-center">
+          <HeartPulse size={32} className="mx-auto text-neutral-300" />
+          <p className="mt-3 text-sm font-semibold text-neutral-500">No illness reports yet</p>
+          <p className="mt-1 text-xs text-neutral-400">When a food handler shows symptoms, report it here to trigger exclusion and medical review.</p>
         </div>
       )}
       {reports.length > 0 && (
-        <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white shadow-sm">
+        <div className="overflow-x-auto rounded-lg border border-neutral-200 bg-white shadow-sm">
           <table className="w-full text-sm">
-            <thead><tr className="border-b border-slate-100 bg-slate-50 text-left"><th className="px-4 py-2 text-xs font-bold uppercase text-slate-500">Handler</th><th className="px-4 py-2 text-xs font-bold uppercase text-slate-500 hidden sm:table-cell">Condition</th><th className="px-4 py-2 text-xs font-bold uppercase text-slate-500 hidden md:table-cell">Symptoms</th><th className="px-4 py-2 text-xs font-bold uppercase text-slate-500">Excluded</th><th className="px-4 py-2 text-xs font-bold uppercase text-slate-500">Clearance</th><th className="px-4 py-2 text-xs font-bold uppercase text-slate-500 hidden lg:table-cell">RTW Date</th></tr></thead>
-            <tbody className="divide-y divide-slate-50">
+            <thead><tr className="border-b border-neutral-100 bg-neutral-50 text-left"><th className="px-4 py-2 text-xs font-bold uppercase text-neutral-500">Handler</th><th className="px-4 py-2 text-xs font-bold uppercase text-neutral-500 hidden sm:table-cell">Condition</th><th className="px-4 py-2 text-xs font-bold uppercase text-neutral-500 hidden md:table-cell">Symptoms</th><th className="px-4 py-2 text-xs font-bold uppercase text-neutral-500">Excluded</th><th className="px-4 py-2 text-xs font-bold uppercase text-neutral-500">Clearance</th><th className="px-4 py-2 text-xs font-bold uppercase text-neutral-500 hidden lg:table-cell">RTW Date</th></tr></thead>
+            <tbody className="divide-y divide-neutral-50">
               {reports.map((r) => (
-                <tr key={r.id} className="hover:bg-slate-50/50">
-                  <td className="px-4 py-2"><span className="text-xs text-slate-700 font-medium">{r.food_handler_name}</span>{r.branch_name && <span className="text-[10px] text-slate-400 block">{r.branch_name}</span>}</td>
-                  <td className="px-4 py-2 hidden sm:table-cell"><span className="text-xs text-slate-600 capitalize">{r.suspected_condition?.replace(/_/g, " ")}</span></td>
-                  <td className="px-4 py-2 hidden md:table-cell"><span className="text-xs text-slate-500">{Object.entries(r.symptoms || {}).filter(([, v]) => v).map(([k]) => k.replace(/_/g, " ")).join(", ") || "—"}</span></td>
-                  <td className="px-4 py-2"><span className="text-xs text-slate-600">{r.exclusion_start_date ? new Date(r.exclusion_start_date).toLocaleDateString() : "—"}</span></td>
+                <tr key={r.id} className="hover:bg-neutral-50/50">
+                  <td className="px-4 py-2"><span className="text-xs text-neutral-700 font-medium">{r.food_handler_name}</span>{r.branch_name && <span className="text-[10px] text-neutral-400 block">{r.branch_name}</span>}</td>
+                  <td className="px-4 py-2 hidden sm:table-cell"><span className="text-xs text-neutral-600 capitalize">{r.suspected_condition?.replace(/_/g, " ")}</span></td>
+                  <td className="px-4 py-2 hidden md:table-cell"><span className="text-xs text-neutral-500">{Object.entries(r.symptoms || {}).filter(([, v]) => v).map(([k]) => k.replace(/_/g, " ")).join(", ") || "—"}</span></td>
+                  <td className="px-4 py-2"><span className="text-xs text-neutral-600">{r.exclusion_start_date ? new Date(r.exclusion_start_date).toLocaleDateString() : "—"}</span></td>
                   <td className="px-4 py-2"><FitnessStatusBadge status={r.clearance_status || "pending"} /></td>
-                  <td className="px-4 py-2 hidden lg:table-cell"><span className="text-xs text-slate-500">{r.earliest_return_date ? new Date(r.earliest_return_date).toLocaleDateString() : "—"}</span></td>
+                  <td className="px-4 py-2 hidden lg:table-cell"><span className="text-xs text-neutral-500">{r.earliest_return_date ? new Date(r.earliest_return_date).toLocaleDateString() : "—"}</span></td>
                 </tr>
               ))}
             </tbody>

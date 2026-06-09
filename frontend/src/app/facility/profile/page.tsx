@@ -106,7 +106,7 @@ export default function Page() {
   if (loading) {
     return (
       <PortalShell role="facility_admin" title="Facility profile" description="Maintain facility registration, license, and contact information.">
-        <p className="rounded-lg border border-slate-200 bg-white p-4 text-sm font-semibold text-slate-600 shadow-sm">Loading facility profile...</p>
+        <p className="rounded-lg border border-neutral-200 bg-white p-4 text-sm font-semibold text-neutral-600 shadow-sm">Loading facility profile...</p>
       </PortalShell>
     );
   }
@@ -114,7 +114,7 @@ export default function Page() {
   if (!facility || !form) {
     return (
       <PortalShell role="facility_admin" title="Facility profile" description="Maintain facility registration, license, and contact information.">
-        <div className="rounded-lg border border-rose-200 bg-rose-50 p-4 text-sm font-semibold text-rose-800">{error || "Facility profile not found."}</div>
+        <div className="rounded-lg border border-danger-100 bg-danger-50 p-4 text-sm font-semibold text-danger-700">{error || "Facility profile not found."}</div>
       </PortalShell>
     );
   }
@@ -123,135 +123,135 @@ export default function Page() {
     <PortalShell role="facility_admin" title="Facility profile" description="Maintain facility registration, license, and contact information.">
       <form className="grid gap-5" onSubmit={saveProfile}>
         <section className="grid gap-4 md:grid-cols-4">
-          <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-            <p className="text-xs font-bold uppercase tracking-wide text-slate-500">Accreditation</p>
+          <div className="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm">
+            <p className="text-xs font-bold uppercase tracking-wide text-neutral-500">Accreditation</p>
             <div className="mt-2"><StatusBadge status={facility.accreditation_status} /></div>
           </div>
-          <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-            <p className="text-xs font-bold uppercase tracking-wide text-slate-500">Profile</p>
-            <p className={`mt-2 text-sm font-bold ${facility.profile_complete ? "text-emerald-700" : "text-amber-700"}`}>{facility.profile_complete ? "Complete" : "Needs attention"}</p>
+          <div className="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm">
+            <p className="text-xs font-bold uppercase tracking-wide text-neutral-500">Profile</p>
+            <p className={`mt-2 text-sm font-bold ${facility.profile_complete ? "text-brand-700" : "text-warning-700"}`}>{facility.profile_complete ? "Complete" : "Needs attention"}</p>
           </div>
-          <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-            <p className="text-xs font-bold uppercase tracking-wide text-slate-500">Assessment ready</p>
-            <p className={`mt-2 text-sm font-bold ${facility.can_conduct_assessments ? "text-emerald-700" : "text-slate-600"}`}>{facility.can_conduct_assessments ? "Yes" : "No"}</p>
+          <div className="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm">
+            <p className="text-xs font-bold uppercase tracking-wide text-neutral-500">Assessment ready</p>
+            <p className={`mt-2 text-sm font-bold ${facility.can_conduct_assessments ? "text-brand-700" : "text-neutral-600"}`}>{facility.can_conduct_assessments ? "Yes" : "No"}</p>
           </div>
-          <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-            <p className="text-xs font-bold uppercase tracking-wide text-slate-500">Accreditation expiry</p>
-            <p className="mt-2 text-sm font-bold text-slate-800">{formatDate(facility.accreditation_expiry_date)}</p>
+          <div className="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm">
+            <p className="text-xs font-bold uppercase tracking-wide text-neutral-500">Accreditation expiry</p>
+            <p className="mt-2 text-sm font-bold text-neutral-800">{formatDate(facility.accreditation_expiry_date)}</p>
           </div>
         </section>
 
-        <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+        <section className="rounded-lg border border-neutral-200 bg-white p-5 shadow-sm">
           <div className="mb-5 flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-emerald-50 text-brand-deep"><Building2 size={20} /></div>
+            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-brand-50 text-brand-700"><Building2 size={20} /></div>
             <div>
-              <h2 className="text-sm font-bold text-slate-950">Facility Details</h2>
-              <p className="text-xs text-slate-500">Registration and licensing details used for accreditation review.</p>
+              <h2 className="text-sm font-bold text-neutral-900">Facility Details</h2>
+              <p className="text-xs text-neutral-500">Registration and licensing details used for accreditation review.</p>
             </div>
           </div>
           <div className="grid gap-4 md:grid-cols-2">
-            <label className="grid gap-1.5 text-sm font-semibold text-slate-700">
+            <label className="grid gap-1.5 text-sm font-semibold text-neutral-700">
               Facility name
-              <input required className="h-11 rounded-lg border border-slate-200 bg-slate-50 px-3 outline-none ring-brand-green/20 focus:border-brand-green focus:ring-2" value={form.facility_name} onChange={(event) => update("facility_name", event.target.value)} />
+              <input required className="h-11 rounded-lg border border-neutral-200 bg-neutral-50 px-3 outline-none ring-brand-600/20 focus:border-brand-600 focus:ring-2" value={form.facility_name} onChange={(event) => update("facility_name", event.target.value)} />
             </label>
-            <label className="grid gap-1.5 text-sm font-semibold text-slate-700">
+            <label className="grid gap-1.5 text-sm font-semibold text-neutral-700">
               Facility type
-              <select className="h-11 rounded-lg border border-slate-200 bg-white px-3 outline-none ring-brand-green/20 focus:border-brand-green focus:ring-2" value={form.facility_type} onChange={(event) => update("facility_type", event.target.value)}>
+              <select className="h-11 rounded-lg border border-neutral-200 bg-white px-3 outline-none ring-brand-600/20 focus:border-brand-600 focus:ring-2" value={form.facility_type} onChange={(event) => update("facility_type", event.target.value)}>
                 {FACILITY_TYPES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
               </select>
             </label>
-            <label className="grid gap-1.5 text-sm font-semibold text-slate-700">
+            <label className="grid gap-1.5 text-sm font-semibold text-neutral-700">
               Ownership
-              <select className="h-11 rounded-lg border border-slate-200 bg-white px-3 outline-none ring-brand-green/20 focus:border-brand-green focus:ring-2" value={form.ownership_type} onChange={(event) => update("ownership_type", event.target.value)}>
+              <select className="h-11 rounded-lg border border-neutral-200 bg-white px-3 outline-none ring-brand-600/20 focus:border-brand-600 focus:ring-2" value={form.ownership_type} onChange={(event) => update("ownership_type", event.target.value)}>
                 {OWNERSHIP_TYPES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
               </select>
             </label>
-            <label className="grid gap-1.5 text-sm font-semibold text-slate-700">
+            <label className="grid gap-1.5 text-sm font-semibold text-neutral-700">
               Facility license number
-              <input required className="h-11 rounded-lg border border-slate-200 bg-slate-50 px-3 outline-none ring-brand-green/20 focus:border-brand-green focus:ring-2" value={form.license_number} onChange={(event) => update("license_number", event.target.value)} />
+              <input required className="h-11 rounded-lg border border-neutral-200 bg-neutral-50 px-3 outline-none ring-brand-600/20 focus:border-brand-600 focus:ring-2" value={form.license_number} onChange={(event) => update("license_number", event.target.value)} />
             </label>
-            <label className="grid gap-1.5 text-sm font-semibold text-slate-700">
+            <label className="grid gap-1.5 text-sm font-semibold text-neutral-700">
               Registration number
-              <input className="h-11 rounded-lg border border-slate-200 bg-slate-50 px-3 outline-none ring-brand-green/20 focus:border-brand-green focus:ring-2" value={form.registration_number} onChange={(event) => update("registration_number", event.target.value)} />
+              <input className="h-11 rounded-lg border border-neutral-200 bg-neutral-50 px-3 outline-none ring-brand-600/20 focus:border-brand-600 focus:ring-2" value={form.registration_number} onChange={(event) => update("registration_number", event.target.value)} />
             </label>
-            <label className="grid gap-1.5 text-sm font-semibold text-slate-700">
+            <label className="grid gap-1.5 text-sm font-semibold text-neutral-700">
               Standard assessment price
-              <input className="h-11 rounded-lg border border-slate-200 bg-slate-50 px-3 outline-none ring-brand-green/20 focus:border-brand-green focus:ring-2" inputMode="decimal" value={form.standard_assessment_price} onChange={(event) => update("standard_assessment_price", event.target.value)} />
+              <input className="h-11 rounded-lg border border-neutral-200 bg-neutral-50 px-3 outline-none ring-brand-600/20 focus:border-brand-600 focus:ring-2" inputMode="decimal" value={form.standard_assessment_price} onChange={(event) => update("standard_assessment_price", event.target.value)} />
             </label>
           </div>
         </section>
 
-        <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+        <section className="rounded-lg border border-neutral-200 bg-white p-5 shadow-sm">
           <div className="mb-5 flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-sky-50 text-sky-800"><MapPin size={20} /></div>
+            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-info-50 text-info-700"><MapPin size={20} /></div>
             <div>
-              <h2 className="text-sm font-bold text-slate-950">Location and Contact</h2>
-              <p className="text-xs text-slate-500">State and LGA are shown from the facility record; update them during formal profile correction where required.</p>
+              <h2 className="text-sm font-bold text-neutral-900">Location and Contact</h2>
+              <p className="text-xs text-neutral-500">State and LGA are shown from the facility record; update them during formal profile correction where required.</p>
             </div>
           </div>
           <div className="grid gap-4 md:grid-cols-2">
-            <label className="grid gap-1.5 text-sm font-semibold text-slate-700">
+            <label className="grid gap-1.5 text-sm font-semibold text-neutral-700">
               State
-              <input readOnly className="h-11 rounded-lg border border-slate-200 bg-slate-100 px-3 text-slate-600" value={facility.state_name || "Not set"} />
+              <input readOnly className="h-11 rounded-lg border border-neutral-200 bg-neutral-100 px-3 text-neutral-600" value={facility.state_name || "Not set"} />
             </label>
-            <label className="grid gap-1.5 text-sm font-semibold text-slate-700">
+            <label className="grid gap-1.5 text-sm font-semibold text-neutral-700">
               LGA
-              <input readOnly className="h-11 rounded-lg border border-slate-200 bg-slate-100 px-3 text-slate-600" value={facility.lga_name || "Not set"} />
+              <input readOnly className="h-11 rounded-lg border border-neutral-200 bg-neutral-100 px-3 text-neutral-600" value={facility.lga_name || "Not set"} />
             </label>
-            <label className="grid gap-1.5 text-sm font-semibold text-slate-700">
+            <label className="grid gap-1.5 text-sm font-semibold text-neutral-700">
               Ward
-              <input className="h-11 rounded-lg border border-slate-200 bg-slate-50 px-3 outline-none ring-brand-green/20 focus:border-brand-green focus:ring-2" value={form.ward} onChange={(event) => update("ward", event.target.value)} />
+              <input className="h-11 rounded-lg border border-neutral-200 bg-neutral-50 px-3 outline-none ring-brand-600/20 focus:border-brand-600 focus:ring-2" value={form.ward} onChange={(event) => update("ward", event.target.value)} />
             </label>
-            <label className="grid gap-1.5 text-sm font-semibold text-slate-700 md:col-span-2">
+            <label className="grid gap-1.5 text-sm font-semibold text-neutral-700 md:col-span-2">
               Address
-              <input required className="h-11 rounded-lg border border-slate-200 bg-slate-50 px-3 outline-none ring-brand-green/20 focus:border-brand-green focus:ring-2" value={form.address} onChange={(event) => update("address", event.target.value)} />
+              <input required className="h-11 rounded-lg border border-neutral-200 bg-neutral-50 px-3 outline-none ring-brand-600/20 focus:border-brand-600 focus:ring-2" value={form.address} onChange={(event) => update("address", event.target.value)} />
             </label>
-            <label className="grid gap-1.5 text-sm font-semibold text-slate-700">
+            <label className="grid gap-1.5 text-sm font-semibold text-neutral-700">
               Contact person
-              <input required className="h-11 rounded-lg border border-slate-200 bg-slate-50 px-3 outline-none ring-brand-green/20 focus:border-brand-green focus:ring-2" value={form.contact_person} onChange={(event) => update("contact_person", event.target.value)} />
+              <input required className="h-11 rounded-lg border border-neutral-200 bg-neutral-50 px-3 outline-none ring-brand-600/20 focus:border-brand-600 focus:ring-2" value={form.contact_person} onChange={(event) => update("contact_person", event.target.value)} />
             </label>
-            <label className="grid gap-1.5 text-sm font-semibold text-slate-700">
+            <label className="grid gap-1.5 text-sm font-semibold text-neutral-700">
               Phone
-              <input required className="h-11 rounded-lg border border-slate-200 bg-slate-50 px-3 outline-none ring-brand-green/20 focus:border-brand-green focus:ring-2" value={form.phone} onChange={(event) => update("phone", event.target.value)} />
+              <input required className="h-11 rounded-lg border border-neutral-200 bg-neutral-50 px-3 outline-none ring-brand-600/20 focus:border-brand-600 focus:ring-2" value={form.phone} onChange={(event) => update("phone", event.target.value)} />
             </label>
-            <label className="grid gap-1.5 text-sm font-semibold text-slate-700">
+            <label className="grid gap-1.5 text-sm font-semibold text-neutral-700">
               Email
-              <input required type="email" className="h-11 rounded-lg border border-slate-200 bg-slate-50 px-3 outline-none ring-brand-green/20 focus:border-brand-green focus:ring-2" value={form.email} onChange={(event) => update("email", event.target.value)} />
+              <input required type="email" className="h-11 rounded-lg border border-neutral-200 bg-neutral-50 px-3 outline-none ring-brand-600/20 focus:border-brand-600 focus:ring-2" value={form.email} onChange={(event) => update("email", event.target.value)} />
             </label>
           </div>
         </section>
 
-        <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+        <section className="rounded-lg border border-neutral-200 bg-white p-5 shadow-sm">
           <div className="mb-5 flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-amber-50 text-amber-800"><Clock size={20} /></div>
+            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-warning-50 text-warning-700"><Clock size={20} /></div>
             <div>
-              <h2 className="text-sm font-bold text-slate-950">Operational Capacity</h2>
-              <p className="text-xs text-slate-500">Used by accreditation reviewers and appointment planning.</p>
+              <h2 className="text-sm font-bold text-neutral-900">Operational Capacity</h2>
+              <p className="text-xs text-neutral-500">Used by accreditation reviewers and appointment planning.</p>
             </div>
           </div>
           <div className="grid gap-4 md:grid-cols-2">
-            <label className="grid gap-1.5 text-sm font-semibold text-slate-700">
+            <label className="grid gap-1.5 text-sm font-semibold text-neutral-700">
               Operating hours
-              <input className="h-11 rounded-lg border border-slate-200 bg-slate-50 px-3 outline-none ring-brand-green/20 focus:border-brand-green focus:ring-2" placeholder="Mon-Fri 8:00-17:00" value={form.operating_hours} onChange={(event) => update("operating_hours", event.target.value)} />
+              <input className="h-11 rounded-lg border border-neutral-200 bg-neutral-50 px-3 outline-none ring-brand-600/20 focus:border-brand-600 focus:ring-2" placeholder="Mon-Fri 8:00-17:00" value={form.operating_hours} onChange={(event) => update("operating_hours", event.target.value)} />
             </label>
-            <label className="grid gap-1.5 text-sm font-semibold text-slate-700">
+            <label className="grid gap-1.5 text-sm font-semibold text-neutral-700">
               Daily service capacity
-              <input className="h-11 rounded-lg border border-slate-200 bg-slate-50 px-3 outline-none ring-brand-green/20 focus:border-brand-green focus:ring-2" min={0} type="number" value={form.service_capacity} onChange={(event) => update("service_capacity", Number(event.target.value))} />
+              <input className="h-11 rounded-lg border border-neutral-200 bg-neutral-50 px-3 outline-none ring-brand-600/20 focus:border-brand-600 focus:ring-2" min={0} type="number" value={form.service_capacity} onChange={(event) => update("service_capacity", Number(event.target.value))} />
             </label>
           </div>
         </section>
 
-        <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+        <section className="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm">
           <div className="flex items-start gap-3">
-            <ShieldCheck className="mt-0.5 shrink-0 text-brand-deep" size={18} />
-            <p className="text-sm text-slate-600">Facility profile edits are audit logged. Accreditation approval, suspension, expiry, and certificate authority remain controlled by the State Ministry.</p>
+            <ShieldCheck className="mt-0.5 shrink-0 text-brand-700" size={18} />
+            <p className="text-sm text-neutral-600">Facility profile edits are audit logged. Accreditation approval, suspension, expiry, and certificate authority remain controlled by the State Ministry.</p>
           </div>
         </section>
 
-        {error ? <div className="flex items-start gap-2 rounded-lg bg-rose-50 p-3 text-sm font-semibold text-rose-800"><AlertCircle size={16} className="mt-0.5 shrink-0" />{error}</div> : null}
-        {success ? <div className="rounded-lg bg-emerald-50 p-3 text-sm font-semibold text-emerald-800">{success}</div> : null}
+        {error ? <div className="flex items-start gap-2 rounded-lg bg-danger-50 p-3 text-sm font-semibold text-danger-700"><AlertCircle size={16} className="mt-0.5 shrink-0" />{error}</div> : null}
+        {success ? <div className="rounded-lg bg-brand-50 p-3 text-sm font-semibold text-brand-800">{success}</div> : null}
 
-        <button className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-brand-green px-6 text-sm font-bold text-white hover:bg-brand-deep disabled:opacity-60 sm:w-fit" disabled={saving} type="submit">
+        <button className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-brand-600 px-6 text-sm font-bold text-white hover:bg-brand-700 disabled:opacity-60 sm:w-fit" disabled={saving} type="submit">
           <Save size={16} />
           {saving ? "Saving..." : "Save profile"}
         </button>

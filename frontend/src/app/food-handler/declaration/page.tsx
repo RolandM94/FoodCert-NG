@@ -104,28 +104,28 @@ export default function Page() {
   return (
     <PortalShell role="food_handler" title="Health Declaration" description="Save a draft, submit for doctor review, and track declaration corrections.">
       <div className="grid gap-5">
-        {loading ? <p className="rounded-lg border border-slate-200 bg-white p-4 text-sm font-semibold text-slate-600 shadow-sm">Loading declaration...</p> : null}
-        {error ? <div className="flex items-start gap-2 rounded-lg bg-rose-50 p-3 text-sm font-semibold text-rose-800"><AlertCircle size={16} />{error}</div> : null}
-        {success ? <div className="rounded-lg bg-emerald-50 p-3 text-sm font-semibold text-emerald-800">{success}</div> : null}
+        {loading ? <p className="rounded-lg border border-neutral-200 bg-white p-4 text-sm font-semibold text-neutral-600 shadow-sm">Loading declaration...</p> : null}
+        {error ? <div className="flex items-start gap-2 rounded-lg bg-danger-50 p-3 text-sm font-semibold text-danger-700"><AlertCircle size={16} />{error}</div> : null}
+        {success ? <div className="rounded-lg bg-brand-50 p-3 text-sm font-semibold text-brand-800">{success}</div> : null}
 
         <section className="grid gap-4 lg:grid-cols-[0.8fr_1.2fr]">
-          <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-            <h2 className="text-sm font-bold text-slate-950">Assessment</h2>
+          <div className="rounded-lg border border-neutral-200 bg-white p-5 shadow-sm">
+            <h2 className="text-sm font-bold text-neutral-900">Assessment</h2>
             {assessments.length ? (
-              <select className="mt-4 h-10 w-full rounded border border-slate-200 bg-white px-3 text-sm" value={selectedAssessment?.id || ""} onChange={(event) => setSelectedId(event.target.value)}>
+              <select className="mt-4 h-10 w-full rounded border border-neutral-200 bg-white px-3 text-sm" value={selectedAssessment?.id || ""} onChange={(event) => setSelectedId(event.target.value)}>
                 {assessments.map((assessment) => (
                   <option key={assessment.id} value={assessment.id}>{assessment.facility_name || "Medical facility"} · {assessment.status.replaceAll("_", " ")}</option>
                 ))}
               </select>
-            ) : <p className="mt-4 text-sm font-semibold text-slate-500">No assessment found.</p>}
+            ) : <p className="mt-4 text-sm font-semibold text-neutral-500">No assessment found.</p>}
 
             {selectedAssessment ? (
               <dl className="mt-4 grid gap-3 text-sm">
-                <div className="flex items-center justify-between gap-3"><dt className="text-slate-500">Workflow</dt><dd><AssessmentStatusBadge status={selectedAssessment.status} /></dd></div>
-                <div className="flex items-center justify-between gap-3"><dt className="text-slate-500">Declaration</dt><dd><StatusBadge status={selectedAssessment.declaration_status} /></dd></div>
-                <div className="flex items-center justify-between gap-3"><dt className="text-slate-500">Version</dt><dd className="font-bold text-slate-950">{declaration?.version || 1}</dd></div>
-                {declaration?.clarification_reason ? <div className="rounded bg-amber-50 p-3 text-xs font-semibold text-amber-900">{declaration.clarification_reason}</div> : null}
-                <Link className="inline-flex w-fit rounded border border-slate-200 px-3 py-2 text-sm font-bold text-slate-700" href={`/food-handler/assessments/${selectedAssessment.id}`}>Open assessment</Link>
+                <div className="flex items-center justify-between gap-3"><dt className="text-neutral-500">Workflow</dt><dd><AssessmentStatusBadge status={selectedAssessment.status} /></dd></div>
+                <div className="flex items-center justify-between gap-3"><dt className="text-neutral-500">Declaration</dt><dd><StatusBadge status={selectedAssessment.declaration_status} /></dd></div>
+                <div className="flex items-center justify-between gap-3"><dt className="text-neutral-500">Version</dt><dd className="font-bold text-neutral-900">{declaration?.version || 1}</dd></div>
+                {declaration?.clarification_reason ? <div className="rounded bg-warning-50 p-3 text-xs font-semibold text-amber-900">{declaration.clarification_reason}</div> : null}
+                <Link className="inline-flex w-fit rounded border border-neutral-200 px-3 py-2 text-sm font-bold text-neutral-700" href={`/food-handler/assessments/${selectedAssessment.id}`}>Open assessment</Link>
               </dl>
             ) : null}
           </div>

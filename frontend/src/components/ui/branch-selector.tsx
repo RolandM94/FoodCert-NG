@@ -16,14 +16,14 @@ export function BranchSelector({
 }) {
   if (branches.length === 0) {
     return (
-      <p className="text-xs text-slate-400">No branches available.</p>
+      <p className="text-xs text-neutral-400">No branches available.</p>
     );
   }
 
   if (restricted) {
     const branch = branches.find((b) => b.id === value);
     return (
-      <span className="inline-flex items-center gap-1.5 rounded bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-600">
+      <span className="inline-flex items-center gap-1.5 rounded bg-neutral-100 px-3 py-1.5 text-xs font-semibold text-neutral-600">
         <MapPin size={12} />
         {branch?.name ?? "Branch"}
       </span>
@@ -31,10 +31,10 @@ export function BranchSelector({
   }
 
   return (
-    <label className="flex items-center gap-2 text-sm font-semibold text-slate-700">
-      <MapPin size={14} className="text-slate-400" />
+    <label className="flex items-center gap-2 text-sm font-semibold text-neutral-700">
+      <MapPin size={14} className="text-neutral-400" />
       <select
-        className="h-9 rounded border border-slate-200 bg-white px-2 text-xs"
+        className="h-9 rounded border border-neutral-200 bg-white px-2 text-xs"
         value={value ?? ""}
         onChange={(e) => onChange(e.target.value || null)}
       >

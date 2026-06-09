@@ -25,10 +25,10 @@ export default function Page() {
     <PortalShell role="federal_admin" title="Federal finance" description="National aggregate finance monitoring for payments, settlements, subscriptions, refunds, and reconciliation.">
       <section className="grid gap-3 md:grid-cols-3 xl:grid-cols-5">
         {items.map(([label, amount, count]) => (
-          <div key={label} className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-            <div className="flex items-center gap-2 text-brand-deep"><Banknote size={16} /><p className="text-xs font-bold uppercase text-slate-500">{label}</p></div>
-            <p className="mt-2 text-xl font-bold text-slate-950">{label === "Open issues" ? Number(amount || 0) : money(amount)}</p>
-            <p className="mt-1 text-xs text-slate-500">{count || 0} records</p>
+          <div key={label} className="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm">
+            <div className="flex items-center gap-2 text-brand-700"><Banknote size={16} /><p className="text-xs font-bold uppercase text-neutral-500">{label}</p></div>
+            <p className="mt-2 text-xl font-bold text-neutral-900">{label === "Open issues" ? Number(amount || 0) : money(amount)}</p>
+            <p className="mt-1 text-xs text-neutral-500">{count || 0} records</p>
           </div>
         ))}
       </section>

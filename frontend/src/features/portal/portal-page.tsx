@@ -40,12 +40,12 @@ function EmptyState({
   icon?: typeof ClipboardCheck;
 }) {
   return (
-    <div className="rounded-lg border border-slate-200 bg-white p-8 text-center shadow-sm">
-      <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-lg bg-emerald-50 text-brand-deep">
+    <div className="rounded-lg border border-neutral-200 bg-white p-8 text-center shadow-sm">
+      <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-lg bg-brand-50 text-brand-700">
         <Icon size={22} />
       </div>
-      <h3 className="mt-4 text-sm font-bold text-slate-950">{title}</h3>
-      <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-slate-500">{detail}</p>
+      <h3 className="mt-4 text-sm font-bold text-neutral-900">{title}</h3>
+      <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-neutral-500">{detail}</p>
     </div>
   );
 }

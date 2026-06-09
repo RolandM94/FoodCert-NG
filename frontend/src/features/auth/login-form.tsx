@@ -33,28 +33,28 @@ export function LoginForm() {
   }
 
   return (
-    <form className="grid gap-4 rounded-lg border border-slate-200 bg-white p-5 shadow-sm" onSubmit={submit}>
-      <label className="grid gap-1 text-sm font-semibold text-slate-700">
+    <form className="grid gap-4 rounded-lg border border-neutral-200 bg-white p-5 shadow-sm" onSubmit={submit}>
+      <label className="grid gap-1 text-sm font-semibold text-neutral-700">
         Username
         <input
-          className="h-11 rounded border border-slate-200 bg-slate-50 px-3 outline-none ring-brand-green/20 focus:border-brand-green focus:ring-2"
+          className="h-11 rounded border border-neutral-200 bg-neutral-50 px-3 outline-none ring-brand-600/20 focus:border-brand-600 focus:ring-2"
           onChange={(event) => setUsername(event.target.value)}
           required
           value={username}
         />
       </label>
-      <label className="grid gap-1 text-sm font-semibold text-slate-700">
+      <label className="grid gap-1 text-sm font-semibold text-neutral-700">
         Password
         <input
-          className="h-11 rounded border border-slate-200 bg-slate-50 px-3 outline-none ring-brand-green/20 focus:border-brand-green focus:ring-2"
+          className="h-11 rounded border border-neutral-200 bg-neutral-50 px-3 outline-none ring-brand-600/20 focus:border-brand-600 focus:ring-2"
           onChange={(event) => setPassword(event.target.value)}
           required
           type="password"
           value={password}
         />
       </label>
-      {error ? <p className="rounded bg-rose-50 p-3 text-sm font-semibold text-rose-800">{error}</p> : null}
-      <button className="inline-flex h-11 items-center justify-center gap-2 rounded bg-brand-green px-4 text-sm font-bold text-white disabled:opacity-60" disabled={loading} type="submit">
+      {error ? <p className="rounded bg-danger-50 p-3 text-sm font-semibold text-danger-700">{error}</p> : null}
+      <button className="inline-flex h-11 items-center justify-center gap-2 rounded bg-brand-600 px-4 text-sm font-bold text-white disabled:opacity-60" disabled={loading} type="submit">
         <LogIn aria-hidden="true" size={18} />
         {loading ? "Signing in..." : "Sign in"}
       </button>

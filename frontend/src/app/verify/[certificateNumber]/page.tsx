@@ -24,7 +24,7 @@ export default async function VerifyCertificatePage({ params }: VerifyPageProps)
   const certificate = await fetchCertificate(certificateNumber);
 
   return (
-    <main className="min-h-screen bg-[#f7faf8] px-4 py-8 text-slate-950 sm:px-6 lg:px-8">
+    <main className="min-h-screen bg-neutral-50 px-4 py-8 text-neutral-900 sm:px-6 lg:px-8">
       <PublicVerificationResult certificate={certificate} />
     </main>
   );

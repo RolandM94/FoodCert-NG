@@ -25,10 +25,10 @@ export default function Page() {
   return (
     <PortalShell role="federal_admin" title="Facilities" description="Review national facility accreditation coverage and assessment readiness.">
       <div className="grid gap-5">
-        <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+        <section className="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm">
           <div className="grid gap-3 md:grid-cols-[1fr_220px_auto]">
-            <input className="h-10 rounded border border-slate-200 bg-slate-50 px-3 text-sm" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search facility or license number" />
-            <select className="h-10 rounded border border-slate-200 bg-white px-3 text-sm" value={status} onChange={(event) => setStatus(event.target.value)}>
+            <input className="h-10 rounded border border-neutral-200 bg-neutral-50 px-3 text-sm" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search facility or license number" />
+            <select className="h-10 rounded border border-neutral-200 bg-white px-3 text-sm" value={status} onChange={(event) => setStatus(event.target.value)}>
               <option value="">All statuses</option>
               <option value="approved">Approved</option>
               <option value="submitted">Submitted</option>
@@ -37,7 +37,7 @@ export default function Page() {
               <option value="expired">Expired</option>
             </select>
             <button
-              className="inline-flex h-10 items-center justify-center gap-2 rounded bg-brand-deep px-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-300"
+              className="inline-flex h-10 items-center justify-center gap-2 rounded bg-brand-700 px-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-neutral-300"
               disabled={!rows.length}
               onClick={() => downloadCsv("federal-facilities.csv", rows, [
                 { header: "Facility", value: (row) => row.facility_name },
@@ -57,10 +57,10 @@ export default function Page() {
         </section>
 
         <section className="grid gap-3">
-          <div className="flex items-center gap-2"><Building2 className="text-brand-deep" size={18} /><h2 className="text-base font-bold text-slate-950">National Facility Registry</h2></div>
+          <div className="flex items-center gap-2"><Building2 className="text-brand-700" size={18} /><h2 className="text-base font-bold text-neutral-900">National Facility Registry</h2></div>
           <DataTable<FederalFacilityRegistryItem>
             columns={[
-              { key: "facility", header: "Facility", render: (row) => <div><p className="font-bold text-slate-950">{row.facility_name}</p><p className="text-xs text-slate-500">{row.license_number}</p></div> },
+              { key: "facility", header: "Facility", render: (row) => <div><p className="font-bold text-neutral-900">{row.facility_name}</p><p className="text-xs text-neutral-500">{row.license_number}</p></div> },
               { key: "state", header: "State", render: (row) => row.state_name || "Not set" },
               { key: "type", header: "Type", render: (row) => row.facility_type.replaceAll("_", " ") },
               { key: "ready", header: "Ready", render: (row) => row.can_conduct_assessments ? "Yes" : "No" },

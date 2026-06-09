@@ -7,7 +7,7 @@ function formatStatus(status: string): string {
 export function OrganizationStatusBadge({ status }: { status?: string | null }) {
   if (!status) return null;
 
-  const colorClass = ORG_STATUS_COLORS[status] ?? "bg-slate-50 text-slate-600 ring-slate-200";
+  const colorClass = ORG_STATUS_COLORS[status] ?? "bg-neutral-50 text-neutral-600 ring-neutral-200";
 
   return (
     <span

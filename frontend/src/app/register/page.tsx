@@ -156,18 +156,18 @@ export default function RegisterPage() {
 
   if (step === "done") {
     return (
-      <main className="min-h-screen bg-[#f7faf8] flex items-center justify-center p-4">
-        <div className="flex flex-col items-center gap-4 rounded-2xl border border-emerald-200 bg-white p-10 shadow-lg max-w-md text-center">
-          <div className="flex h-16 w-16 items-center justify-center rounded-full bg-emerald-50 text-brand-green">
+      <main className="min-h-screen bg-neutral-50 flex items-center justify-center p-4">
+        <div className="flex flex-col items-center gap-4 rounded-2xl border border-brand-200 bg-white p-10 shadow-lg max-w-md text-center">
+          <div className="flex h-16 w-16 items-center justify-center rounded-full bg-brand-50 text-brand-600">
             <CheckCircle2 size={36} />
           </div>
-          <h1 className="text-xl font-bold text-slate-950">Business registered!</h1>
-          <p className="text-sm text-slate-600">
+          <h1 className="text-xl font-bold text-neutral-900">Business registered!</h1>
+          <p className="text-sm text-neutral-600">
             Your employer account is ready. You can now manage branches, invite food handlers, and monitor compliance.
           </p>
           <Link
             href="/employer/dashboard"
-            className="inline-flex h-11 items-center gap-2 rounded-lg bg-brand-green px-6 text-sm font-bold text-white hover:bg-brand-deep"
+            className="inline-flex h-11 items-center gap-2 rounded-lg bg-brand-600 px-6 text-sm font-bold text-white hover:bg-brand-700"
           >
             Go to Dashboard
             <ArrowRight size={16} />
@@ -179,61 +179,61 @@ export default function RegisterPage() {
 
   if (step === "choice") {
     return (
-      <main className="min-h-screen bg-[#f7faf8] flex items-center justify-center p-4">
+      <main className="min-h-screen bg-neutral-50 flex items-center justify-center p-4">
         <div className="w-full max-w-lg space-y-6">
           <div className="text-center">
             <div className="flex items-center justify-center gap-3 mb-4">
-              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-brand-green text-white">
+              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-brand-600 text-white">
                 <ShieldCheck size={22} />
               </div>
-              <p className="text-sm font-bold text-slate-950">FoodCert NG</p>
+              <p className="text-sm font-bold text-neutral-900">FoodCert NG</p>
             </div>
-            <h1 className="text-2xl font-bold tracking-tight text-slate-950">Create your account</h1>
-            <p className="mt-2 text-sm text-slate-600">Select your account type to get started.</p>
+            <h1 className="text-2xl font-bold tracking-tight text-neutral-900">Create your account</h1>
+            <p className="mt-2 text-sm text-neutral-600">Select your account type to get started.</p>
           </div>
 
           <button
             onClick={() => setStep("food_handler")}
-            className="w-full rounded-2xl border-2 border-emerald-100 bg-white p-6 text-left shadow-sm hover:border-emerald-300 hover:shadow-md transition-all"
+            className="w-full rounded-2xl border-2 border-brand-100 bg-white p-6 text-left shadow-sm hover:border-brand-300 hover:shadow-md transition-all"
           >
             <div className="flex items-start gap-4">
-              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-emerald-50 text-brand-deep">
+              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-brand-50 text-brand-700">
                 <UsersRound size={24} />
               </div>
               <div className="flex-1">
-                <p className="text-base font-bold text-slate-950">I am a Food Handler</p>
-                <p className="mt-1 text-sm text-slate-600">
+                <p className="text-base font-bold text-neutral-900">I am a Food Handler</p>
+                <p className="mt-1 text-sm text-neutral-600">
                   I need a medical fitness certificate to handle food. I will register, verify my identity, complete an assessment, and receive a QR-coded certificate.
                 </p>
               </div>
-              <ArrowRight size={20} className="mt-2 text-slate-300" />
+              <ArrowRight size={20} className="mt-2 text-neutral-300" />
             </div>
           </button>
 
           <button
             onClick={() => setStep("employer_account")}
-            className="w-full rounded-2xl border-2 border-emerald-100 bg-white p-6 text-left shadow-sm hover:border-emerald-300 hover:shadow-md transition-all"
+            className="w-full rounded-2xl border-2 border-brand-100 bg-white p-6 text-left shadow-sm hover:border-brand-300 hover:shadow-md transition-all"
           >
             <div className="flex items-start gap-4">
-              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-emerald-50 text-brand-deep">
+              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-brand-50 text-brand-700">
                 <Building2 size={24} />
               </div>
               <div className="flex-1">
-                <p className="text-base font-bold text-slate-950">I am an Employer / Food Business</p>
-                <p className="mt-1 text-sm text-slate-600">
+                <p className="text-base font-bold text-neutral-900">I am an Employer / Food Business</p>
+                <p className="mt-1 text-sm text-neutral-600">
                   I run a food business and need to manage my staff&apos;s certifications, compliance, branches, and inspections.
                 </p>
               </div>
-              <ArrowRight size={20} className="mt-2 text-slate-300" />
+              <ArrowRight size={20} className="mt-2 text-neutral-300" />
             </div>
           </button>
 
-          <p className="text-center text-sm text-slate-500">
+          <p className="text-center text-sm text-neutral-500">
             Already have an account?{" "}
-            <Link href="/login" className="font-semibold text-brand-deep hover:underline">Sign in</Link>
+            <Link href="/login" className="font-semibold text-brand-700 hover:underline">Sign in</Link>
           </p>
 
-          <p className="text-center text-xs text-slate-400">
+          <p className="text-center text-xs text-neutral-400">
             Medical facilities, state ministries, and federal agencies are invited by an administrator.
           </p>
         </div>
@@ -245,24 +245,24 @@ export default function RegisterPage() {
   const isEmployerAccount = step === "employer_account";
 
   return (
-    <main className="min-h-screen bg-[#f7faf8] flex items-center justify-center p-4">
-      <div className="w-full max-w-5xl grid gap-0 rounded-2xl border border-slate-200 bg-white shadow-lg overflow-hidden lg:grid-cols-[0.85fr_1fr]">
+    <main className="min-h-screen bg-neutral-50 flex items-center justify-center p-4">
+      <div className="w-full max-w-5xl grid gap-0 rounded-2xl border border-neutral-200 bg-white shadow-lg overflow-hidden lg:grid-cols-[0.85fr_1fr]">
         {/* Left panel */}
-        <div className="hidden bg-slate-50 p-8 lg:flex lg:flex-col lg:justify-center">
+        <div className="hidden bg-neutral-50 p-8 lg:flex lg:flex-col lg:justify-center">
           <div className="mb-8">
             <div className="flex items-center gap-3 mb-4">
-              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-brand-green text-white">
+              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-brand-600 text-white">
                 <ShieldCheck size={22} />
               </div>
               <div>
-                <p className="text-sm font-bold text-slate-950">FoodCert NG</p>
-                <p className="text-xs text-slate-500">National certification platform</p>
+                <p className="text-sm font-bold text-neutral-900">FoodCert NG</p>
+                <p className="text-xs text-neutral-500">National certification platform</p>
               </div>
             </div>
-            <h1 className="text-xl font-bold text-slate-950">
+            <h1 className="text-xl font-bold text-neutral-900">
               {isEmployerAccount ? "Register your business" : "Become a certified food handler"}
             </h1>
-            <p className="mt-2 text-sm text-slate-600">
+            <p className="mt-2 text-sm text-neutral-600">
               {isEmployerAccount
                 ? "Step 1 of 2: Create your employer account. You'll set up your business profile next."
                 : "Create your profile, verify your identity, complete a medical assessment, and receive a QR-coded fitness certificate."}
@@ -271,14 +271,14 @@ export default function RegisterPage() {
 
           {isEmployerAccount && (
             <div className="flex items-center gap-3 text-sm">
-              <span className="flex h-7 w-7 items-center justify-center rounded-full bg-brand-green text-xs font-bold text-white">1</span>
-              <span className="font-semibold text-slate-800">Create account</span>
-              <ArrowRight size={14} className="text-slate-300" />
-              <span className="flex h-7 w-7 items-center justify-center rounded-full bg-slate-200 text-xs font-bold text-slate-500">2</span>
-              <span className="text-slate-400">Business profile</span>
-              <ArrowRight size={14} className="text-slate-300" />
-              <span className="flex h-7 w-7 items-center justify-center rounded-full bg-slate-200 text-xs font-bold text-slate-500">3</span>
-              <span className="text-slate-400">Subscription</span>
+              <span className="flex h-7 w-7 items-center justify-center rounded-full bg-brand-600 text-xs font-bold text-white">1</span>
+              <span className="font-semibold text-neutral-800">Create account</span>
+              <ArrowRight size={14} className="text-neutral-300" />
+              <span className="flex h-7 w-7 items-center justify-center rounded-full bg-neutral-200 text-xs font-bold text-neutral-500">2</span>
+              <span className="text-neutral-400">Business profile</span>
+              <ArrowRight size={14} className="text-neutral-300" />
+              <span className="flex h-7 w-7 items-center justify-center rounded-full bg-neutral-200 text-xs font-bold text-neutral-500">3</span>
+              <span className="text-neutral-400">Subscription</span>
             </div>
           )}
 
@@ -290,9 +290,9 @@ export default function RegisterPage() {
                 { step: 3, label: "Book a medical assessment" },
                 { step: 4, label: "Receive your QR certificate" },
               ].map((s) => (
-                <div key={s.step} className="flex items-center gap-3 rounded-lg border border-slate-200 bg-white p-3">
-                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-brand-green text-xs font-bold text-white">{s.step}</div>
-                  <span className="text-sm font-medium text-slate-700">{s.label}</span>
+                <div key={s.step} className="flex items-center gap-3 rounded-lg border border-neutral-200 bg-white p-3">
+                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-brand-600 text-xs font-bold text-white">{s.step}</div>
+                  <span className="text-sm font-medium text-neutral-700">{s.label}</span>
                 </div>
               ))}
             </div>
@@ -302,149 +302,149 @@ export default function RegisterPage() {
         {/* Right panel — form */}
         <div className="flex flex-col justify-center p-8 sm:p-10">
           <div className="mb-6 lg:hidden text-center">
-            <h1 className="text-xl font-bold text-slate-950">
+            <h1 className="text-xl font-bold text-neutral-900">
               {isEmployerAccount ? "Create employer account" : "Create account"}
             </h1>
           </div>
 
           {isEmployerAccount ? (
             <form className="grid gap-4" onSubmit={handleEmployerAccountSubmit}>
-              <div className="flex items-center gap-2 mb-2 rounded-lg bg-emerald-50 px-4 py-3">
-                <Building2 size={16} className="text-brand-deep shrink-0" />
-                <span className="text-sm font-semibold text-brand-deep">Registering as: Employer</span>
+              <div className="flex items-center gap-2 mb-2 rounded-lg bg-brand-50 px-4 py-3">
+                <Building2 size={16} className="text-brand-700 shrink-0" />
+                <span className="text-sm font-semibold text-brand-700">Registering as: Employer</span>
               </div>
               <div className="grid gap-4 sm:grid-cols-2">
-                <label className="grid gap-1.5 text-sm font-semibold text-slate-700">
+                <label className="grid gap-1.5 text-sm font-semibold text-neutral-700">
                   First name
-                  <input className="h-11 rounded-lg border border-slate-200 bg-slate-50 px-3" required autoFocus value={account.first_name} onChange={(e) => updateAccount("first_name", e.target.value)} />
+                  <input className="h-11 rounded-lg border border-neutral-200 bg-neutral-50 px-3" required autoFocus value={account.first_name} onChange={(e) => updateAccount("first_name", e.target.value)} />
                 </label>
-                <label className="grid gap-1.5 text-sm font-semibold text-slate-700">
+                <label className="grid gap-1.5 text-sm font-semibold text-neutral-700">
                   Last name
-                  <input className="h-11 rounded-lg border border-slate-200 bg-slate-50 px-3" required value={account.last_name} onChange={(e) => updateAccount("last_name", e.target.value)} />
+                  <input className="h-11 rounded-lg border border-neutral-200 bg-neutral-50 px-3" required value={account.last_name} onChange={(e) => updateAccount("last_name", e.target.value)} />
                 </label>
-                <label className="grid gap-1.5 text-sm font-semibold text-slate-700">
-                  Username <span className="text-red-500">*</span>
-                  <input className="h-11 rounded-lg border border-slate-200 bg-slate-50 px-3" required value={account.username} onChange={(e) => updateAccount("username", e.target.value)} />
+                <label className="grid gap-1.5 text-sm font-semibold text-neutral-700">
+                  Username <span className="text-danger-500">*</span>
+                  <input className="h-11 rounded-lg border border-neutral-200 bg-neutral-50 px-3" required value={account.username} onChange={(e) => updateAccount("username", e.target.value)} />
                 </label>
-                <label className="grid gap-1.5 text-sm font-semibold text-slate-700">
-                  Email <span className="text-red-500">*</span>
-                  <input className="h-11 rounded-lg border border-slate-200 bg-slate-50 px-3" required type="email" value={account.email} onChange={(e) => updateAccount("email", e.target.value)} />
+                <label className="grid gap-1.5 text-sm font-semibold text-neutral-700">
+                  Email <span className="text-danger-500">*</span>
+                  <input className="h-11 rounded-lg border border-neutral-200 bg-neutral-50 px-3" required type="email" value={account.email} onChange={(e) => updateAccount("email", e.target.value)} />
                 </label>
-                <label className="grid gap-1.5 text-sm font-semibold text-slate-700">
-                  Phone <span className="text-red-500">*</span>
-                  <input className="h-11 rounded-lg border border-slate-200 bg-slate-50 px-3" required type="tel" value={account.phone} onChange={(e) => updateAccount("phone", e.target.value)} placeholder="08030000000" />
+                <label className="grid gap-1.5 text-sm font-semibold text-neutral-700">
+                  Phone <span className="text-danger-500">*</span>
+                  <input className="h-11 rounded-lg border border-neutral-200 bg-neutral-50 px-3" required type="tel" value={account.phone} onChange={(e) => updateAccount("phone", e.target.value)} placeholder="08030000000" />
                 </label>
-                <label className="grid gap-1.5 text-sm font-semibold text-slate-700">
-                  Password <span className="text-red-500">*</span>
-                  <input className="h-11 rounded-lg border border-slate-200 bg-slate-50 px-3" required type="password" value={account.password} onChange={(e) => updateAccount("password", e.target.value)} placeholder="Min 8 characters" />
+                <label className="grid gap-1.5 text-sm font-semibold text-neutral-700">
+                  Password <span className="text-danger-500">*</span>
+                  <input className="h-11 rounded-lg border border-neutral-200 bg-neutral-50 px-3" required type="password" value={account.password} onChange={(e) => updateAccount("password", e.target.value)} placeholder="Min 8 characters" />
                 </label>
               </div>
-              {error && <div className="flex items-start gap-2 rounded-lg bg-rose-50 p-3 text-sm font-semibold text-rose-800"><AlertCircle size={16} className="mt-0.5 shrink-0" /><span>{error}</span></div>}
-              <button className="mt-2 inline-flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-brand-green text-sm font-bold text-white hover:bg-brand-deep disabled:opacity-60" disabled={loading} type="submit">
+              {error && <div className="flex items-start gap-2 rounded-lg bg-danger-50 p-3 text-sm font-semibold text-danger-700"><AlertCircle size={16} className="mt-0.5 shrink-0" /><span>{error}</span></div>}
+              <button className="mt-2 inline-flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-brand-600 text-sm font-bold text-white hover:bg-brand-700 disabled:opacity-60" disabled={loading} type="submit">
                 {loading ? "Creating..." : "Continue to Business Profile"}
                 {!loading && <ArrowRight size={16} />}
               </button>
-              <p className="text-center text-sm text-slate-500">
-                Already registered? <Link href="/login" className="font-semibold text-brand-deep hover:underline">Sign in</Link>
+              <p className="text-center text-sm text-neutral-500">
+                Already registered? <Link href="/login" className="font-semibold text-brand-700 hover:underline">Sign in</Link>
               </p>
             </form>
           ) : step === "employer_profile" ? (
             // Step 2: Business Profile
             <form className="grid gap-4" onSubmit={handleEmployerProfileSubmit}>
-              <div className="flex items-center gap-2 mb-2 rounded-lg bg-blue-50 px-4 py-3">
+              <div className="flex items-center gap-2 mb-2 rounded-lg bg-info-50 px-4 py-3">
                 <Building2 size={16} className="text-blue-600 shrink-0" />
-                <span className="text-sm font-semibold text-blue-700">Step 2: Business Profile</span>
+                <span className="text-sm font-semibold text-info-700">Step 2: Business Profile</span>
               </div>
-              <label className="grid gap-1.5 text-sm font-semibold text-slate-700">
-                Business name <span className="text-red-500">*</span>
-                <input className="h-11 rounded-lg border border-slate-200 bg-slate-50 px-3" required autoFocus value={business.business_name} onChange={(e) => updateBusiness("business_name", e.target.value)} />
+              <label className="grid gap-1.5 text-sm font-semibold text-neutral-700">
+                Business name <span className="text-danger-500">*</span>
+                <input className="h-11 rounded-lg border border-neutral-200 bg-neutral-50 px-3" required autoFocus value={business.business_name} onChange={(e) => updateBusiness("business_name", e.target.value)} />
               </label>
               <div className="grid gap-4 sm:grid-cols-2">
-                <label className="grid gap-1.5 text-sm font-semibold text-slate-700">
+                <label className="grid gap-1.5 text-sm font-semibold text-neutral-700">
                   Registration number
-                  <input className="h-11 rounded-lg border border-slate-200 bg-slate-50 px-3" value={business.business_registration_number} onChange={(e) => updateBusiness("business_registration_number", e.target.value)} placeholder="Optional" />
+                  <input className="h-11 rounded-lg border border-neutral-200 bg-neutral-50 px-3" value={business.business_registration_number} onChange={(e) => updateBusiness("business_registration_number", e.target.value)} placeholder="Optional" />
                 </label>
-                <label className="grid gap-1.5 text-sm font-semibold text-slate-700">
-                  Category <span className="text-red-500">*</span>
-                  <select className="h-11 rounded-lg border border-slate-200 bg-white px-3" value={business.establishment_category} onChange={(e) => updateBusiness("establishment_category", e.target.value)}>
+                <label className="grid gap-1.5 text-sm font-semibold text-neutral-700">
+                  Category <span className="text-danger-500">*</span>
+                  <select className="h-11 rounded-lg border border-neutral-200 bg-white px-3" value={business.establishment_category} onChange={(e) => updateBusiness("establishment_category", e.target.value)}>
                     {establishmentCategories.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
                   </select>
                 </label>
               </div>
-              <label className="grid gap-1.5 text-sm font-semibold text-slate-700">
-                Address <span className="text-red-500">*</span>
-                <input className="h-11 rounded-lg border border-slate-200 bg-slate-50 px-3" required value={business.address} onChange={(e) => updateBusiness("address", e.target.value)} />
+              <label className="grid gap-1.5 text-sm font-semibold text-neutral-700">
+                Address <span className="text-danger-500">*</span>
+                <input className="h-11 rounded-lg border border-neutral-200 bg-neutral-50 px-3" required value={business.address} onChange={(e) => updateBusiness("address", e.target.value)} />
               </label>
               <div className="grid gap-4 sm:grid-cols-2">
-                <label className="grid gap-1.5 text-sm font-semibold text-slate-700">
+                <label className="grid gap-1.5 text-sm font-semibold text-neutral-700">
                   Contact person
-                  <input className="h-11 rounded-lg border border-slate-200 bg-slate-50 px-3" value={business.contact_person_name} onChange={(e) => updateBusiness("contact_person_name", e.target.value)} />
+                  <input className="h-11 rounded-lg border border-neutral-200 bg-neutral-50 px-3" value={business.contact_person_name} onChange={(e) => updateBusiness("contact_person_name", e.target.value)} />
                 </label>
-                <label className="grid gap-1.5 text-sm font-semibold text-slate-700">
+                <label className="grid gap-1.5 text-sm font-semibold text-neutral-700">
                   Contact phone
-                  <input className="h-11 rounded-lg border border-slate-200 bg-slate-50 px-3" value={business.contact_person_phone} onChange={(e) => updateBusiness("contact_person_phone", e.target.value)} />
+                  <input className="h-11 rounded-lg border border-neutral-200 bg-neutral-50 px-3" value={business.contact_person_phone} onChange={(e) => updateBusiness("contact_person_phone", e.target.value)} />
                 </label>
-                <label className="grid gap-1.5 text-sm font-semibold text-slate-700">
+                <label className="grid gap-1.5 text-sm font-semibold text-neutral-700">
                   Contact email
-                  <input className="h-11 rounded-lg border border-slate-200 bg-slate-50 px-3" type="email" value={business.contact_person_email} onChange={(e) => updateBusiness("contact_person_email", e.target.value)} />
+                  <input className="h-11 rounded-lg border border-neutral-200 bg-neutral-50 px-3" type="email" value={business.contact_person_email} onChange={(e) => updateBusiness("contact_person_email", e.target.value)} />
                 </label>
-                <label className="grid gap-1.5 text-sm font-semibold text-slate-700">
+                <label className="grid gap-1.5 text-sm font-semibold text-neutral-700">
                   Est. food handlers
-                  <input className="h-11 rounded-lg border border-slate-200 bg-slate-50 px-3" type="number" min={0} value={business.number_of_food_handlers} onChange={(e) => updateBusiness("number_of_food_handlers", e.target.value)} />
+                  <input className="h-11 rounded-lg border border-neutral-200 bg-neutral-50 px-3" type="number" min={0} value={business.number_of_food_handlers} onChange={(e) => updateBusiness("number_of_food_handlers", e.target.value)} />
                 </label>
               </div>
-              {error && <div className="flex items-start gap-2 rounded-lg bg-rose-50 p-3 text-sm font-semibold text-rose-800"><AlertCircle size={16} className="mt-0.5 shrink-0" /><span>{error}</span></div>}
-              <button className="mt-2 inline-flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-brand-green text-sm font-bold text-white hover:bg-brand-deep disabled:opacity-60" disabled={loading} type="submit">
+              {error && <div className="flex items-start gap-2 rounded-lg bg-danger-50 p-3 text-sm font-semibold text-danger-700"><AlertCircle size={16} className="mt-0.5 shrink-0" /><span>{error}</span></div>}
+              <button className="mt-2 inline-flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-brand-600 text-sm font-bold text-white hover:bg-brand-700 disabled:opacity-60" disabled={loading} type="submit">
                 {loading ? "Creating..." : "Complete Registration"}
                 {!loading && <CheckCircle2 size={16} />}
               </button>
-              <p className="text-center text-xs text-slate-400">Next step: Select a subscription plan to activate all features.</p>
+              <p className="text-center text-xs text-neutral-400">Next step: Select a subscription plan to activate all features.</p>
             </form>
           ) : (
             // Step: Food Handler registration
             <form className="grid gap-4" onSubmit={handleFoodHandlerSubmit}>
-              <div className="flex items-center gap-2 mb-2 rounded-lg bg-emerald-50 px-4 py-3">
-                <UsersRound size={16} className="text-brand-deep shrink-0" />
-                <span className="text-sm font-semibold text-brand-deep">Registering as: Food Handler</span>
+              <div className="flex items-center gap-2 mb-2 rounded-lg bg-brand-50 px-4 py-3">
+                <UsersRound size={16} className="text-brand-700 shrink-0" />
+                <span className="text-sm font-semibold text-brand-700">Registering as: Food Handler</span>
               </div>
               <div className="grid gap-4 sm:grid-cols-2">
-                <label className="grid gap-1.5 text-sm font-semibold text-slate-700">
+                <label className="grid gap-1.5 text-sm font-semibold text-neutral-700">
                   First name
-                  <input className="h-11 rounded-lg border border-slate-200 bg-slate-50 px-3" autoFocus value={account.first_name} onChange={(e) => updateAccount("first_name", e.target.value)} autoComplete="given-name" />
+                  <input className="h-11 rounded-lg border border-neutral-200 bg-neutral-50 px-3" autoFocus value={account.first_name} onChange={(e) => updateAccount("first_name", e.target.value)} autoComplete="given-name" />
                 </label>
-                <label className="grid gap-1.5 text-sm font-semibold text-slate-700">
+                <label className="grid gap-1.5 text-sm font-semibold text-neutral-700">
                   Last name
-                  <input className="h-11 rounded-lg border border-slate-200 bg-slate-50 px-3" value={account.last_name} onChange={(e) => updateAccount("last_name", e.target.value)} autoComplete="family-name" />
+                  <input className="h-11 rounded-lg border border-neutral-200 bg-neutral-50 px-3" value={account.last_name} onChange={(e) => updateAccount("last_name", e.target.value)} autoComplete="family-name" />
                 </label>
-                <label className="grid gap-1.5 text-sm font-semibold text-slate-700">
-                  Username <span className="text-red-500">*</span>
-                  <input className="h-11 rounded-lg border border-slate-200 bg-slate-50 px-3" required value={account.username} onChange={(e) => updateAccount("username", e.target.value)} autoComplete="username" />
+                <label className="grid gap-1.5 text-sm font-semibold text-neutral-700">
+                  Username <span className="text-danger-500">*</span>
+                  <input className="h-11 rounded-lg border border-neutral-200 bg-neutral-50 px-3" required value={account.username} onChange={(e) => updateAccount("username", e.target.value)} autoComplete="username" />
                 </label>
-                <label className="grid gap-1.5 text-sm font-semibold text-slate-700">
-                  Email <span className="text-red-500">*</span>
-                  <input className="h-11 rounded-lg border border-slate-200 bg-slate-50 px-3" required type="email" value={account.email} onChange={(e) => updateAccount("email", e.target.value)} autoComplete="email" />
+                <label className="grid gap-1.5 text-sm font-semibold text-neutral-700">
+                  Email <span className="text-danger-500">*</span>
+                  <input className="h-11 rounded-lg border border-neutral-200 bg-neutral-50 px-3" required type="email" value={account.email} onChange={(e) => updateAccount("email", e.target.value)} autoComplete="email" />
                 </label>
-                <label className="grid gap-1.5 text-sm font-semibold text-slate-700">
-                  Phone <span className="text-red-500">*</span>
-                  <input className="h-11 rounded-lg border border-slate-200 bg-slate-50 px-3" required type="tel" value={account.phone} onChange={(e) => updateAccount("phone", e.target.value)} autoComplete="tel" placeholder="08030000000" />
+                <label className="grid gap-1.5 text-sm font-semibold text-neutral-700">
+                  Phone <span className="text-danger-500">*</span>
+                  <input className="h-11 rounded-lg border border-neutral-200 bg-neutral-50 px-3" required type="tel" value={account.phone} onChange={(e) => updateAccount("phone", e.target.value)} autoComplete="tel" placeholder="08030000000" />
                 </label>
-                <label className="grid gap-1.5 text-sm font-semibold text-slate-700">
-                  Password <span className="text-red-500">*</span>
-                  <input className="h-11 rounded-lg border border-slate-200 bg-slate-50 px-3" required type="password" value={account.password} onChange={(e) => updateAccount("password", e.target.value)} autoComplete="new-password" placeholder="Min 8 characters" />
+                <label className="grid gap-1.5 text-sm font-semibold text-neutral-700">
+                  Password <span className="text-danger-500">*</span>
+                  <input className="h-11 rounded-lg border border-neutral-200 bg-neutral-50 px-3" required type="password" value={account.password} onChange={(e) => updateAccount("password", e.target.value)} autoComplete="new-password" placeholder="Min 8 characters" />
                 </label>
               </div>
-              {error && <div className="flex items-start gap-2 rounded-lg bg-rose-50 p-3 text-sm font-semibold text-rose-800"><AlertCircle size={16} className="mt-0.5 shrink-0" /><span>{error}</span></div>}
-              <button className="mt-2 inline-flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-brand-green text-sm font-bold text-white hover:bg-brand-deep disabled:opacity-60" disabled={loading} type="submit">
+              {error && <div className="flex items-start gap-2 rounded-lg bg-danger-50 p-3 text-sm font-semibold text-danger-700"><AlertCircle size={16} className="mt-0.5 shrink-0" /><span>{error}</span></div>}
+              <button className="mt-2 inline-flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-brand-600 text-sm font-bold text-white hover:bg-brand-700 disabled:opacity-60" disabled={loading} type="submit">
                 <UserPlus size={18} />
                 {loading ? "Creating..." : "Create account"}
               </button>
-              <p className="text-center text-sm text-slate-500">
-                Already registered? <Link href="/login" className="font-semibold text-brand-deep hover:underline">Sign in</Link>
+              <p className="text-center text-sm text-neutral-500">
+                Already registered? <Link href="/login" className="font-semibold text-brand-700 hover:underline">Sign in</Link>
               </p>
-              <div className="rounded-lg border border-amber-100 bg-amber-50 p-3">
+              <div className="rounded-lg border border-warning-100 bg-warning-50 p-3">
                 <div className="flex items-start gap-2">
                   <AlertCircle size={14} className="mt-0.5 shrink-0 text-amber-600" />
-                  <p className="text-xs text-amber-700">
+                  <p className="text-xs text-warning-700">
                     Not a food handler? Employers, facilities, and government staff are invited by an admin.{" "}
                     <Link href="/login" className="font-semibold underline">Sign in here</Link>.
                   </p>

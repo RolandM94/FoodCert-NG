@@ -48,7 +48,7 @@ function UnitNode({
     <li>
       <div
         className={`flex items-center gap-1 rounded px-2 py-1.5 cursor-pointer group ${
-          isSelected ? "bg-emerald-50 text-brand-deep ring-1 ring-emerald-200" : "hover:bg-slate-50"
+          isSelected ? "bg-brand-50 text-brand-700 ring-1 ring-brand-200" : "hover:bg-neutral-50"
         } ${isInactive ? "opacity-60" : ""}`}
         style={{ marginLeft: `${depth * 20}px` }}
         onClick={() => onSelect(unit)}
@@ -56,7 +56,7 @@ function UnitNode({
         onMouseLeave={() => setShowActions(false)}
       >
         <button
-          className={`flex h-5 w-5 items-center justify-center rounded ${hasChildren ? "text-slate-500" : "text-slate-300"}`}
+          className={`flex h-5 w-5 items-center justify-center rounded ${hasChildren ? "text-neutral-500" : "text-neutral-300"}`}
           onClick={(e) => {
             e.stopPropagation();
             setExpanded(!expanded);
@@ -66,14 +66,14 @@ function UnitNode({
           {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
         </button>
         <span className="ml-1 flex-1 truncate text-sm font-medium">{unit.name}</span>
-        <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold text-slate-500 uppercase">
+        <span className="rounded bg-neutral-100 px-1.5 py-0.5 text-[10px] font-semibold text-neutral-500 uppercase">
           {UNIT_TYPE_LABELS[unit.unit_type] ?? unit.unit_type}
         </span>
         {showActions && (
           <div className="flex items-center gap-0.5">
             {onInvite && (
               <button
-                className="rounded p-1 hover:bg-emerald-100 text-slate-400 hover:text-brand-green"
+                className="rounded p-1 hover:bg-brand-100 text-neutral-400 hover:text-brand-600"
                 title="Invite user to this unit"
                 onClick={(e) => {
                   e.stopPropagation();
@@ -85,7 +85,7 @@ function UnitNode({
             )}
             {onEdit && (
               <button
-                className="rounded p-1 hover:bg-slate-100 text-slate-400 hover:text-slate-700"
+                className="rounded p-1 hover:bg-neutral-100 text-neutral-400 hover:text-neutral-700"
                 title="Edit unit"
                 onClick={(e) => {
                   e.stopPropagation();
@@ -97,7 +97,7 @@ function UnitNode({
             )}
             {onDelete && (
               <button
-                className="rounded p-1 hover:bg-red-50 text-slate-400 hover:text-red-600"
+                className="rounded p-1 hover:bg-danger-50 text-neutral-400 hover:text-danger-500"
                 title="Deactivate unit"
                 onClick={(e) => {
                   e.stopPropagation();
@@ -151,8 +151,8 @@ export function OrganizationUnitTree({
   if (units.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center gap-3 py-10 text-center">
-        <p className="text-sm font-semibold text-slate-500">No units created yet</p>
-        <p className="text-xs text-slate-400 max-w-xs">
+        <p className="text-sm font-semibold text-neutral-500">No units created yet</p>
+        <p className="text-xs text-neutral-400 max-w-xs">
           Create your first unit to organize users, branches, departments, or offices.
         </p>
       </div>
@@ -160,7 +160,7 @@ export function OrganizationUnitTree({
   }
 
   return (
-    <nav className="max-h-[60vh] overflow-y-auto rounded-lg border border-slate-200 bg-white p-2">
+    <nav className="max-h-[60vh] overflow-y-auto rounded-lg border border-neutral-200 bg-white p-2">
       <ul className="space-y-0.5">
         {roots.map((root) => (
           <UnitNode

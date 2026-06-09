@@ -7,10 +7,10 @@ export function Stepper({ steps, current = 0 }: { steps: string[]; current?: num
         const done = index < current;
         const active = index === current;
         return (
-          <li key={step} className={`rounded-lg border bg-white p-3 ${active ? "border-emerald-300 ring-2 ring-emerald-100" : "border-slate-200"}`}>
+          <li key={step} className={`rounded-lg border bg-white p-3 ${active ? "border-brand-300 ring-2 ring-brand-100" : "border-neutral-200"}`}>
             <div className="flex items-center gap-2">
-              {done ? <CheckCircle2 className="text-brand-deep" size={17} /> : <Circle className={active ? "text-brand-deep" : "text-slate-400"} size={17} />}
-              <span className="text-sm font-semibold text-slate-900">{step}</span>
+              {done ? <CheckCircle2 className="text-brand-700" size={17} /> : <Circle className={active ? "text-brand-700" : "text-neutral-400"} size={17} />}
+              <span className="text-sm font-semibold text-neutral-900">{step}</span>
             </div>
           </li>
         );

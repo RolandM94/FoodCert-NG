@@ -21,26 +21,26 @@ export function DepartmentWorkloadCard({
   const Icon = DEPT_ICONS[departmentType] ?? AlertCircle;
 
   return (
-    <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+    <div className="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm">
       <div className="flex items-center justify-between gap-3">
-        <p className="text-sm font-bold text-slate-950">{departmentName}</p>
-        <span className="rounded bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-500 uppercase">
+        <p className="text-sm font-bold text-neutral-900">{departmentName}</p>
+        <span className="rounded bg-neutral-100 px-2 py-0.5 text-[10px] font-semibold text-neutral-500 uppercase">
           {departmentType.replace(/_/g, " ")}
         </span>
       </div>
       <div className="mt-3 flex items-center gap-3">
-        <div className="flex items-center gap-2 rounded bg-amber-50 px-3 py-2">
+        <div className="flex items-center gap-2 rounded bg-warning-50 px-3 py-2">
           <Icon size={14} className="text-amber-600" />
           <div>
-            <p className="text-lg font-bold text-amber-800">{formatNumber(pendingTasks)}</p>
+            <p className="text-lg font-bold text-warning-700">{formatNumber(pendingTasks)}</p>
             <p className="text-[10px] font-semibold text-amber-600">Pending</p>
           </div>
         </div>
-        <div className="flex items-center gap-2 rounded bg-emerald-50 px-3 py-2">
-          <CheckCircle2 size={14} className="text-emerald-600" />
+        <div className="flex items-center gap-2 rounded bg-brand-50 px-3 py-2">
+          <CheckCircle2 size={14} className="text-brand-600" />
           <div>
-            <p className="text-lg font-bold text-emerald-800">{formatNumber(completedTasks)}</p>
-            <p className="text-[10px] font-semibold text-emerald-600">Completed</p>
+            <p className="text-lg font-bold text-brand-800">{formatNumber(completedTasks)}</p>
+            <p className="text-[10px] font-semibold text-brand-600">Completed</p>
           </div>
         </div>
       </div>

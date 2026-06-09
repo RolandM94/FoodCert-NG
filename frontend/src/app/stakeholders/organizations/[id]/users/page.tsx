@@ -143,7 +143,7 @@ export default function OrganizationUsersPage() {
     >
       <div className="space-y-4">
         {error ? (
-          <div className="rounded border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700">
+          <div className="rounded border border-danger-100 bg-danger-50 px-4 py-3 text-sm font-semibold text-danger-700">
             {error}
           </div>
         ) : null}
@@ -151,9 +151,9 @@ export default function OrganizationUsersPage() {
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex flex-1 gap-2">
             <label className="relative flex-1 max-w-sm">
-              <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+              <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400" size={16} />
               <input
-                className="h-10 w-full rounded border border-slate-200 bg-white pl-9 pr-3 text-sm outline-none focus:border-brand-green focus:ring-2 focus:ring-brand-green/20"
+                className="h-10 w-full rounded border border-neutral-200 bg-white pl-9 pr-3 text-sm outline-none focus:border-brand-600 focus:ring-2 focus:ring-brand-600/20"
                 placeholder="Search by name, email, or role..."
                 type="search"
                 value={search}
@@ -161,7 +161,7 @@ export default function OrganizationUsersPage() {
               />
             </label>
             <select
-              className="h-10 rounded border border-slate-200 bg-white px-3 text-sm text-slate-700"
+              className="h-10 rounded border border-neutral-200 bg-white px-3 text-sm text-neutral-700"
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value)}
             >
@@ -173,7 +173,7 @@ export default function OrganizationUsersPage() {
             </select>
           </div>
           <button
-            className="inline-flex h-10 items-center gap-2 rounded bg-brand-green px-4 text-sm font-bold text-white hover:bg-brand-deep"
+            className="inline-flex h-10 items-center gap-2 rounded bg-brand-600 px-4 text-sm font-bold text-white hover:bg-brand-700"
             onClick={() => setInviteOpen(true)}
             type="button"
           >
@@ -182,55 +182,55 @@ export default function OrganizationUsersPage() {
           </button>
         </div>
 
-        <section className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
+        <section className="overflow-hidden rounded-lg border border-neutral-200 bg-white shadow-sm">
           <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-slate-200 text-sm">
-              <thead className="bg-slate-50">
+            <table className="min-w-full divide-y divide-neutral-200 text-sm">
+              <thead className="bg-neutral-50">
                 <tr>
-                  <th className="px-4 py-3 text-left text-xs font-bold uppercase tracking-wide text-slate-500">Name</th>
-                  <th className="px-4 py-3 text-left text-xs font-bold uppercase tracking-wide text-slate-500">Email</th>
-                  <th className="px-4 py-3 text-left text-xs font-bold uppercase tracking-wide text-slate-500">Role</th>
-                  <th className="px-4 py-3 text-left text-xs font-bold uppercase tracking-wide text-slate-500">Unit</th>
-                  <th className="px-4 py-3 text-left text-xs font-bold uppercase tracking-wide text-slate-500">Restricted</th>
-                  <th className="px-4 py-3 text-left text-xs font-bold uppercase tracking-wide text-slate-500">Status</th>
-                  <th className="px-4 py-3 text-left text-xs font-bold uppercase tracking-wide text-slate-500">Last Active</th>
-                  <th className="px-4 py-3 text-right text-xs font-bold uppercase tracking-wide text-slate-500">Actions</th>
+                  <th className="px-4 py-3 text-left text-xs font-bold uppercase tracking-wide text-neutral-500">Name</th>
+                  <th className="px-4 py-3 text-left text-xs font-bold uppercase tracking-wide text-neutral-500">Email</th>
+                  <th className="px-4 py-3 text-left text-xs font-bold uppercase tracking-wide text-neutral-500">Role</th>
+                  <th className="px-4 py-3 text-left text-xs font-bold uppercase tracking-wide text-neutral-500">Unit</th>
+                  <th className="px-4 py-3 text-left text-xs font-bold uppercase tracking-wide text-neutral-500">Restricted</th>
+                  <th className="px-4 py-3 text-left text-xs font-bold uppercase tracking-wide text-neutral-500">Status</th>
+                  <th className="px-4 py-3 text-left text-xs font-bold uppercase tracking-wide text-neutral-500">Last Active</th>
+                  <th className="px-4 py-3 text-right text-xs font-bold uppercase tracking-wide text-neutral-500">Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100">
+              <tbody className="divide-y divide-neutral-100">
                 {isLoading ? (
                   <tr>
-                    <td className="px-4 py-8 text-center text-slate-500" colSpan={8}>
+                    <td className="px-4 py-8 text-center text-neutral-500" colSpan={8}>
                       Loading memberships...
                     </td>
                   </tr>
                 ) : filtered.length === 0 ? (
                   <tr>
-                    <td className="px-4 py-8 text-center text-slate-500" colSpan={8}>
+                    <td className="px-4 py-8 text-center text-neutral-500" colSpan={8}>
                       {memberships.length === 0 ? "No members in this organization yet." : "No members match your search."}
                     </td>
                   </tr>
                 ) : (
                   filtered.map((m) => (
-                    <tr key={m.id} className="hover:bg-slate-50">
-                      <td className="px-4 py-3 font-semibold text-slate-950">{m.user_name || "—"}</td>
-                      <td className="px-4 py-3 text-slate-600">{m.user_email || "—"}</td>
-                      <td className="px-4 py-3 text-slate-700">{m.role_name || "—"}</td>
-                      <td className="px-4 py-3 text-slate-600">{m.unit_name || "—"}</td>
+                    <tr key={m.id} className="hover:bg-neutral-50">
+                      <td className="px-4 py-3 font-semibold text-neutral-900">{m.user_name || "—"}</td>
+                      <td className="px-4 py-3 text-neutral-600">{m.user_email || "—"}</td>
+                      <td className="px-4 py-3 text-neutral-700">{m.role_name || "—"}</td>
+                      <td className="px-4 py-3 text-neutral-600">{m.unit_name || "—"}</td>
                       <td className="px-4 py-3">
                         {m.unit_restricted ? (
-                          <span className="rounded-full bg-amber-50 px-2 py-0.5 text-xs font-bold text-amber-700 ring-1 ring-amber-200">Yes</span>
+                          <span className="rounded-full bg-warning-50 px-2 py-0.5 text-xs font-bold text-warning-700 ring-1 ring-warning-100">Yes</span>
                         ) : (
-                          <span className="text-xs text-slate-400">No</span>
+                          <span className="text-xs text-neutral-400">No</span>
                         )}
                       </td>
                       <td className="px-4 py-3">
                         <MembershipStatusBadge status={m.status} />
                       </td>
-                      <td className="px-4 py-3 text-sm text-slate-500">{formatDate(m.last_active_at)}</td>
+                      <td className="px-4 py-3 text-sm text-neutral-500">{formatDate(m.last_active_at)}</td>
                       <td className="px-4 py-3 text-right">
                         <button
-                          className="inline-flex items-center gap-1 rounded border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                          className="inline-flex items-center gap-1 rounded border border-neutral-200 px-3 py-2 text-sm font-semibold text-neutral-700 hover:bg-neutral-50"
                           onClick={() => loadDetail(m)}
                           type="button"
                         >
@@ -246,7 +246,7 @@ export default function OrganizationUsersPage() {
           </div>
         </section>
 
-        <p className="text-xs text-slate-400">
+        <p className="text-xs text-neutral-400">
           Showing {filtered.length} of {memberships.length} memberships for organization {organizationId}.
         </p>
       </div>

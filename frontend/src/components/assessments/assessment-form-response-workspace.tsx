@@ -157,13 +157,13 @@ export function AssessmentFormResponseWorkspace({
 
   return (
     <div className="grid gap-5 xl:grid-cols-[360px_1fr]">
-      <section className="grid h-fit gap-4 rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+      <section className="grid h-fit gap-4 rounded-lg border border-neutral-200 bg-white p-4 shadow-sm">
         <div className="flex items-center justify-between gap-3">
-          <h2 className="text-base font-bold text-slate-950">{title}</h2>
-          <button className="inline-flex h-9 items-center gap-2 rounded border border-slate-200 px-3 text-xs font-bold text-slate-700" onClick={() => void loadAssessments()} type="button"><RefreshCw size={14} /> Refresh</button>
+          <h2 className="text-base font-bold text-neutral-900">{title}</h2>
+          <button className="inline-flex h-9 items-center gap-2 rounded border border-neutral-200 px-3 text-xs font-bold text-neutral-700" onClick={() => void loadAssessments()} type="button"><RefreshCw size={14} /> Refresh</button>
         </div>
         <select
-          className="h-10 rounded border border-slate-200 bg-white px-3 text-sm"
+          className="h-10 rounded border border-neutral-200 bg-white px-3 text-sm"
           onChange={(event) => {
             setAssessmentId(event.target.value);
             void loadResponses(event.target.value);
@@ -172,33 +172,33 @@ export function AssessmentFormResponseWorkspace({
         >
           {assessments.map((assessment) => <option key={assessment.id} value={assessment.id}>{assessment.food_handler_name || assessment.id} · {label(assessment.status)}</option>)}
         </select>
-        <button className="inline-flex h-10 items-center justify-center gap-2 rounded bg-brand-green px-3 text-sm font-bold text-white disabled:bg-slate-300" disabled={busy || !assessmentId} onClick={() => void assignForms()} type="button"><ClipboardCheck size={16} /> Resolve assigned forms</button>
-        <div className="rounded border border-slate-200 bg-slate-50 p-3">
-          <p className="text-xs font-bold uppercase text-slate-500">Required completion</p>
-          <p className="mt-1 text-2xl font-bold text-slate-950">{completion.done}/{completion.total}</p>
+        <button className="inline-flex h-10 items-center justify-center gap-2 rounded bg-brand-600 px-3 text-sm font-bold text-white disabled:bg-neutral-300" disabled={busy || !assessmentId} onClick={() => void assignForms()} type="button"><ClipboardCheck size={16} /> Resolve assigned forms</button>
+        <div className="rounded border border-neutral-200 bg-neutral-50 p-3">
+          <p className="text-xs font-bold uppercase text-neutral-500">Required completion</p>
+          <p className="mt-1 text-2xl font-bold text-neutral-900">{completion.done}/{completion.total}</p>
         </div>
         {requirements ? (
           <div className="grid gap-2 text-sm">
-            <p className="font-bold text-slate-950">Requirement checklist</p>
-            {requirements.required_forms.map((item) => <div className="flex items-center justify-between gap-2 rounded border border-slate-200 bg-white px-3 py-2" key={item.id}><span>{item.name}</span><StatusBadge status={item.mandatory ? "mandatory" : "optional"} /></div>)}
-            {requirements.required_lab_tests.map((item) => <div className="rounded border border-slate-200 bg-white px-3 py-2" key={item}>Lab: {label(item)}</div>)}
-            {requirements.required_vaccinations.map((item) => <div className="rounded border border-slate-200 bg-white px-3 py-2" key={item}>Vaccination: {label(item)}</div>)}
+            <p className="font-bold text-neutral-900">Requirement checklist</p>
+            {requirements.required_forms.map((item) => <div className="flex items-center justify-between gap-2 rounded border border-neutral-200 bg-white px-3 py-2" key={item.id}><span>{item.name}</span><StatusBadge status={item.mandatory ? "mandatory" : "optional"} /></div>)}
+            {requirements.required_lab_tests.map((item) => <div className="rounded border border-neutral-200 bg-white px-3 py-2" key={item}>Lab: {label(item)}</div>)}
+            {requirements.required_vaccinations.map((item) => <div className="rounded border border-neutral-200 bg-white px-3 py-2" key={item}>Vaccination: {label(item)}</div>)}
           </div>
         ) : null}
         <div className="grid gap-2">
           {responses.map((response) => (
-            <button className={`rounded border px-3 py-2 text-left text-sm ${selected?.id === response.id ? "border-brand-green bg-emerald-50" : "border-slate-200 bg-white"}`} key={response.id} onClick={() => setSelectedId(response.id)} type="button">
-              <span className="block font-bold text-slate-950">{response.template_name || response.question_snapshot.name}</span>
-              <span className="mt-1 flex items-center gap-2 text-xs text-slate-500">v{response.version} · {label(response.respondent_role)} · <StatusBadge status={response.status} /></span>
+            <button className={`rounded border px-3 py-2 text-left text-sm ${selected?.id === response.id ? "border-brand-600 bg-brand-50" : "border-neutral-200 bg-white"}`} key={response.id} onClick={() => setSelectedId(response.id)} type="button">
+              <span className="block font-bold text-neutral-900">{response.template_name || response.question_snapshot.name}</span>
+              <span className="mt-1 flex items-center gap-2 text-xs text-neutral-500">v{response.version} · {label(response.respondent_role)} · <StatusBadge status={response.status} /></span>
             </button>
           ))}
-          {!responses.length && !loading ? <p className="text-sm text-slate-500">No assigned forms match this view.</p> : null}
+          {!responses.length && !loading ? <p className="text-sm text-neutral-500">No assigned forms match this view.</p> : null}
         </div>
       </section>
 
       <section className="grid gap-4">
-        {error ? <div className="flex items-start gap-2 rounded-lg bg-rose-50 p-3 text-sm font-semibold text-rose-800"><AlertCircle size={16} />{error}</div> : null}
-        {success ? <div className="rounded-lg bg-emerald-50 p-3 text-sm font-semibold text-emerald-800">{success}</div> : null}
+        {error ? <div className="flex items-start gap-2 rounded-lg bg-danger-50 p-3 text-sm font-semibold text-danger-700"><AlertCircle size={16} />{error}</div> : null}
+        {success ? <div className="rounded-lg bg-brand-50 p-3 text-sm font-semibold text-brand-800">{success}</div> : null}
         {selected ? (
           <>
             <DynamicFormRenderer
@@ -210,10 +210,10 @@ export function AssessmentFormResponseWorkspace({
               response={selected}
             />
             {mode === "review" ? (
-              <section className="grid gap-3 rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-                <h3 className="text-sm font-bold text-slate-950">Correction workflow</h3>
-                <textarea className="min-h-20 rounded border border-slate-200 bg-slate-50 px-3 py-2 text-sm" onChange={(event) => setReopenReason(event.target.value)} placeholder="Reason for reopening this response" value={reopenReason} />
-                <button className="inline-flex h-10 w-fit items-center gap-2 rounded border border-amber-200 px-3 text-sm font-bold text-amber-800 disabled:opacity-50" disabled={busy || !reopenReason.trim()} onClick={() => void reopen()} type="button"><RotateCcw size={16} /> Reopen response</button>
+              <section className="grid gap-3 rounded-lg border border-neutral-200 bg-white p-4 shadow-sm">
+                <h3 className="text-sm font-bold text-neutral-900">Correction workflow</h3>
+                <textarea className="min-h-20 rounded border border-neutral-200 bg-neutral-50 px-3 py-2 text-sm" onChange={(event) => setReopenReason(event.target.value)} placeholder="Reason for reopening this response" value={reopenReason} />
+                <button className="inline-flex h-10 w-fit items-center gap-2 rounded border border-warning-100 px-3 text-sm font-bold text-warning-700 disabled:opacity-50" disabled={busy || !reopenReason.trim()} onClick={() => void reopen()} type="button"><RotateCcw size={16} /> Reopen response</button>
               </section>
             ) : null}
           </>

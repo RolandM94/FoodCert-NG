@@ -12,18 +12,18 @@ export function AssessmentStepper({ steps = [] }: { steps?: AssessmentWorkflowIt
           <li
             key={step.code}
             className={`rounded border bg-white p-3 ${
-              complete ? "border-emerald-200" : pending ? "border-slate-200" : "border-amber-200"
+              complete ? "border-brand-200" : pending ? "border-neutral-200" : "border-warning-100"
             }`}
           >
             <div className="flex items-center gap-2">
               {complete ? (
-                <CheckCircle2 className="text-emerald-700" size={17} />
+                <CheckCircle2 className="text-brand-700" size={17} />
               ) : pending ? (
-                <Circle className="text-slate-400" size={17} />
+                <Circle className="text-neutral-400" size={17} />
               ) : (
-                <CircleDashed className="text-amber-700" size={17} />
+                <CircleDashed className="text-warning-700" size={17} />
               )}
-              <span className="text-sm font-semibold text-slate-900">{step.label}</span>
+              <span className="text-sm font-semibold text-neutral-900">{step.label}</span>
             </div>
           </li>
         );

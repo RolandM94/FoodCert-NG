@@ -62,32 +62,32 @@ export default function Page() {
     <PortalShell role="employer" title="Link Existing Handler" description="Search for a food handler who already has a certificate and link them to your business.">
       <div className="max-w-2xl space-y-5">
         <div className="flex gap-2">
-          <label className="flex flex-1 items-center gap-2 rounded border border-slate-200 bg-white px-3 h-11">
-            <Search size={14} className="text-slate-400" />
+          <label className="flex flex-1 items-center gap-2 rounded border border-neutral-200 bg-white px-3 h-11">
+            <Search size={14} className="text-neutral-400" />
             <input className="flex-1 bg-transparent text-sm outline-none" placeholder="Search by name, phone, or ID..." value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={(e) => e.key === "Enter" && handleSearch()} />
           </label>
-          <button className="inline-flex h-11 items-center gap-2 rounded-lg bg-brand-green px-4 text-sm font-bold text-white hover:bg-brand-deep disabled:opacity-60" disabled={query.length < 3 || loading} onClick={handleSearch}>
+          <button className="inline-flex h-11 items-center gap-2 rounded-lg bg-brand-600 px-4 text-sm font-bold text-white hover:bg-brand-700 disabled:opacity-60" disabled={query.length < 3 || loading} onClick={handleSearch}>
             {loading ? "Searching..." : "Search"}
           </button>
         </div>
 
-        {error && <div className="flex items-start gap-2 rounded-lg bg-rose-50 p-3 text-sm font-semibold text-rose-800"><AlertCircle size={16} className="mt-0.5" /><span>{error}</span></div>}
-        {success && <div className="flex items-start gap-2 rounded-lg bg-emerald-50 p-3 text-sm font-semibold text-emerald-800"><CheckCircle2 size={16} className="mt-0.5" /><span>{success}</span></div>}
+        {error && <div className="flex items-start gap-2 rounded-lg bg-danger-50 p-3 text-sm font-semibold text-danger-700"><AlertCircle size={16} className="mt-0.5" /><span>{error}</span></div>}
+        {success && <div className="flex items-start gap-2 rounded-lg bg-brand-50 p-3 text-sm font-semibold text-brand-800"><CheckCircle2 size={16} className="mt-0.5" /><span>{success}</span></div>}
 
         {results.length > 0 && (
-          <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
+          <div className="overflow-x-auto rounded-lg border border-neutral-200 bg-white">
             <table className="w-full text-sm">
-              <thead><tr className="border-b border-slate-100 bg-slate-50 text-left"><th className="px-4 py-2 text-xs font-bold uppercase text-slate-500">Handler</th><th className="px-4 py-2 text-xs font-bold uppercase text-slate-500">Status</th><th className="px-4 py-2 text-xs font-bold uppercase text-slate-500">Action</th></tr></thead>
-              <tbody className="divide-y divide-slate-50">
+              <thead><tr className="border-b border-neutral-100 bg-neutral-50 text-left"><th className="px-4 py-2 text-xs font-bold uppercase text-neutral-500">Handler</th><th className="px-4 py-2 text-xs font-bold uppercase text-neutral-500">Status</th><th className="px-4 py-2 text-xs font-bold uppercase text-neutral-500">Action</th></tr></thead>
+              <tbody className="divide-y divide-neutral-50">
                 {results.map((r) => (
-                  <tr key={r.id} className="hover:bg-slate-50">
+                  <tr key={r.id} className="hover:bg-neutral-50">
                     <td className="px-4 py-2">
-                      <p className="font-semibold text-slate-800">{r.full_name}</p>
-                      <p className="text-xs text-slate-500">{r.phone} {r.system_identifier ? `· ${r.system_identifier}` : ""}</p>
+                      <p className="font-semibold text-neutral-800">{r.full_name}</p>
+                      <p className="text-xs text-neutral-500">{r.phone} {r.system_identifier ? `· ${r.system_identifier}` : ""}</p>
                     </td>
                     <td className="px-4 py-2"><FitnessStatusBadge status={r.fitness_status || "not_linked"} /></td>
                     <td className="px-4 py-2">
-                      <button className="inline-flex h-8 items-center gap-1.5 rounded bg-brand-green px-3 text-xs font-bold text-white hover:bg-brand-deep disabled:opacity-60" disabled={linking === r.id} onClick={() => handleLink(r.id, r.full_name)}>
+                      <button className="inline-flex h-8 items-center gap-1.5 rounded bg-brand-600 px-3 text-xs font-bold text-white hover:bg-brand-700 disabled:opacity-60" disabled={linking === r.id} onClick={() => handleLink(r.id, r.full_name)}>
                         <Link2 size={12} />
                         {linking === r.id ? "Linking..." : "Link"}
                       </button>
@@ -100,8 +100,8 @@ export default function Page() {
         )}
 
         {!loading && results.length === 0 && query.length >= 3 && (
-          <div className="rounded-lg border border-slate-200 bg-white p-8 text-center">
-            <p className="text-sm text-slate-500">No unlinked food handlers found matching &quot;{query}&quot;.</p>
+          <div className="rounded-lg border border-neutral-200 bg-white p-8 text-center">
+            <p className="text-sm text-neutral-500">No unlinked food handlers found matching &quot;{query}&quot;.</p>
           </div>
         )}
       </div>

@@ -23,9 +23,9 @@ export default function Page() {
             ["Invoice due", money(cards.invoice_amount_due)],
             ["Invoice paid", money(cards.invoice_amount_paid)],
           ].map(([label, value]) => (
-            <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm" key={label}>
-              <p className="text-xs font-bold uppercase text-slate-500">{label}</p>
-              <p className="mt-2 text-xl font-bold text-slate-950">{value}</p>
+            <div className="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm" key={label}>
+              <p className="text-xs font-bold uppercase text-neutral-500">{label}</p>
+              <p className="mt-2 text-xl font-bold text-neutral-900">{value}</p>
             </div>
           ))}
         </section>

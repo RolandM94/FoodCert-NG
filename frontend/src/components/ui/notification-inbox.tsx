@@ -107,16 +107,16 @@ export function NotificationInbox() {
 
       {isLoading ? (
         <div className="flex items-center justify-center py-12">
-          <Loader2 className="animate-spin text-slate-400" size={24} />
+          <Loader2 className="animate-spin text-neutral-400" size={24} />
         </div>
       ) : isError ? (
-        <p className="rounded bg-rose-50 p-4 text-sm font-semibold text-rose-700">
+        <p className="rounded bg-danger-50 p-4 text-sm font-semibold text-danger-700">
           Could not load notifications. Please try again.
         </p>
       ) : (
-        <div className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
+        <div className="overflow-hidden rounded-lg border border-neutral-200 bg-white shadow-sm">
           {notifications.length > 0 ? (
-            <div className="divide-y divide-slate-100">
+            <div className="divide-y divide-neutral-100">
               {notifications.map((item) => (
                 <NotificationCard
                   key={item.id}
@@ -129,9 +129,9 @@ export function NotificationInbox() {
             </div>
           ) : (
             <div className="flex flex-col items-center justify-center py-16 text-center">
-              <Bell className="mb-3 text-slate-300" size={40} aria-hidden="true" />
-              <p className="text-sm font-semibold text-slate-500">No notifications</p>
-              <p className="mt-1 text-xs text-slate-400">
+              <Bell className="mb-3 text-neutral-300" size={40} aria-hidden="true" />
+              <p className="text-sm font-semibold text-neutral-500">No notifications</p>
+              <p className="mt-1 text-xs text-neutral-400">
                 {filters.archivedFilter === "archived"
                   ? "No archived notifications."
                   : "You're all caught up."}
@@ -139,8 +139,8 @@ export function NotificationInbox() {
             </div>
           )}
           {isFetching && notifications.length > 0 ? (
-            <div className="flex items-center justify-center border-t border-slate-100 py-2">
-              <Loader2 className="animate-spin text-slate-400" size={16} />
+            <div className="flex items-center justify-center border-t border-neutral-100 py-2">
+              <Loader2 className="animate-spin text-neutral-400" size={16} />
             </div>
           ) : null}
         </div>

@@ -17,17 +17,17 @@ const UNIT_TYPE_LABELS: Record<string, string> = {
 };
 
 const UNIT_TYPE_COLORS: Record<string, string> = {
-  headquarters: "bg-purple-50 text-purple-700 ring-purple-200",
-  directorate: "bg-blue-50 text-blue-700 ring-blue-200",
-  department: "bg-cyan-50 text-cyan-700 ring-cyan-200",
-  unit: "bg-slate-50 text-slate-700 ring-slate-200",
-  branch: "bg-amber-50 text-amber-700 ring-amber-200",
-  lab_department: "bg-teal-50 text-teal-700 ring-teal-200",
-  clinical_department: "bg-emerald-50 text-emerald-700 ring-emerald-200",
+  headquarters: "bg-neutral-100 text-neutral-700 ring-neutral-200",
+  directorate: "bg-info-50 text-info-700 ring-blue-200",
+  department: "bg-info-50 text-info-700 ring-cyan-200",
+  unit: "bg-neutral-50 text-neutral-700 ring-neutral-200",
+  branch: "bg-warning-50 text-warning-700 ring-warning-100",
+  lab_department: "bg-brand-50 text-brand-700 ring-teal-200",
+  clinical_department: "bg-brand-50 text-brand-700 ring-brand-200",
   records_department: "bg-indigo-50 text-indigo-700 ring-indigo-200",
-  lga_office: "bg-orange-50 text-orange-700 ring-orange-200",
-  regional_office: "bg-rose-50 text-rose-700 ring-rose-200",
-  other: "bg-slate-50 text-slate-700 ring-slate-200",
+  lga_office: "bg-warning-50 text-warning-700 ring-warning-100",
+  regional_office: "bg-danger-50 text-danger-700 ring-danger-100",
+  other: "bg-neutral-50 text-neutral-700 ring-neutral-200",
 };
 
 export function UnitScopeBadge({

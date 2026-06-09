@@ -31,19 +31,19 @@ export default function VerifyPage() {
   }
 
   return (
-    <main className="min-h-screen bg-[#f7faf8] px-4 py-8 text-slate-950 sm:px-6 lg:px-8">
-      <section className="mx-auto mb-6 grid max-w-2xl gap-4 rounded-lg border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+    <main className="min-h-screen bg-neutral-50 px-4 py-8 text-neutral-900 sm:px-6 lg:px-8">
+      <section className="mx-auto mb-6 grid max-w-2xl gap-4 rounded-lg border border-neutral-200 bg-white p-5 shadow-sm sm:p-6">
         <div className="flex items-center gap-3">
-          <div className="flex h-11 w-11 items-center justify-center rounded-lg bg-emerald-50 text-brand-deep">
+          <div className="flex h-11 w-11 items-center justify-center rounded-lg bg-brand-50 text-brand-700">
             <ShieldCheck aria-hidden="true" size={23} />
           </div>
           <div>
-            <p className="text-xs font-bold uppercase tracking-wide text-slate-500">FoodCert NG Verification</p>
-            <h1 className="text-xl font-bold text-slate-950">Verify a certificate</h1>
+            <p className="text-xs font-bold uppercase tracking-wide text-neutral-500">FoodCert NG Verification</p>
+            <h1 className="text-xl font-bold text-neutral-900">Verify a certificate</h1>
           </div>
         </div>
         <CertificateNumberVerificationForm loading={loading} onSubmit={verify} setValue={(value) => { setCertificateNumber(value); setError(""); }} value={certificateNumber} />
-        {error ? <p className="text-sm font-semibold text-red-700">{error}</p> : null}
+        {error ? <p className="text-sm font-semibold text-danger-700">{error}</p> : null}
       </section>
 
       {result ? <PublicVerificationResult certificate={result} /> : null}

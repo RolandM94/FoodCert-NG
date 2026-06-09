@@ -86,10 +86,10 @@ export default function Page() {
   return (
     <PortalShell role="state_admin" title="Facility accreditation" description="Approve, reject, suspend, or reactivate facility accreditation requests.">
       <div className="grid gap-5">
-        <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-          <label className="grid max-w-xs gap-1 text-xs font-bold uppercase tracking-wide text-slate-500">
+        <section className="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm">
+          <label className="grid max-w-xs gap-1 text-xs font-bold uppercase tracking-wide text-neutral-500">
             Application status
-            <select className="h-10 rounded border border-slate-200 bg-white px-3 text-sm normal-case tracking-normal text-slate-700" value={status} onChange={(event) => setStatus(event.target.value)}>
+            <select className="h-10 rounded border border-neutral-200 bg-white px-3 text-sm normal-case tracking-normal text-neutral-700" value={status} onChange={(event) => setStatus(event.target.value)}>
               {STATUS_OPTIONS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
             </select>
           </label>
@@ -97,14 +97,14 @@ export default function Page() {
 
         <section className="grid gap-3">
           <div className="flex items-center gap-2">
-            <ClipboardCheck className="text-brand-deep" size={18} />
-            <h2 className="text-base font-bold text-slate-950">Accreditation Queue</h2>
+            <ClipboardCheck className="text-brand-700" size={18} />
+            <h2 className="text-base font-bold text-neutral-900">Accreditation Queue</h2>
           </div>
-          {applicationsQuery.isError ? <p className="rounded bg-rose-50 p-3 text-sm font-semibold text-rose-700">Could not load accreditation applications.</p> : null}
+          {applicationsQuery.isError ? <p className="rounded bg-danger-50 p-3 text-sm font-semibold text-danger-700">Could not load accreditation applications.</p> : null}
           <DataTable<FacilityAccreditationApplication>
             columns={[
-              { key: "facility", header: "Facility", render: (row) => <p className="font-bold text-slate-950">{row.facility_name}</p> },
-              { key: "checklist", header: "Checklist", render: (row) => <span className={row.checklist_complete ? "font-bold text-emerald-700" : "font-bold text-amber-700"}>{checklistScore(row)}</span> },
+              { key: "facility", header: "Facility", render: (row) => <p className="font-bold text-neutral-900">{row.facility_name}</p> },
+              { key: "checklist", header: "Checklist", render: (row) => <span className={row.checklist_complete ? "font-bold text-brand-700" : "font-bold text-warning-700"}>{checklistScore(row)}</span> },
               { key: "status", header: "Status", render: (row) => <StatusCell status={row.application_status} /> },
               { key: "submitted", header: "Submitted", render: (row) => dateLabel(row.submitted_at || row.created_at) },
               { key: "reviewer", header: "Reviewer", render: (row) => row.reviewer_name || "Not reviewed" },
@@ -115,7 +115,7 @@ export default function Page() {
                   <div className="flex flex-wrap gap-2">
                     {allowedActions(row.application_status).map((action) => (
                       <button
-                        className="h-8 rounded border border-slate-200 px-3 text-xs font-bold capitalize text-slate-700 hover:bg-slate-50"
+                        className="h-8 rounded border border-neutral-200 px-3 text-xs font-bold capitalize text-neutral-700 hover:bg-neutral-50"
                         key={action}
                         onClick={() => setActionTarget({ application: row, action })}
                         type="button"
@@ -134,11 +134,11 @@ export default function Page() {
       </div>
 
       {actionTarget ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4">
-          <div className="w-full max-w-md rounded-lg border border-slate-200 bg-white shadow-xl">
-            <div className="border-b border-slate-100 px-6 py-4">
-              <h2 className="text-lg font-bold capitalize text-slate-950">{actionTarget.action} facility accreditation</h2>
-              <p className="mt-1 text-sm text-slate-500">{actionTarget.application.facility_name}</p>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-neutral-900/50 p-4">
+          <div className="w-full max-w-md rounded-lg border border-neutral-200 bg-white shadow-xl">
+            <div className="border-b border-neutral-100 px-6 py-4">
+              <h2 className="text-lg font-bold capitalize text-neutral-900">{actionTarget.action} facility accreditation</h2>
+              <p className="mt-1 text-sm text-neutral-500">{actionTarget.application.facility_name}</p>
             </div>
             <form
               className="grid gap-4 p-6"
@@ -147,14 +147,14 @@ export default function Page() {
                 actionMutation.mutate({ application: actionTarget.application, action: actionTarget.action, reviewComment: comment });
               }}
             >
-              <label className="grid gap-1 text-sm font-semibold text-slate-700">
-                Review comment {requiresComment ? <span className="text-red-500">*</span> : null}
-                <textarea className="rounded border border-slate-200 bg-slate-50 px-3 py-2 text-sm" required={requiresComment} rows={3} value={comment} onChange={(event) => setComment(event.target.value)} />
+              <label className="grid gap-1 text-sm font-semibold text-neutral-700">
+                Review comment {requiresComment ? <span className="text-danger-500">*</span> : null}
+                <textarea className="rounded border border-neutral-200 bg-neutral-50 px-3 py-2 text-sm" required={requiresComment} rows={3} value={comment} onChange={(event) => setComment(event.target.value)} />
               </label>
-              {actionMutation.isError ? <p className="rounded bg-red-50 px-3 py-2 text-sm font-semibold text-red-700">Could not complete this accreditation action.</p> : null}
+              {actionMutation.isError ? <p className="rounded bg-danger-50 px-3 py-2 text-sm font-semibold text-danger-700">Could not complete this accreditation action.</p> : null}
               <div className="flex justify-end gap-3">
-                <button className="h-10 rounded border border-slate-200 px-4 text-sm font-semibold text-slate-600 hover:bg-slate-50" onClick={() => setActionTarget(null)} type="button">Cancel</button>
-                <button className="h-10 rounded bg-brand-green px-4 text-sm font-bold capitalize text-white hover:bg-brand-deep disabled:opacity-60" disabled={actionMutation.isPending} type="submit">{actionTarget.action}</button>
+                <button className="h-10 rounded border border-neutral-200 px-4 text-sm font-semibold text-neutral-600 hover:bg-neutral-50" onClick={() => setActionTarget(null)} type="button">Cancel</button>
+                <button className="h-10 rounded bg-brand-600 px-4 text-sm font-bold capitalize text-white hover:bg-brand-700 disabled:opacity-60" disabled={actionMutation.isPending} type="submit">{actionTarget.action}</button>
               </div>
             </form>
           </div>

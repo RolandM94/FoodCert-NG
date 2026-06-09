@@ -13,12 +13,12 @@ export default function Page() {
   return (
     <PortalShell role="federal_admin" title="Data quality" description="Review national data quality risks across reports, coverage, queues, and metadata completeness.">
       <div className="grid gap-5">
-        <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-          <div className="flex items-center gap-2 text-brand-deep"><AlertTriangle size={18} /><h2 className="text-base font-bold text-slate-950">{qualityQuery.data?.cards.risk_count || 0} open quality risks</h2></div>
+        <section className="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm">
+          <div className="flex items-center gap-2 text-brand-700"><AlertTriangle size={18} /><h2 className="text-base font-bold text-neutral-900">{qualityQuery.data?.cards.risk_count || 0} open quality risks</h2></div>
         </section>
         <DataTable<FederalDataQualityRisk>
           columns={[
-            { key: "state", header: "State", render: (row) => <span className="font-bold text-slate-950">{row.state_name}</span> },
+            { key: "state", header: "State", render: (row) => <span className="font-bold text-neutral-900">{row.state_name}</span> },
             { key: "risk", header: "Risk", render: (row) => row.risk.replaceAll("_", " ") },
             { key: "severity", header: "Severity", render: (row) => <StatusCell status={row.severity} /> },
             { key: "detail", header: "Detail", render: (row) => row.detail },

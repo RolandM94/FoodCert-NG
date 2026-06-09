@@ -45,8 +45,8 @@ export default function Page() {
   return (
     <PortalShell role="lab_staff" title="Lab Dashboard" description="Manage sample collection, result entry, uploads, and turnaround monitoring.">
       <div className="grid gap-5">
-        {loading ? <p className="rounded-lg border border-slate-200 bg-white p-4 text-sm font-semibold text-slate-600 shadow-sm">Loading dashboard...</p> : null}
-        {error ? <div className="flex items-start gap-2 rounded-lg bg-rose-50 p-3 text-sm font-semibold text-rose-800"><AlertCircle size={16} />{error}</div> : null}
+        {loading ? <p className="rounded-lg border border-neutral-200 bg-white p-4 text-sm font-semibold text-neutral-600 shadow-sm">Loading dashboard...</p> : null}
+        {error ? <div className="flex items-start gap-2 rounded-lg bg-danger-50 p-3 text-sm font-semibold text-danger-700"><AlertCircle size={16} />{error}</div> : null}
 
         <section className="grid gap-3 md:grid-cols-4">
           <KPICard label="Pending Requests" value={data?.cards?.lab_requests_pending ?? 0} icon={FlaskConical} />
@@ -56,62 +56,62 @@ export default function Page() {
         </section>
 
         <div className="grid gap-5 lg:grid-cols-2">
-          <section className="rounded-lg border border-slate-200 bg-white shadow-sm">
-            <div className="flex items-center justify-between gap-3 border-b border-slate-200 p-4">
-              <h2 className="text-sm font-bold text-slate-950">Pending Sample Collection</h2>
-              <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-xs font-bold text-amber-800">{data?.sections?.pending_sample_collection?.length ?? 0}</span>
+          <section className="rounded-lg border border-neutral-200 bg-white shadow-sm">
+            <div className="flex items-center justify-between gap-3 border-b border-neutral-200 p-4">
+              <h2 className="text-sm font-bold text-neutral-900">Pending Sample Collection</h2>
+              <span className="inline-flex items-center rounded-full bg-warning-100 px-2 py-0.5 text-xs font-bold text-warning-700">{data?.sections?.pending_sample_collection?.length ?? 0}</span>
             </div>
-            <div className="divide-y divide-slate-200">
+            <div className="divide-y divide-neutral-200">
               {data?.sections?.pending_sample_collection?.length ? (
                 data.sections.pending_sample_collection.slice(0, 6).map((item) => (
-                  <Link className="flex items-center justify-between gap-3 p-4 text-sm hover:bg-slate-50" href={`/lab/test-requests/${item.id}`} key={item.id}>
-                    <div><p className="font-bold text-slate-950">{item.food_handler}</p><p className="text-xs text-slate-500">{item.test_name}</p></div>
+                  <Link className="flex items-center justify-between gap-3 p-4 text-sm hover:bg-neutral-50" href={`/lab/test-requests/${item.id}`} key={item.id}>
+                    <div><p className="font-bold text-neutral-900">{item.food_handler}</p><p className="text-xs text-neutral-500">{item.test_name}</p></div>
                     <StatusBadge status={item.status} />
                   </Link>
                 ))
               ) : (
-                <p className="p-4 text-sm text-slate-500">No pending samples.</p>
+                <p className="p-4 text-sm text-neutral-500">No pending samples.</p>
               )}
             </div>
           </section>
 
-          <section className="rounded-lg border border-slate-200 bg-white shadow-sm">
-            <div className="flex items-center justify-between gap-3 border-b border-slate-200 p-4">
-              <h2 className="text-sm font-bold text-slate-950">Results to Upload</h2>
-              <span className="inline-flex items-center rounded-full bg-sky-100 px-2 py-0.5 text-xs font-bold text-sky-800">{data?.sections?.pending_result_upload?.length ?? 0}</span>
+          <section className="rounded-lg border border-neutral-200 bg-white shadow-sm">
+            <div className="flex items-center justify-between gap-3 border-b border-neutral-200 p-4">
+              <h2 className="text-sm font-bold text-neutral-900">Results to Upload</h2>
+              <span className="inline-flex items-center rounded-full bg-info-100 px-2 py-0.5 text-xs font-bold text-info-700">{data?.sections?.pending_result_upload?.length ?? 0}</span>
             </div>
-            <div className="divide-y divide-slate-200">
+            <div className="divide-y divide-neutral-200">
               {data?.sections?.pending_result_upload?.length ? (
                 data.sections.pending_result_upload.slice(0, 6).map((item) => (
-                  <Link className="flex items-center justify-between gap-3 p-4 text-sm hover:bg-slate-50" href={`/lab/test-requests/${item.id}`} key={item.id}>
-                    <div><p className="font-bold text-slate-950">{item.food_handler}</p><p className="text-xs text-slate-500">{item.test_name}</p></div>
+                  <Link className="flex items-center justify-between gap-3 p-4 text-sm hover:bg-neutral-50" href={`/lab/test-requests/${item.id}`} key={item.id}>
+                    <div><p className="font-bold text-neutral-900">{item.food_handler}</p><p className="text-xs text-neutral-500">{item.test_name}</p></div>
                     <StatusBadge status={item.status} />
                   </Link>
                 ))
               ) : (
-                <p className="p-4 text-sm text-slate-500">No results pending upload.</p>
+                <p className="p-4 text-sm text-neutral-500">No results pending upload.</p>
               )}
             </div>
           </section>
         </div>
 
-        <section className="rounded-lg border border-slate-200 bg-white shadow-sm">
-          <div className="flex items-center justify-between gap-3 border-b border-slate-200 p-4">
-            <h2 className="text-sm font-bold text-slate-950">Recent Results</h2>
-            <button className="inline-flex h-9 items-center gap-2 rounded border border-slate-200 px-3 text-xs font-bold text-slate-700" type="button" onClick={() => void loadData()}>
+        <section className="rounded-lg border border-neutral-200 bg-white shadow-sm">
+          <div className="flex items-center justify-between gap-3 border-b border-neutral-200 p-4">
+            <h2 className="text-sm font-bold text-neutral-900">Recent Results</h2>
+            <button className="inline-flex h-9 items-center gap-2 rounded border border-neutral-200 px-3 text-xs font-bold text-neutral-700" type="button" onClick={() => void loadData()}>
               <RefreshCw size={14} /> Refresh
             </button>
           </div>
-          <div className="divide-y divide-slate-200">
+          <div className="divide-y divide-neutral-200">
             {data?.sections?.recent_results?.length ? (
               data.sections.recent_results.map((item) => (
                 <div className="flex items-center justify-between gap-3 p-4 text-sm" key={item.id}>
-                  <div><p className="font-bold text-slate-950">{item.food_handler}</p><p className="text-xs text-slate-500">{item.test_name} · {item.result_summary}</p></div>
-                  <Link className="text-xs font-bold text-brand-green" href={`/lab/test-requests/${item.id}`}>View</Link>
+                  <div><p className="font-bold text-neutral-900">{item.food_handler}</p><p className="text-xs text-neutral-500">{item.test_name} · {item.result_summary}</p></div>
+                  <Link className="text-xs font-bold text-brand-600" href={`/lab/test-requests/${item.id}`}>View</Link>
                 </div>
               ))
             ) : (
-              <p className="p-4 text-sm text-slate-500">No results submitted yet.</p>
+              <p className="p-4 text-sm text-neutral-500">No results submitted yet.</p>
             )}
           </div>
         </section>

@@ -1,18 +1,18 @@
 const STATUS_COLORS: Record<string, string> = {
-  fit_to_handle_food: "bg-emerald-50 text-emerald-700 ring-emerald-200",
-  certification_pending: "bg-amber-50 text-amber-700 ring-amber-200",
-  certificate_expired: "bg-red-50 text-red-700 ring-red-200",
-  certificate_expiring_soon: "bg-orange-50 text-orange-700 ring-orange-200",
-  temporarily_not_fit: "bg-orange-50 text-orange-700 ring-orange-200",
-  excluded_from_food_handling: "bg-red-50 text-red-700 ring-red-200",
-  return_to_work_pending: "bg-amber-50 text-amber-700 ring-amber-200",
-  cleared_to_return: "bg-emerald-50 text-emerald-700 ring-emerald-200",
-  vaccination_due: "bg-blue-50 text-blue-700 ring-blue-200",
-  medical_review_required: "bg-purple-50 text-purple-700 ring-purple-200",
-  invite_pending: "bg-slate-50 text-slate-500 ring-slate-200",
-  not_linked: "bg-slate-50 text-slate-500 ring-slate-200",
-  no_certificate: "bg-slate-50 text-slate-500 ring-slate-200",
-  not_recorded: "bg-slate-50 text-slate-500 ring-slate-200",
+  fit_to_handle_food: "bg-brand-50 text-brand-700 ring-brand-200",
+  certification_pending: "bg-warning-50 text-warning-700 ring-warning-100",
+  certificate_expired: "bg-danger-50 text-danger-700 ring-danger-100",
+  certificate_expiring_soon: "bg-warning-50 text-warning-700 ring-warning-100",
+  temporarily_not_fit: "bg-warning-50 text-warning-700 ring-warning-100",
+  excluded_from_food_handling: "bg-danger-50 text-danger-700 ring-danger-100",
+  return_to_work_pending: "bg-warning-50 text-warning-700 ring-warning-100",
+  cleared_to_return: "bg-brand-50 text-brand-700 ring-brand-200",
+  vaccination_due: "bg-info-50 text-info-700 ring-blue-200",
+  medical_review_required: "bg-neutral-100 text-neutral-700 ring-neutral-200",
+  invite_pending: "bg-neutral-50 text-neutral-500 ring-neutral-200",
+  not_linked: "bg-neutral-50 text-neutral-500 ring-neutral-200",
+  no_certificate: "bg-neutral-50 text-neutral-500 ring-neutral-200",
+  not_recorded: "bg-neutral-50 text-neutral-500 ring-neutral-200",
 };
 
 const STATUS_LABELS: Record<string, string> = {
@@ -41,7 +41,7 @@ export function FitnessStatusBadge({ status }: { status: string }) {
   return (
     <span
       className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-semibold ring-1 ${
-        STATUS_COLORS[status] ?? "bg-slate-50 text-slate-600 ring-slate-200"
+        STATUS_COLORS[status] ?? "bg-neutral-50 text-neutral-600 ring-neutral-200"
       }`}
     >
       {STATUS_LABELS[status] ?? status.replace(/_/g, " ")}

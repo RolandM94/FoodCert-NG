@@ -50,8 +50,8 @@ export default function Page() {
   return (
     <PortalShell role="inspector" title="Inspector Dashboard" description="View assigned inspections, track progress, review findings, and manage enforcement notices.">
       <div className="grid gap-5">
-        {loading ? <p className="rounded-lg border border-slate-200 bg-white p-4 text-sm font-semibold text-slate-600 shadow-sm">Loading dashboard...</p> : null}
-        {error ? <div className="flex items-start gap-2 rounded-lg bg-rose-50 p-3 text-sm font-semibold text-rose-800"><Flag size={16} />{error}</div> : null}
+        {loading ? <p className="rounded-lg border border-neutral-200 bg-white p-4 text-sm font-semibold text-neutral-600 shadow-sm">Loading dashboard...</p> : null}
+        {error ? <div className="flex items-start gap-2 rounded-lg bg-danger-50 p-3 text-sm font-semibold text-danger-700"><Flag size={16} />{error}</div> : null}
 
         <section className="grid gap-3 sm:grid-cols-2 md:grid-cols-5">
           <KPICard label="Assigned" value={data?.cards?.assigned_inspections ?? 0} icon={ClipboardList} />
@@ -66,30 +66,30 @@ export default function Page() {
           <KPICard label="Closed (Month)" value={data?.cards?.closed_this_month ?? 0} icon={CheckCircle2} />
         </section>
 
-        <section className="rounded-lg border border-slate-200 bg-white shadow-sm">
-          <div className="flex items-center justify-between gap-3 border-b border-slate-200 p-4">
-            <h2 className="text-sm font-bold text-slate-950">Inspection Tasks</h2>
-            <button className="inline-flex h-9 items-center gap-2 rounded border border-slate-200 px-3 text-xs font-bold text-slate-700" type="button" onClick={() => void loadData()}>
+        <section className="rounded-lg border border-neutral-200 bg-white shadow-sm">
+          <div className="flex items-center justify-between gap-3 border-b border-neutral-200 p-4">
+            <h2 className="text-sm font-bold text-neutral-900">Inspection Tasks</h2>
+            <button className="inline-flex h-9 items-center gap-2 rounded border border-neutral-200 px-3 text-xs font-bold text-neutral-700" type="button" onClick={() => void loadData()}>
               <RefreshCw size={14} /> Refresh
             </button>
           </div>
-          <div className="divide-y divide-slate-200">
+          <div className="divide-y divide-neutral-200">
             {data?.sections?.task_list?.length ? (
               data.sections.task_list.map((task) => (
                 <div className="flex items-center justify-between gap-3 p-4 text-sm" key={task.id}>
                   <div>
-                    <p className="font-bold text-slate-950">{task.reference || task.employer}</p>
-                    <p className="text-xs text-slate-500">{task.employer} · {task.branch || "HQ"} · {task.type} · {dateLabel(task.scheduled_date)}</p>
+                    <p className="font-bold text-neutral-900">{task.reference || task.employer}</p>
+                    <p className="text-xs text-neutral-500">{task.employer} · {task.branch || "HQ"} · {task.type} · {dateLabel(task.scheduled_date)}</p>
                   </div>
                   <div className="flex items-center gap-2">
                     <StatusBadge status={task.status} />
-                    {task.priority === "high" || task.priority === "critical" ? <span className="inline-flex items-center rounded bg-rose-100 px-2 py-0.5 text-xs font-bold text-rose-800">{task.priority}</span> : null}
-                    <Link className="text-xs font-bold text-brand-green" href={`/inspector/inspections/${task.id}`}>View</Link>
+                    {task.priority === "high" || task.priority === "critical" ? <span className="inline-flex items-center rounded bg-danger-100 px-2 py-0.5 text-xs font-bold text-danger-700">{task.priority}</span> : null}
+                    <Link className="text-xs font-bold text-brand-600" href={`/inspector/inspections/${task.id}`}>View</Link>
                   </div>
                 </div>
               ))
             ) : (
-              <p className="p-4 text-sm text-slate-500">No inspection tasks assigned.</p>
+              <p className="p-4 text-sm text-neutral-500">No inspection tasks assigned.</p>
             )}
           </div>
         </section>

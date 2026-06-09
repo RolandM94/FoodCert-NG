@@ -46,14 +46,14 @@ export function ReconciliationWorkspace({ scope }: { scope: "admin" | "state" | 
 
   return (
     <div className="grid gap-5">
-      <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+      <section className="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm">
         <div className="grid gap-3 lg:grid-cols-[180px_220px_auto]">
-          <input className="h-10 rounded border border-slate-200 bg-slate-50 px-3 text-sm" placeholder="Provider code" value={providerCode} onChange={(event) => setProviderCode(event.target.value)} />
-          <select className="h-10 rounded border border-slate-200 bg-white px-3 text-sm" value={status} onChange={(event) => setStatus(event.target.value)}>
+          <input className="h-10 rounded border border-neutral-200 bg-neutral-50 px-3 text-sm" placeholder="Provider code" value={providerCode} onChange={(event) => setProviderCode(event.target.value)} />
+          <select className="h-10 rounded border border-neutral-200 bg-white px-3 text-sm" value={status} onChange={(event) => setStatus(event.target.value)}>
             {statusOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
           </select>
           <button
-            className="inline-flex h-10 items-center justify-center gap-2 rounded bg-brand-deep px-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-300"
+            className="inline-flex h-10 items-center justify-center gap-2 rounded bg-brand-700 px-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-neutral-300"
             disabled={!records.length}
             onClick={() =>
               downloadCsv("payment-reconciliation.csv", records, [
@@ -76,7 +76,7 @@ export function ReconciliationWorkspace({ scope }: { scope: "admin" | "state" | 
 
       <DataTable<ProviderPerformanceRow>
         columns={[
-          { key: "provider", header: "Provider", render: (row) => <div className="flex items-center gap-2 font-bold text-slate-950"><Gauge size={16} className="text-brand-deep" />{row.provider_code}</div> },
+          { key: "provider", header: "Provider", render: (row) => <div className="flex items-center gap-2 font-bold text-neutral-900"><Gauge size={16} className="text-brand-700" />{row.provider_code}</div> },
           { key: "total", header: "Records", render: (row) => row.total_records },
           { key: "matched", header: "Matched", render: (row) => row.matched_records },
           { key: "issues", header: "Issues", render: (row) => row.issue_records },
@@ -89,7 +89,7 @@ export function ReconciliationWorkspace({ scope }: { scope: "admin" | "state" | 
 
       <DataTable<PaymentReconciliationRecord>
         columns={[
-          { key: "reference", header: "Reference", render: (row) => <div><p className="font-bold text-slate-950">{row.provider_reference}</p><p className="text-xs text-slate-500">{row.internal_reference || "No internal match"}</p></div> },
+          { key: "reference", header: "Reference", render: (row) => <div><p className="font-bold text-neutral-900">{row.provider_reference}</p><p className="text-xs text-neutral-500">{row.internal_reference || "No internal match"}</p></div> },
           { key: "provider", header: "Provider", render: (row) => row.provider_code },
           { key: "amount", header: "Amount", render: (row) => `${money(row.amount)} ${row.currency}` },
           { key: "status", header: "Status", render: (row) => <StatusCell status={row.status} /> },

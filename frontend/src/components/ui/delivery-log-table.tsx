@@ -11,17 +11,17 @@ function formatDate(value: string | null) {
 }
 
 const STATUS_COLORS: Record<string, string> = {
-  pending: "bg-slate-100 text-slate-600",
-  queued: "bg-blue-100 text-blue-700",
-  sending: "bg-amber-100 text-amber-700",
-  sent: "bg-emerald-100 text-emerald-800",
-  delivered: "bg-emerald-200 text-emerald-900",
-  failed: "bg-rose-100 text-rose-800",
-  bounced: "bg-orange-100 text-orange-800",
-  rejected: "bg-red-100 text-red-800",
-  opened: "bg-cyan-100 text-cyan-800",
+  pending: "bg-neutral-100 text-neutral-600",
+  queued: "bg-info-100 text-info-700",
+  sending: "bg-warning-100 text-warning-700",
+  sent: "bg-brand-100 text-brand-800",
+  delivered: "bg-brand-200 text-brand-900",
+  failed: "bg-danger-100 text-danger-700",
+  bounced: "bg-warning-100 text-warning-700",
+  rejected: "bg-danger-100 text-danger-700",
+  opened: "bg-info-100 text-cyan-800",
   clicked: "bg-indigo-100 text-indigo-800",
-  cancelled: "bg-slate-200 text-slate-500",
+  cancelled: "bg-neutral-200 text-neutral-500",
 };
 
 export function DeliveryLogTable() {
@@ -41,15 +41,15 @@ export function DeliveryLogTable() {
   if (isLoading) {
     return (
       <div className="flex items-center justify-center py-12">
-        <Loader2 className="animate-spin text-slate-400" size={24} />
+        <Loader2 className="animate-spin text-neutral-400" size={24} />
       </div>
     );
   }
 
   return (
-    <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white shadow-sm">
+    <div className="overflow-x-auto rounded-lg border border-neutral-200 bg-white shadow-sm">
       <table className="w-full text-left text-sm">
-        <thead className="bg-slate-50 text-xs font-bold uppercase tracking-wide text-slate-500">
+        <thead className="bg-neutral-50 text-xs font-bold uppercase tracking-wide text-neutral-500">
           <tr>
             <th className="px-4 py-3">Notification</th>
             <th className="px-4 py-3">Channel</th>
@@ -60,26 +60,26 @@ export function DeliveryLogTable() {
             <th className="px-4 py-3 text-right">Actions</th>
           </tr>
         </thead>
-        <tbody className="divide-y divide-slate-100">
+        <tbody className="divide-y divide-neutral-100">
           {deliveries.map((d) => (
-            <tr key={d.id} className="hover:bg-slate-50">
-              <td className="px-4 py-3 max-w-xs truncate text-slate-900" title={d.notification_title}>
+            <tr key={d.id} className="hover:bg-neutral-50">
+              <td className="px-4 py-3 max-w-xs truncate text-neutral-900" title={d.notification_title}>
                 {d.notification_title || d.id.slice(0, 8)}
               </td>
-              <td className="px-4 py-3 text-slate-600 capitalize">{d.channel_display}</td>
-              <td className="px-4 py-3 font-mono text-xs text-slate-600">{d.destination}</td>
+              <td className="px-4 py-3 text-neutral-600 capitalize">{d.channel_display}</td>
+              <td className="px-4 py-3 font-mono text-xs text-neutral-600">{d.destination}</td>
               <td className="px-4 py-3">
-                <span className={`inline-block rounded-full px-2 py-0.5 text-xs font-semibold ${STATUS_COLORS[d.status] || "bg-slate-100 text-slate-600"}`}>
+                <span className={`inline-block rounded-full px-2 py-0.5 text-xs font-semibold ${STATUS_COLORS[d.status] || "bg-neutral-100 text-neutral-600"}`}>
                   {d.status_display}
                 </span>
               </td>
-              <td className="px-4 py-3 text-slate-600">{d.retry_count}</td>
-              <td className="px-4 py-3 text-xs text-slate-500">{formatDate(d.sent_at)}</td>
+              <td className="px-4 py-3 text-neutral-600">{d.retry_count}</td>
+              <td className="px-4 py-3 text-xs text-neutral-500">{formatDate(d.sent_at)}</td>
               <td className="px-4 py-3">
                 <div className="flex items-center justify-end gap-1">
                   {(d.status === "failed" || d.status === "bounced") ? (
                     <button
-                      className="inline-flex h-8 items-center gap-1 rounded border border-slate-200 px-2.5 text-xs font-semibold text-slate-700 hover:bg-amber-50 hover:text-amber-800 disabled:opacity-50"
+                      className="inline-flex h-8 items-center gap-1 rounded border border-neutral-200 px-2.5 text-xs font-semibold text-neutral-700 hover:bg-warning-50 hover:text-warning-700 disabled:opacity-50"
                       disabled={retryMutation.isPending}
                       onClick={() => retryMutation.mutate(d.id)}
                       title="Retry delivery"
@@ -95,7 +95,7 @@ export function DeliveryLogTable() {
           ))}
           {!deliveries.length ? (
             <tr>
-              <td className="px-4 py-8 text-center text-sm text-slate-500" colSpan={7}>
+              <td className="px-4 py-8 text-center text-sm text-neutral-500" colSpan={7}>
                 No deliveries yet.
               </td>
             </tr>

@@ -85,48 +85,48 @@ export default function Page() {
   return (
     <PortalShell role="food_handler" title="Assessment Detail" description="Review current workflow status, appointment details, safe health-review progress, and certificate readiness.">
       <div className="grid gap-5">
-        <Link className="inline-flex w-fit items-center gap-2 rounded border border-slate-200 bg-white px-3 py-2 text-sm font-bold text-slate-700 shadow-sm" href="/food-handler/assessments">
+        <Link className="inline-flex w-fit items-center gap-2 rounded border border-neutral-200 bg-white px-3 py-2 text-sm font-bold text-neutral-700 shadow-sm" href="/food-handler/assessments">
           <ArrowLeft size={16} /> Back to assessments
         </Link>
-        {loading ? <p className="rounded-lg border border-slate-200 bg-white p-4 text-sm font-semibold text-slate-600 shadow-sm">Loading assessment...</p> : null}
-        {error ? <div className="flex items-start gap-2 rounded-lg bg-rose-50 p-3 text-sm font-semibold text-rose-800"><AlertCircle size={16} />{error}</div> : null}
-        {success ? <div className="rounded-lg bg-emerald-50 p-3 text-sm font-semibold text-emerald-800">{success}</div> : null}
+        {loading ? <p className="rounded-lg border border-neutral-200 bg-white p-4 text-sm font-semibold text-neutral-600 shadow-sm">Loading assessment...</p> : null}
+        {error ? <div className="flex items-start gap-2 rounded-lg bg-danger-50 p-3 text-sm font-semibold text-danger-700"><AlertCircle size={16} />{error}</div> : null}
+        {success ? <div className="rounded-lg bg-brand-50 p-3 text-sm font-semibold text-brand-800">{success}</div> : null}
 
         {assessment && snapshot ? (
           <>
             <section className="grid gap-3 md:grid-cols-4">
-              <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm"><Stethoscope className="text-brand-deep" size={18} /><p className="mt-2 text-xs font-bold uppercase text-slate-500">Status</p><div className="mt-2"><AssessmentStatusBadge status={snapshot.current_status} label={snapshot.current_status_label} /></div></div>
-              <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm"><CalendarDays className="text-brand-deep" size={18} /><p className="mt-2 text-xs font-bold uppercase text-slate-500">Appointment</p><p className="text-sm font-bold text-slate-950">{dateLabel(assessment.appointment_date || assessment.assessment_date)}</p></div>
-              <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm"><ClipboardList className="text-brand-deep" size={18} /><p className="mt-2 text-xs font-bold uppercase text-slate-500">Next action</p><p className="text-sm font-bold text-slate-950">{snapshot.next_action.label}</p></div>
-              <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm"><BadgeCheck className="text-brand-deep" size={18} /><p className="mt-2 text-xs font-bold uppercase text-slate-500">Certificate</p><StatusBadge status={assessment.certificate_submission_status || "not_submitted"} /></div>
+              <div className="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm"><Stethoscope className="text-brand-700" size={18} /><p className="mt-2 text-xs font-bold uppercase text-neutral-500">Status</p><div className="mt-2"><AssessmentStatusBadge status={snapshot.current_status} label={snapshot.current_status_label} /></div></div>
+              <div className="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm"><CalendarDays className="text-brand-700" size={18} /><p className="mt-2 text-xs font-bold uppercase text-neutral-500">Appointment</p><p className="text-sm font-bold text-neutral-900">{dateLabel(assessment.appointment_date || assessment.assessment_date)}</p></div>
+              <div className="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm"><ClipboardList className="text-brand-700" size={18} /><p className="mt-2 text-xs font-bold uppercase text-neutral-500">Next action</p><p className="text-sm font-bold text-neutral-900">{snapshot.next_action.label}</p></div>
+              <div className="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm"><BadgeCheck className="text-brand-700" size={18} /><p className="mt-2 text-xs font-bold uppercase text-neutral-500">Certificate</p><StatusBadge status={assessment.certificate_submission_status || "not_submitted"} /></div>
             </section>
 
-            <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-              <h2 className="text-sm font-bold text-slate-950">Progress</h2>
+            <section className="rounded-lg border border-neutral-200 bg-white p-5 shadow-sm">
+              <h2 className="text-sm font-bold text-neutral-900">Progress</h2>
               <div className="mt-4"><AssessmentStepper steps={snapshot.steps} /></div>
             </section>
 
             <section className="grid gap-4 lg:grid-cols-[1fr_0.8fr]">
-              <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-                <h2 className="text-sm font-bold text-slate-950">Prerequisites</h2>
+              <div className="rounded-lg border border-neutral-200 bg-white p-5 shadow-sm">
+                <h2 className="text-sm font-bold text-neutral-900">Prerequisites</h2>
                 <div className="mt-4"><AssessmentPrerequisiteChecklist blockers={snapshot.blockers} warnings={snapshot.warnings} /></div>
               </div>
-              <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-                <h2 className="text-sm font-bold text-slate-950">Assessment</h2>
+              <div className="rounded-lg border border-neutral-200 bg-white p-5 shadow-sm">
+                <h2 className="text-sm font-bold text-neutral-900">Assessment</h2>
                 <dl className="mt-4 grid gap-3 text-sm">
-                  <div className="flex items-center justify-between gap-3"><dt className="text-slate-500">Facility</dt><dd className="font-bold text-slate-950">{assessment.facility_name || "Medical facility"}</dd></div>
-                  <div className="flex items-center justify-between gap-3"><dt className="text-slate-500">Doctor</dt><dd className="font-bold text-slate-950">{assessment.doctor_name || "Not assigned"}</dd></div>
-                  <div className="flex items-center justify-between gap-3"><dt className="text-slate-500">Payment</dt><dd><StatusBadge status={assessment.payment_status || "missing"} /></dd></div>
-                  <div className="flex items-center justify-between gap-3"><dt className="text-slate-500">Decision</dt><dd><StatusBadge status={assessment.final_decision} /></dd></div>
+                  <div className="flex items-center justify-between gap-3"><dt className="text-neutral-500">Facility</dt><dd className="font-bold text-neutral-900">{assessment.facility_name || "Medical facility"}</dd></div>
+                  <div className="flex items-center justify-between gap-3"><dt className="text-neutral-500">Doctor</dt><dd className="font-bold text-neutral-900">{assessment.doctor_name || "Not assigned"}</dd></div>
+                  <div className="flex items-center justify-between gap-3"><dt className="text-neutral-500">Payment</dt><dd><StatusBadge status={assessment.payment_status || "missing"} /></dd></div>
+                  <div className="flex items-center justify-between gap-3"><dt className="text-neutral-500">Decision</dt><dd><StatusBadge status={assessment.final_decision} /></dd></div>
                 </dl>
               </div>
             </section>
 
             <section className="grid gap-3 md:grid-cols-4">
-              <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm"><ClipboardList className="text-brand-deep" size={18} /><p className="mt-2 text-xs font-bold uppercase text-slate-500">Declaration</p><StatusBadge status={assessment.declaration_status} /></div>
-              <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm"><ShieldCheck className="text-brand-deep" size={18} /><p className="mt-2 text-xs font-bold uppercase text-slate-500">Physical exam</p><StatusBadge status={assessment.physical_exam_status} /></div>
-              <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm"><FlaskConical className="text-brand-deep" size={18} /><p className="mt-2 text-xs font-bold uppercase text-slate-500">Lab review</p><StatusBadge status={assessment.lab_status} /></div>
-              <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm"><Syringe className="text-brand-deep" size={18} /><p className="mt-2 text-xs font-bold uppercase text-slate-500">Vaccination</p><StatusBadge status={assessment.vaccination_status} /></div>
+              <div className="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm"><ClipboardList className="text-brand-700" size={18} /><p className="mt-2 text-xs font-bold uppercase text-neutral-500">Declaration</p><StatusBadge status={assessment.declaration_status} /></div>
+              <div className="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm"><ShieldCheck className="text-brand-700" size={18} /><p className="mt-2 text-xs font-bold uppercase text-neutral-500">Physical exam</p><StatusBadge status={assessment.physical_exam_status} /></div>
+              <div className="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm"><FlaskConical className="text-brand-700" size={18} /><p className="mt-2 text-xs font-bold uppercase text-neutral-500">Lab review</p><StatusBadge status={assessment.lab_status} /></div>
+              <div className="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm"><Syringe className="text-brand-700" size={18} /><p className="mt-2 text-xs font-bold uppercase text-neutral-500">Vaccination</p><StatusBadge status={assessment.vaccination_status} /></div>
             </section>
 
             <AssessmentReportsPanel
@@ -140,13 +140,13 @@ export default function Page() {
             />
 
             {assessment.can_request_certificate ? (
-              <section className="rounded-lg border border-emerald-200 bg-emerald-50 p-5">
+              <section className="rounded-lg border border-brand-200 bg-brand-50 p-5">
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div>
-                    <h2 className="text-sm font-bold text-emerald-950">Certificate Ready</h2>
-                    <p className="mt-1 text-sm text-emerald-800">Final fit decision was signed {dateLabel(assessment.signed_at)}.</p>
+                    <h2 className="text-sm font-bold text-brand-900">Certificate Ready</h2>
+                    <p className="mt-1 text-sm text-brand-800">Final fit decision was signed {dateLabel(assessment.signed_at)}.</p>
                   </div>
-                  <button className="inline-flex h-10 items-center gap-2 rounded bg-brand-green px-4 text-sm font-bold text-white disabled:opacity-60" disabled={busy} type="button" onClick={() => void submitCertificateRequest()}>
+                  <button className="inline-flex h-10 items-center gap-2 rounded bg-brand-600 px-4 text-sm font-bold text-white disabled:opacity-60" disabled={busy} type="button" onClick={() => void submitCertificateRequest()}>
                     <FileCheck2 size={16} /> Request certificate
                   </button>
                 </div>

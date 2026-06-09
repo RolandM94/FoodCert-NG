@@ -16,11 +16,11 @@ function formatDate(value: string) {
 }
 
 const STATUS_COLORS: Record<string, string> = {
-  draft: "bg-slate-100 text-slate-700",
-  pending_approval: "bg-amber-100 text-amber-800",
-  active: "bg-emerald-100 text-emerald-800",
-  archived: "bg-slate-200 text-slate-500",
-  rejected: "bg-rose-100 text-rose-800",
+  draft: "bg-neutral-100 text-neutral-700",
+  pending_approval: "bg-warning-100 text-warning-700",
+  active: "bg-brand-100 text-brand-800",
+  archived: "bg-neutral-200 text-neutral-500",
+  rejected: "bg-danger-100 text-danger-700",
 };
 
 export function NotificationTemplateTable({
@@ -65,7 +65,7 @@ export function NotificationTemplateTable({
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-3">
         <input
-          className="h-10 w-64 rounded border border-slate-200 bg-slate-50 px-3 text-sm outline-none ring-brand-green/20 focus:border-brand-green focus:ring-2"
+          className="h-10 w-64 rounded border border-neutral-200 bg-neutral-50 px-3 text-sm outline-none ring-brand-600/20 focus:border-brand-600 focus:ring-2"
           placeholder="Search templates..."
           type="search"
           value={search}
@@ -73,7 +73,7 @@ export function NotificationTemplateTable({
         />
         {onCreate ? (
           <button
-            className="inline-flex h-10 items-center gap-1.5 rounded bg-brand-green px-4 text-sm font-bold text-white hover:bg-brand-deep"
+            className="inline-flex h-10 items-center gap-1.5 rounded bg-brand-600 px-4 text-sm font-bold text-white hover:bg-brand-700"
             onClick={onCreate}
             type="button"
           >
@@ -85,12 +85,12 @@ export function NotificationTemplateTable({
 
       {isLoading ? (
         <div className="flex items-center justify-center py-12">
-          <Loader2 className="animate-spin text-slate-400" size={24} />
+          <Loader2 className="animate-spin text-neutral-400" size={24} />
         </div>
       ) : (
-        <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white shadow-sm">
+        <div className="overflow-x-auto rounded-lg border border-neutral-200 bg-white shadow-sm">
           <table className="w-full text-left text-sm">
-            <thead className="bg-slate-50 text-xs font-bold uppercase tracking-wide text-slate-500">
+            <thead className="bg-neutral-50 text-xs font-bold uppercase tracking-wide text-neutral-500">
               <tr>
                 <th className="px-4 py-3">Name</th>
                 <th className="px-4 py-3">Key</th>
@@ -102,25 +102,25 @@ export function NotificationTemplateTable({
                 <th className="px-4 py-3 text-right">Actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100">
+            <tbody className="divide-y divide-neutral-100">
               {filtered.map((t) => (
-                <tr key={t.id} className="hover:bg-slate-50">
-                  <td className="px-4 py-3 font-semibold text-slate-900">{t.name}</td>
-                  <td className="px-4 py-3 font-mono text-xs text-slate-600">{t.template_key}</td>
-                  <td className="px-4 py-3 text-slate-600">{t.channel_display}</td>
-                  <td className="px-4 py-3 text-slate-600">{t.category_display}</td>
-                  <td className="px-4 py-3 text-slate-600">v{t.version}</td>
+                <tr key={t.id} className="hover:bg-neutral-50">
+                  <td className="px-4 py-3 font-semibold text-neutral-900">{t.name}</td>
+                  <td className="px-4 py-3 font-mono text-xs text-neutral-600">{t.template_key}</td>
+                  <td className="px-4 py-3 text-neutral-600">{t.channel_display}</td>
+                  <td className="px-4 py-3 text-neutral-600">{t.category_display}</td>
+                  <td className="px-4 py-3 text-neutral-600">v{t.version}</td>
                   <td className="px-4 py-3">
-                    <span className={`inline-block rounded-full px-2 py-0.5 text-xs font-semibold ${STATUS_COLORS[t.status] || "bg-slate-100 text-slate-600"}`}>
+                    <span className={`inline-block rounded-full px-2 py-0.5 text-xs font-semibold ${STATUS_COLORS[t.status] || "bg-neutral-100 text-neutral-600"}`}>
                       {t.status_display}
                     </span>
                   </td>
-                  <td className="px-4 py-3 text-xs text-slate-500">{formatDate(t.updated_at)}</td>
+                  <td className="px-4 py-3 text-xs text-neutral-500">{formatDate(t.updated_at)}</td>
                   <td className="px-4 py-3">
                     <div className="flex items-center justify-end gap-1">
                       {onEdit ? (
                         <button
-                          className="inline-flex h-8 w-8 items-center justify-center rounded text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                          className="inline-flex h-8 w-8 items-center justify-center rounded text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700"
                           onClick={() => onEdit(t)}
                           title="Edit"
                           type="button"
@@ -130,7 +130,7 @@ export function NotificationTemplateTable({
                       ) : null}
                       {t.status === "draft" ? (
                         <button
-                          className="inline-flex h-8 w-8 items-center justify-center rounded text-slate-400 hover:bg-amber-50 hover:text-amber-700"
+                          className="inline-flex h-8 w-8 items-center justify-center rounded text-neutral-400 hover:bg-warning-50 hover:text-warning-700"
                           onClick={() => submitMutation.mutate(t.id)}
                           title="Submit for approval"
                           type="button"
@@ -139,7 +139,7 @@ export function NotificationTemplateTable({
                         </button>
                       ) : t.status === "pending_approval" ? (
                         <button
-                          className="inline-flex h-8 w-8 items-center justify-center rounded text-slate-400 hover:bg-emerald-50 hover:text-brand-green"
+                          className="inline-flex h-8 w-8 items-center justify-center rounded text-neutral-400 hover:bg-brand-50 hover:text-brand-600"
                           onClick={() => approveMutation.mutate(t.id)}
                           title="Approve"
                           type="button"
@@ -149,7 +149,7 @@ export function NotificationTemplateTable({
                       ) : null}
                       {t.status !== "archived" ? (
                         <button
-                          className="inline-flex h-8 w-8 items-center justify-center rounded text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                          className="inline-flex h-8 w-8 items-center justify-center rounded text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700"
                           onClick={() => archiveMutation.mutate(t.id)}
                           title="Archive"
                           type="button"
@@ -163,7 +163,7 @@ export function NotificationTemplateTable({
               ))}
               {!filtered.length ? (
                 <tr>
-                  <td className="px-4 py-8 text-center text-sm text-slate-500" colSpan={8}>
+                  <td className="px-4 py-8 text-center text-sm text-neutral-500" colSpan={8}>
                     No templates found.
                   </td>
                 </tr>

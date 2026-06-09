@@ -72,22 +72,22 @@ export default function LoginPage() {
   }
 
   return (
-    <main className="min-h-screen bg-[#f7faf8] flex items-center justify-center p-4">
-      <div className="w-full max-w-5xl grid gap-0 rounded-2xl border border-slate-200 bg-white shadow-lg overflow-hidden lg:grid-cols-[1fr_1fr]">
+    <main className="min-h-screen bg-neutral-50 flex items-center justify-center p-4">
+      <div className="w-full max-w-5xl grid gap-0 rounded-2xl border border-neutral-200 bg-white shadow-lg overflow-hidden lg:grid-cols-[1fr_1fr]">
         {/* Left panel — role cards */}
-        <div className="hidden bg-slate-50 p-8 lg:flex lg:flex-col lg:justify-center">
+        <div className="hidden bg-neutral-50 p-8 lg:flex lg:flex-col lg:justify-center">
           <div className="mb-8">
             <div className="flex items-center gap-3 mb-4">
-              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-brand-green text-white">
+              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-brand-600 text-white">
                 <ShieldCheck size={22} />
               </div>
               <div>
-                <p className="text-sm font-bold text-slate-950">FoodCert NG</p>
-                <p className="text-xs text-slate-500">National certification platform</p>
+                <p className="text-sm font-bold text-neutral-900">FoodCert NG</p>
+                <p className="text-xs text-neutral-500">National certification platform</p>
               </div>
             </div>
-            <h1 className="text-xl font-bold tracking-tight text-slate-950">Welcome back</h1>
-            <p className="mt-2 text-sm text-slate-600">
+            <h1 className="text-xl font-bold tracking-tight text-neutral-900">Welcome back</h1>
+            <p className="mt-2 text-sm text-neutral-600">
               Sign in to access your role-specific portal. The platform routes you automatically based on your account type.
             </p>
           </div>
@@ -98,12 +98,12 @@ export default function LoginPage() {
               return (
                 <div
                   key={hint.label}
-                  className="flex items-center gap-3 rounded-lg border border-slate-200 bg-white p-3"
+                  className="flex items-center gap-3 rounded-lg border border-neutral-200 bg-white p-3"
                 >
-                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-emerald-50 text-brand-deep">
+                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-brand-50 text-brand-700">
                     <Icon size={16} />
                   </div>
-                  <span className="text-xs font-semibold text-slate-700">{hint.label}</span>
+                  <span className="text-xs font-semibold text-neutral-700">{hint.label}</span>
                 </div>
               );
             })}
@@ -114,28 +114,28 @@ export default function LoginPage() {
         <div className="flex flex-col justify-center p-8 sm:p-10">
           <div className="mb-6 lg:hidden">
             <div className="flex items-center gap-3 mb-4">
-              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-brand-green text-white">
+              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-brand-600 text-white">
                 <ShieldCheck size={22} />
               </div>
               <div>
-                <p className="text-sm font-bold text-slate-950">FoodCert NG</p>
-                <p className="text-xs text-slate-500">National certification platform</p>
+                <p className="text-sm font-bold text-neutral-900">FoodCert NG</p>
+                <p className="text-xs text-neutral-500">National certification platform</p>
               </div>
             </div>
-            <h1 className="text-xl font-bold tracking-tight text-slate-950">Sign in</h1>
-            <p className="mt-1 text-sm text-slate-600">Access your role-specific portal.</p>
+            <h1 className="text-xl font-bold tracking-tight text-neutral-900">Sign in</h1>
+            <p className="mt-1 text-sm text-neutral-600">Access your role-specific portal.</p>
           </div>
 
           <div className="hidden lg:block mb-6">
-            <h2 className="text-lg font-bold text-slate-950">Sign in</h2>
-            <p className="mt-1 text-sm text-slate-600">Enter your credentials to continue.</p>
+            <h2 className="text-lg font-bold text-neutral-900">Sign in</h2>
+            <p className="mt-1 text-sm text-neutral-600">Enter your credentials to continue.</p>
           </div>
 
           <form className="grid gap-4" onSubmit={submit}>
-            <label className="grid gap-1.5 text-sm font-semibold text-slate-700">
+            <label className="grid gap-1.5 text-sm font-semibold text-neutral-700">
               Username or email
               <input
-                className="h-11 rounded-lg border border-slate-200 bg-slate-50 px-3 outline-none ring-brand-green/20 focus:border-brand-green focus:ring-2"
+                className="h-11 rounded-lg border border-neutral-200 bg-neutral-50 px-3 outline-none ring-brand-600/20 focus:border-brand-600 focus:ring-2"
                 onChange={(e) => setUsername(e.target.value)}
                 required
                 value={username}
@@ -143,10 +143,10 @@ export default function LoginPage() {
                 autoFocus
               />
             </label>
-            <label className="grid gap-1.5 text-sm font-semibold text-slate-700">
+            <label className="grid gap-1.5 text-sm font-semibold text-neutral-700">
               Password
               <input
-                className="h-11 rounded-lg border border-slate-200 bg-slate-50 px-3 outline-none ring-brand-green/20 focus:border-brand-green focus:ring-2"
+                className="h-11 rounded-lg border border-neutral-200 bg-neutral-50 px-3 outline-none ring-brand-600/20 focus:border-brand-600 focus:ring-2"
                 onChange={(e) => setPassword(e.target.value)}
                 required
                 type="password"
@@ -156,14 +156,14 @@ export default function LoginPage() {
             </label>
 
             {error && (
-              <div className="flex items-start gap-2 rounded-lg bg-rose-50 p-3 text-sm font-semibold text-rose-800">
+              <div className="flex items-start gap-2 rounded-lg bg-danger-50 p-3 text-sm font-semibold text-danger-700">
                 <AlertCircle size={16} className="mt-0.5 shrink-0" />
                 <span>{error}</span>
               </div>
             )}
 
             <button
-              className="mt-2 inline-flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-brand-green text-sm font-bold text-white hover:bg-brand-deep disabled:opacity-60 transition-colors"
+              className="mt-2 inline-flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-brand-600 text-sm font-bold text-white hover:bg-brand-700 disabled:opacity-60 transition-colors"
               disabled={loading}
               type="submit"
             >
@@ -173,14 +173,14 @@ export default function LoginPage() {
             </button>
           </form>
 
-          <p className="mt-6 text-center text-sm text-slate-500">
+          <p className="mt-6 text-center text-sm text-neutral-500">
             Don&apos;t have an account?{" "}
-            <Link href="/register" className="font-semibold text-brand-deep hover:underline">
+            <Link href="/register" className="font-semibold text-brand-700 hover:underline">
               Register as a Food Handler
             </Link>
           </p>
 
-          <p className="mt-3 text-center text-xs text-slate-400">
+          <p className="mt-3 text-center text-xs text-neutral-400">
             Employers, facilities, and government users are invited by an organization administrator.
           </p>
         </div>

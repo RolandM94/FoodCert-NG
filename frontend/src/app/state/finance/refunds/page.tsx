@@ -18,8 +18,8 @@ export default function Page() {
   return (
     <PortalShell role="state_admin" title="State refunds" description="Track refund requests linked to payments in your state.">
       <div className="grid gap-5">
-        <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-          <select className="h-10 rounded border border-slate-200 bg-white px-3 text-sm" value={status} onChange={(event) => setStatus(event.target.value)}>
+        <section className="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm">
+          <select className="h-10 rounded border border-neutral-200 bg-white px-3 text-sm" value={status} onChange={(event) => setStatus(event.target.value)}>
             <option value="">All refund statuses</option>
             <option value="requested">Requested</option>
             <option value="approved">Approved</option>
@@ -30,7 +30,7 @@ export default function Page() {
         </section>
         <DataTable<StateRefundItem>
           columns={[
-            { key: "payment", header: "Payment", render: (row) => <div><p className="font-bold text-slate-950">{row.payment_reference}</p><p className="text-xs text-slate-500">{row.requested_by_email || "Requester unavailable"}</p></div> },
+            { key: "payment", header: "Payment", render: (row) => <div><p className="font-bold text-neutral-900">{row.payment_reference}</p><p className="text-xs text-neutral-500">{row.requested_by_email || "Requester unavailable"}</p></div> },
             { key: "amount", header: "Amount", render: (row) => money(row.amount) },
             { key: "status", header: "Status", render: (row) => <StatusCell status={row.status} /> },
             { key: "reason", header: "Reason", render: (row) => row.reason },

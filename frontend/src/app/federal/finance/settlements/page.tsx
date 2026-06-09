@@ -16,8 +16,8 @@ export default function Page() {
   return (
     <PortalShell role="federal_admin" title="National settlements" description="Aggregate settlement monitoring across states and facilities.">
       <div className="grid gap-5">
-        <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-          <select className="h-10 rounded border border-slate-200 bg-white px-3 text-sm" value={status} onChange={(event) => setStatus(event.target.value)}>
+        <section className="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm">
+          <select className="h-10 rounded border border-neutral-200 bg-white px-3 text-sm" value={status} onChange={(event) => setStatus(event.target.value)}>
             <option value="">All statuses</option>
             <option value="pending">Pending</option>
             <option value="held">Held</option>
@@ -28,7 +28,7 @@ export default function Page() {
         </section>
         <DataTable<FederalFinanceSettlementItem>
           columns={[
-            { key: "state", header: "State / facility", render: (row) => <div><p className="font-bold text-slate-950">{row.state_name}</p><p className="text-xs text-slate-500">{row.facility_name}</p></div> },
+            { key: "state", header: "State / facility", render: (row) => <div><p className="font-bold text-neutral-900">{row.state_name}</p><p className="text-xs text-neutral-500">{row.facility_name}</p></div> },
             { key: "reference", header: "Reference", render: (row) => row.settlement_reference },
             { key: "gross", header: "Gross", render: (row) => money(row.gross_amount) },
             { key: "status", header: "Status", render: (row) => <StatusCell status={row.settlement_status} /> },

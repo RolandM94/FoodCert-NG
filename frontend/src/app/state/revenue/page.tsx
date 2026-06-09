@@ -35,11 +35,11 @@ export default function Page() {
   return (
     <PortalShell role="state_admin" title="Revenue" description="Review state revenue, facility settlement splits, and reconciliation status.">
       <div className="grid gap-5">
-        <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+        <section className="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm">
           <div className="grid gap-3 lg:grid-cols-[170px_170px_220px_auto]">
-            <input className="h-10 rounded border border-slate-200 bg-slate-50 px-3 text-sm" type="date" value={dateFrom} onChange={(event) => setDateFrom(event.target.value)} />
-            <input className="h-10 rounded border border-slate-200 bg-slate-50 px-3 text-sm" type="date" value={dateTo} onChange={(event) => setDateTo(event.target.value)} />
-            <select className="h-10 rounded border border-slate-200 bg-white px-3 text-sm" value={status} onChange={(event) => setStatus(event.target.value)}>
+            <input className="h-10 rounded border border-neutral-200 bg-neutral-50 px-3 text-sm" type="date" value={dateFrom} onChange={(event) => setDateFrom(event.target.value)} />
+            <input className="h-10 rounded border border-neutral-200 bg-neutral-50 px-3 text-sm" type="date" value={dateTo} onChange={(event) => setDateTo(event.target.value)} />
+            <select className="h-10 rounded border border-neutral-200 bg-white px-3 text-sm" value={status} onChange={(event) => setStatus(event.target.value)}>
               <option value="">All settlement statuses</option>
               <option value="pending">Pending</option>
               <option value="processing">Processing</option>
@@ -48,7 +48,7 @@ export default function Page() {
               <option value="cancelled">Cancelled</option>
             </select>
             <button
-              className="inline-flex h-10 items-center justify-center gap-2 rounded bg-brand-deep px-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-300"
+              className="inline-flex h-10 items-center justify-center gap-2 rounded bg-brand-700 px-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-neutral-300"
               disabled={!rows.length}
               onClick={() =>
                 downloadCsv("state-settlements.csv", rows, [
@@ -77,16 +77,16 @@ export default function Page() {
             ["Facility share", snapshot?.cards.facility_amount],
             ["Platform share", snapshot?.cards.platform_amount],
           ].map(([label, value]) => (
-            <div key={label} className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-              <div className="mb-2 flex items-center gap-2 text-brand-deep"><Banknote size={16} /><p className="text-xs font-bold uppercase text-slate-500">{label}</p></div>
-              <p className="text-xl font-bold text-slate-950">{money(value)}</p>
+            <div key={label} className="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm">
+              <div className="mb-2 flex items-center gap-2 text-brand-700"><Banknote size={16} /><p className="text-xs font-bold uppercase text-neutral-500">{label}</p></div>
+              <p className="text-xl font-bold text-neutral-900">{money(value)}</p>
             </div>
           ))}
         </section>
 
         <DataTable<StateSettlementItem>
           columns={[
-            { key: "facility", header: "Facility", render: (row) => <div><p className="font-bold text-slate-950">{row.facility_name}</p><p className="text-xs text-slate-500">{row.settlement_reference || "No reference"}</p></div> },
+            { key: "facility", header: "Facility", render: (row) => <div><p className="font-bold text-neutral-900">{row.facility_name}</p><p className="text-xs text-neutral-500">{row.settlement_reference || "No reference"}</p></div> },
             { key: "gross", header: "Gross", render: (row) => money(row.gross_amount) },
             { key: "facility_share", header: "Facility share", render: (row) => money(row.facility_amount) },
             { key: "state", header: "State share", render: (row) => money(row.state_amount) },

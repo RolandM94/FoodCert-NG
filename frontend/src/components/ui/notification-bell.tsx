@@ -16,13 +16,13 @@ export function NotificationBell({ href }: { href: string }) {
 
   return (
     <Link
-      className="relative inline-flex h-10 w-10 items-center justify-center rounded border border-slate-200 text-slate-700 hover:bg-slate-50"
+      className="relative inline-flex h-10 w-10 items-center justify-center rounded border border-neutral-200 text-neutral-700 hover:bg-neutral-50"
       href={href}
       aria-label={`Notifications${count > 0 ? ` (${count} unread)` : ""}`}
     >
       <Bell aria-hidden="true" size={18} />
       {count > 0 ? (
-        <span className="absolute -right-1 -top-1 min-w-5 rounded-full bg-rose-600 px-1.5 py-0.5 text-center text-[10px] font-bold text-white">
+        <span className="absolute -right-1 -top-1 min-w-5 rounded-full bg-danger-500 px-1.5 py-0.5 text-center text-[10px] font-bold text-white">
           {count > 99 ? "99+" : count}
         </span>
       ) : null}

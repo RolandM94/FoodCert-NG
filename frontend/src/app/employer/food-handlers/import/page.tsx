@@ -100,49 +100,49 @@ export default function Page() {
     <PortalShell role="employer" title="Import Food Handlers" description="Upload a CSV file with food handler details to send bulk invitations.">
       <div className="max-w-2xl space-y-5">
         {/* Branch selector */}
-        <label className="flex items-center gap-2 text-sm font-semibold text-slate-700">
-          <MapPin size={14} className="text-slate-400" />
+        <label className="flex items-center gap-2 text-sm font-semibold text-neutral-700">
+          <MapPin size={14} className="text-neutral-400" />
           Default branch for new handlers:
-          <input className="h-10 rounded border border-slate-200 bg-white px-2 text-sm flex-1" value={branchId} onChange={(e) => setBranchId(e.target.value)} placeholder="Leave blank for no branch assignment" />
+          <input className="h-10 rounded border border-neutral-200 bg-white px-2 text-sm flex-1" value={branchId} onChange={(e) => setBranchId(e.target.value)} placeholder="Leave blank for no branch assignment" />
         </label>
 
         {/* File upload */}
-        <div className="rounded-lg border-2 border-dashed border-slate-300 bg-slate-50 p-8 text-center">
-          <Upload size={32} className="mx-auto text-slate-400" />
-          <p className="mt-3 text-sm font-semibold text-slate-700">Upload CSV file</p>
-          <p className="mt-1 text-xs text-slate-500">Columns: full_name, phone, email, category</p>
+        <div className="rounded-lg border-2 border-dashed border-neutral-300 bg-neutral-50 p-8 text-center">
+          <Upload size={32} className="mx-auto text-neutral-400" />
+          <p className="mt-3 text-sm font-semibold text-neutral-700">Upload CSV file</p>
+          <p className="mt-1 text-xs text-neutral-500">Columns: full_name, phone, email, category</p>
           <input ref={fileRef} type="file" accept=".csv" onChange={handleFile} className="hidden" />
-          <button className="mt-4 inline-flex h-10 items-center gap-2 rounded bg-brand-green px-4 text-sm font-bold text-white hover:bg-brand-deep" onClick={() => fileRef.current?.click()}>
+          <button className="mt-4 inline-flex h-10 items-center gap-2 rounded bg-brand-600 px-4 text-sm font-bold text-white hover:bg-brand-700" onClick={() => fileRef.current?.click()}>
             Choose file
           </button>
         </div>
 
-        {error && <div className="flex items-start gap-2 rounded-lg bg-rose-50 p-3 text-sm font-semibold text-rose-800"><AlertCircle size={16} className="mt-0.5" /><span>{error}</span></div>}
+        {error && <div className="flex items-start gap-2 rounded-lg bg-danger-50 p-3 text-sm font-semibold text-danger-700"><AlertCircle size={16} className="mt-0.5" /><span>{error}</span></div>}
 
         {/* Preview */}
         {rows.length > 0 && !results && (
           <div>
             <div className="flex items-center justify-between mb-3">
-              <p className="text-sm font-bold text-slate-950">{rows.length} handlers ready to import</p>
-              {rows.length > 0 && <span className="text-xs text-slate-400">Click X to remove a row</span>}
+              <p className="text-sm font-bold text-neutral-900">{rows.length} handlers ready to import</p>
+              {rows.length > 0 && <span className="text-xs text-neutral-400">Click X to remove a row</span>}
             </div>
-            <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
+            <div className="overflow-x-auto rounded-lg border border-neutral-200 bg-white">
               <table className="w-full text-sm">
-                <thead><tr className="border-b border-slate-100 bg-slate-50 text-left"><th className="px-3 py-2 text-xs font-bold uppercase text-slate-500">Name</th><th className="px-3 py-2 text-xs font-bold uppercase text-slate-500">Phone</th><th className="px-3 py-2 text-xs font-bold uppercase text-slate-500">Email</th><th className="px-3 py-2 text-xs font-bold uppercase text-slate-500">Category</th><th className="px-3 py-2"></th></tr></thead>
-                <tbody className="divide-y divide-slate-50">
+                <thead><tr className="border-b border-neutral-100 bg-neutral-50 text-left"><th className="px-3 py-2 text-xs font-bold uppercase text-neutral-500">Name</th><th className="px-3 py-2 text-xs font-bold uppercase text-neutral-500">Phone</th><th className="px-3 py-2 text-xs font-bold uppercase text-neutral-500">Email</th><th className="px-3 py-2 text-xs font-bold uppercase text-neutral-500">Category</th><th className="px-3 py-2"></th></tr></thead>
+                <tbody className="divide-y divide-neutral-50">
                   {rows.map((r, i) => (
-                    <tr key={i} className="hover:bg-slate-50">
-                      <td className="px-3 py-2 text-slate-800">{r.full_name}</td>
-                      <td className="px-3 py-2 text-slate-600 font-mono text-xs">{r.phone}</td>
-                      <td className="px-3 py-2 text-slate-600 text-xs">{r.email || "—"}</td>
-                      <td className="px-3 py-2 text-xs text-slate-500 capitalize">{r.food_handler_category?.replace(/_/g, " ")}</td>
-                      <td className="px-3 py-2"><button className="rounded p-1 hover:bg-red-50 text-slate-400 hover:text-red-600" onClick={() => removeRow(i)}><X size={14} /></button></td>
+                    <tr key={i} className="hover:bg-neutral-50">
+                      <td className="px-3 py-2 text-neutral-800">{r.full_name}</td>
+                      <td className="px-3 py-2 text-neutral-600 font-mono text-xs">{r.phone}</td>
+                      <td className="px-3 py-2 text-neutral-600 text-xs">{r.email || "—"}</td>
+                      <td className="px-3 py-2 text-xs text-neutral-500 capitalize">{r.food_handler_category?.replace(/_/g, " ")}</td>
+                      <td className="px-3 py-2"><button className="rounded p-1 hover:bg-danger-50 text-neutral-400 hover:text-danger-500" onClick={() => removeRow(i)}><X size={14} /></button></td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
-            <button className="mt-4 inline-flex h-11 items-center gap-2 rounded-lg bg-brand-green px-6 text-sm font-bold text-white hover:bg-brand-deep disabled:opacity-60" disabled={loading} onClick={handleUpload}>
+            <button className="mt-4 inline-flex h-11 items-center gap-2 rounded-lg bg-brand-600 px-6 text-sm font-bold text-white hover:bg-brand-700 disabled:opacity-60" disabled={loading} onClick={handleUpload}>
               <CheckCircle2 size={16} />
               {loading ? "Uploading..." : `Import ${rows.length} handlers`}
             </button>
@@ -151,20 +151,20 @@ export default function Page() {
 
         {/* Results */}
         {results && (
-          <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-            <h3 className="text-sm font-bold text-slate-950 mb-3">Import results</h3>
+          <div className="rounded-lg border border-neutral-200 bg-white p-5 shadow-sm">
+            <h3 className="text-sm font-bold text-neutral-900 mb-3">Import results</h3>
             <div className="flex gap-4 mb-4 text-sm">
-              <span className="text-emerald-700 font-semibold">{results.filter((r) => !r.error).length} created</span>
-              <span className="text-red-600 font-semibold">{results.filter((r) => r.error).length} errors</span>
+              <span className="text-brand-700 font-semibold">{results.filter((r) => !r.error).length} created</span>
+              <span className="text-danger-500 font-semibold">{results.filter((r) => r.error).length} errors</span>
             </div>
             {results.filter((r) => r.error).length > 0 && (
               <div className="space-y-1 text-xs">
                 {results.filter((r) => r.error).map((r, i) => (
-                  <div key={i} className="rounded bg-rose-50 px-3 py-1.5 text-rose-700">Row {r.row + 1}: {r.error}</div>
+                  <div key={i} className="rounded bg-danger-50 px-3 py-1.5 text-danger-700">Row {r.row + 1}: {r.error}</div>
                 ))}
               </div>
             )}
-            <button className="mt-4 text-sm font-semibold text-brand-deep hover:underline" onClick={() => { setResults(null); setRows([]); }}>
+            <button className="mt-4 text-sm font-semibold text-brand-700 hover:underline" onClick={() => { setResults(null); setRows([]); }}>
               Import another file
             </button>
           </div>

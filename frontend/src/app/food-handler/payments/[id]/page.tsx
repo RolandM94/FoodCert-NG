@@ -74,57 +74,57 @@ export default function Page() {
   return (
     <PortalShell role="food_handler" title="Payment Details" description="Review receipt details and submit a refund request where policy allows.">
       <div className="grid gap-5">
-        <Link className="inline-flex w-fit items-center gap-2 rounded border border-slate-200 px-3 py-2 text-sm font-bold text-slate-700" href="/food-handler/payments"><ArrowLeft size={16} /> Payments</Link>
-        {loading ? <p className="rounded-lg border border-slate-200 bg-white p-4 text-sm font-semibold text-slate-600 shadow-sm">Loading payment...</p> : null}
-        {error ? <div className="flex items-start gap-2 rounded-lg bg-rose-50 p-3 text-sm font-semibold text-rose-800"><AlertCircle size={16} />{error}</div> : null}
-        {success ? <div className="rounded-lg bg-emerald-50 p-3 text-sm font-semibold text-emerald-800">{success}</div> : null}
+        <Link className="inline-flex w-fit items-center gap-2 rounded border border-neutral-200 px-3 py-2 text-sm font-bold text-neutral-700" href="/food-handler/payments"><ArrowLeft size={16} /> Payments</Link>
+        {loading ? <p className="rounded-lg border border-neutral-200 bg-white p-4 text-sm font-semibold text-neutral-600 shadow-sm">Loading payment...</p> : null}
+        {error ? <div className="flex items-start gap-2 rounded-lg bg-danger-50 p-3 text-sm font-semibold text-danger-700"><AlertCircle size={16} />{error}</div> : null}
+        {success ? <div className="rounded-lg bg-brand-50 p-3 text-sm font-semibold text-brand-800">{success}</div> : null}
 
         {payment ? (
           <section className="grid gap-4 lg:grid-cols-[1fr_0.78fr]">
-            <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-              <p className="text-xs font-bold uppercase text-brand-deep">Transaction</p>
-              <h2 className="mt-1 break-all text-xl font-bold text-slate-950">{payment.internal_reference}</h2>
+            <div className="rounded-lg border border-neutral-200 bg-white p-5 shadow-sm">
+              <p className="text-xs font-bold uppercase text-brand-700">Transaction</p>
+              <h2 className="mt-1 break-all text-xl font-bold text-neutral-900">{payment.internal_reference}</h2>
               <dl className="mt-5 grid gap-3 sm:grid-cols-2">
-                <div><dt className="text-xs font-bold uppercase text-slate-500">Amount</dt><dd className="text-sm font-semibold text-slate-900">{money(payment.amount)}</dd></div>
-                <div><dt className="text-xs font-bold uppercase text-slate-500">Status</dt><dd className="mt-1"><StatusBadge status={payment.status} /></dd></div>
-                <div><dt className="text-xs font-bold uppercase text-slate-500">Purpose</dt><dd className="text-sm font-semibold capitalize text-slate-900">{payment.related_entity_type.replaceAll("_", " ")}</dd></div>
-                <div><dt className="text-xs font-bold uppercase text-slate-500">Paid at</dt><dd className="text-sm font-semibold text-slate-900">{dateLabel(payment.paid_at)}</dd></div>
+                <div><dt className="text-xs font-bold uppercase text-neutral-500">Amount</dt><dd className="text-sm font-semibold text-neutral-900">{money(payment.amount)}</dd></div>
+                <div><dt className="text-xs font-bold uppercase text-neutral-500">Status</dt><dd className="mt-1"><StatusBadge status={payment.status} /></dd></div>
+                <div><dt className="text-xs font-bold uppercase text-neutral-500">Purpose</dt><dd className="text-sm font-semibold capitalize text-neutral-900">{payment.related_entity_type.replaceAll("_", " ")}</dd></div>
+                <div><dt className="text-xs font-bold uppercase text-neutral-500">Paid at</dt><dd className="text-sm font-semibold text-neutral-900">{dateLabel(payment.paid_at)}</dd></div>
               </dl>
 
               {receipt ? (
-                <div className="mt-5 rounded border border-emerald-200 bg-emerald-50 p-4">
-                  <div className="flex items-center gap-2 text-emerald-800"><ReceiptText size={18} /><p className="text-sm font-bold">Receipt</p></div>
-                  <p className="mt-2 text-sm font-bold text-emerald-950">{receipt.receipt_number}</p>
-                  <p className="text-xs text-emerald-800">{dateLabel(receipt.issued_at)}</p>
+                <div className="mt-5 rounded border border-brand-200 bg-brand-50 p-4">
+                  <div className="flex items-center gap-2 text-brand-800"><ReceiptText size={18} /><p className="text-sm font-bold">Receipt</p></div>
+                  <p className="mt-2 text-sm font-bold text-brand-900">{receipt.receipt_number}</p>
+                  <p className="text-xs text-brand-800">{dateLabel(receipt.issued_at)}</p>
                 </div>
               ) : null}
             </div>
 
-            <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="rounded-lg border border-neutral-200 bg-white p-5 shadow-sm">
               <div className="flex items-center gap-2">
-                <FileWarning className="text-brand-deep" size={18} />
-                <h2 className="text-base font-bold text-slate-950">Refund request</h2>
+                <FileWarning className="text-brand-700" size={18} />
+                <h2 className="text-base font-bold text-neutral-900">Refund request</h2>
               </div>
               {openRefund ? (
-                <div className="mt-4 rounded border border-amber-200 bg-amber-50 p-3">
+                <div className="mt-4 rounded border border-warning-100 bg-warning-50 p-3">
                   <p className="text-sm font-bold text-amber-950">Request in progress</p>
                   <p className="mt-1 text-sm text-amber-900">{openRefund.reason}</p>
                   <div className="mt-2"><StatusBadge status={openRefund.status} /></div>
                 </div>
               ) : payment.status === "success" ? (
                 <div className="mt-4 grid gap-3">
-                  <textarea className="min-h-28 rounded border border-slate-200 bg-slate-50 p-3 text-sm" placeholder="Explain why you are requesting a refund" value={reason} onChange={(event) => setReason(event.target.value)} />
-                  <button className="inline-flex h-10 items-center justify-center gap-2 rounded bg-brand-green px-4 text-sm font-bold text-white disabled:opacity-60" disabled={busy || !reason.trim()} onClick={() => void submitRefund()} type="button"><Send size={16} /> Submit request</button>
+                  <textarea className="min-h-28 rounded border border-neutral-200 bg-neutral-50 p-3 text-sm" placeholder="Explain why you are requesting a refund" value={reason} onChange={(event) => setReason(event.target.value)} />
+                  <button className="inline-flex h-10 items-center justify-center gap-2 rounded bg-brand-600 px-4 text-sm font-bold text-white disabled:opacity-60" disabled={busy || !reason.trim()} onClick={() => void submitRefund()} type="button"><Send size={16} /> Submit request</button>
                 </div>
               ) : (
-                <p className="mt-4 text-sm text-slate-600">Refund requests are available after successful payment.</p>
+                <p className="mt-4 text-sm text-neutral-600">Refund requests are available after successful payment.</p>
               )}
 
               <div className="mt-5 grid gap-2">
                 {refunds.map((refund) => (
-                  <div className="rounded border border-slate-200 p-3" key={refund.id}>
-                    <div className="flex items-center justify-between gap-2"><p className="text-sm font-bold text-slate-950">{money(refund.amount)}</p><StatusBadge status={refund.status} /></div>
-                    <p className="mt-1 text-sm text-slate-600">{refund.reason}</p>
+                  <div className="rounded border border-neutral-200 p-3" key={refund.id}>
+                    <div className="flex items-center justify-between gap-2"><p className="text-sm font-bold text-neutral-900">{money(refund.amount)}</p><StatusBadge status={refund.status} /></div>
+                    <p className="mt-1 text-sm text-neutral-600">{refund.reason}</p>
                   </div>
                 ))}
               </div>

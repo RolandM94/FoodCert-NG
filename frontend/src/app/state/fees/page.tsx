@@ -97,11 +97,11 @@ export default function Page() {
   return (
     <PortalShell role="state_admin" title="Assessment fees" description="Configure state assessment fee splits and active pricing.">
       <div className="grid gap-5">
-        <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+        <section className="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm">
           <div className="grid gap-3 md:grid-cols-[220px_220px_1fr_auto] md:items-end">
-            <label className="grid gap-1 text-xs font-bold uppercase tracking-wide text-slate-500">
+            <label className="grid gap-1 text-xs font-bold uppercase tracking-wide text-neutral-500">
               Status
-              <select className="h-10 rounded border border-slate-200 bg-white px-3 text-sm normal-case tracking-normal text-slate-700" value={status} onChange={(event) => setStatus(event.target.value)}>
+              <select className="h-10 rounded border border-neutral-200 bg-white px-3 text-sm normal-case tracking-normal text-neutral-700" value={status} onChange={(event) => setStatus(event.target.value)}>
                 <option value="">All statuses</option>
                 <option value="draft">Draft</option>
                 <option value="pending_approval">Pending approval</option>
@@ -111,16 +111,16 @@ export default function Page() {
                 <option value="inactive">Inactive</option>
               </select>
             </label>
-            <label className="grid gap-1 text-xs font-bold uppercase tracking-wide text-slate-500">
+            <label className="grid gap-1 text-xs font-bold uppercase tracking-wide text-neutral-500">
               Facility type
-              <select className="h-10 rounded border border-slate-200 bg-white px-3 text-sm normal-case tracking-normal text-slate-700" value={facilityType} onChange={(event) => setFacilityType(event.target.value)}>
+              <select className="h-10 rounded border border-neutral-200 bg-white px-3 text-sm normal-case tracking-normal text-neutral-700" value={facilityType} onChange={(event) => setFacilityType(event.target.value)}>
                 <option value="">All facility types</option>
                 {FACILITY_TYPES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
               </select>
             </label>
             <div />
             <button
-              className="inline-flex h-10 items-center justify-center gap-2 rounded bg-brand-green px-4 text-sm font-bold text-white hover:bg-brand-deep"
+              className="inline-flex h-10 items-center justify-center gap-2 rounded bg-brand-600 px-4 text-sm font-bold text-white hover:bg-brand-700"
               onClick={() => {
                 setEditing(null);
                 setForm(blankForm);
@@ -136,8 +136,8 @@ export default function Page() {
 
         <section className="grid gap-3">
           <div className="flex items-center gap-2">
-            <Banknote className="text-brand-deep" size={18} />
-            <h2 className="text-base font-bold text-slate-950">State Fee Rules</h2>
+            <Banknote className="text-brand-700" size={18} />
+            <h2 className="text-base font-bold text-neutral-900">State Fee Rules</h2>
           </div>
           <DataTable<AssessmentFee>
             columns={[
@@ -153,7 +153,7 @@ export default function Page() {
                 render: (row) => (
                   <div>
                     <button
-                      className="h-8 rounded border border-slate-200 px-3 text-xs font-bold text-slate-700 hover:bg-slate-50"
+                      className="h-8 rounded border border-neutral-200 px-3 text-xs font-bold text-neutral-700 hover:bg-neutral-50"
                       onClick={() => {
                         setEditing(row);
                         setForm({
@@ -178,13 +178,13 @@ export default function Page() {
                     </button>
                     <div className="mt-2 flex flex-wrap gap-2">
                       {row.status === "draft" || row.status === "inactive" ? (
-                        <button className="inline-flex h-8 items-center gap-1 rounded border border-slate-200 px-2 text-xs font-bold text-slate-700 hover:bg-slate-50" disabled={actionMutation.isPending} onClick={() => actionMutation.mutate({ id: row.id, action: "submit" })} type="button"><Send size={13} /> Submit</button>
+                        <button className="inline-flex h-8 items-center gap-1 rounded border border-neutral-200 px-2 text-xs font-bold text-neutral-700 hover:bg-neutral-50" disabled={actionMutation.isPending} onClick={() => actionMutation.mutate({ id: row.id, action: "submit" })} type="button"><Send size={13} /> Submit</button>
                       ) : null}
                       {row.status === "pending_approval" ? (
-                        <button className="inline-flex h-8 items-center gap-1 rounded bg-brand-green px-2 text-xs font-bold text-white hover:bg-brand-deep" disabled={actionMutation.isPending} onClick={() => actionMutation.mutate({ id: row.id, action: "approve" })} type="button"><Check size={13} /> Approve</button>
+                        <button className="inline-flex h-8 items-center gap-1 rounded bg-brand-600 px-2 text-xs font-bold text-white hover:bg-brand-700" disabled={actionMutation.isPending} onClick={() => actionMutation.mutate({ id: row.id, action: "approve" })} type="button"><Check size={13} /> Approve</button>
                       ) : null}
                       {row.status === "active" || row.status === "scheduled" ? (
-                        <button className="inline-flex h-8 items-center gap-1 rounded border border-amber-200 px-2 text-xs font-bold text-amber-800 hover:bg-amber-50" disabled={actionMutation.isPending} onClick={() => actionMutation.mutate({ id: row.id, action: "suspend" })} type="button"><PauseCircle size={13} /> Suspend</button>
+                        <button className="inline-flex h-8 items-center gap-1 rounded border border-warning-100 px-2 text-xs font-bold text-warning-700 hover:bg-warning-50" disabled={actionMutation.isPending} onClick={() => actionMutation.mutate({ id: row.id, action: "suspend" })} type="button"><PauseCircle size={13} /> Suspend</button>
                       ) : null}
                     </div>
                   </div>
@@ -198,11 +198,11 @@ export default function Page() {
       </div>
 
       {formOpen ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4">
-          <div className="w-full max-w-2xl rounded-lg border border-slate-200 bg-white shadow-xl">
-            <div className="border-b border-slate-100 px-6 py-4">
-              <h2 className="text-lg font-bold text-slate-950">{editing ? "Edit assessment fee" : "New assessment fee"}</h2>
-              <p className="mt-1 text-sm text-slate-500">Gross amount must equal facility, state, and platform splits.</p>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-neutral-900/50 p-4">
+          <div className="w-full max-w-2xl rounded-lg border border-neutral-200 bg-white shadow-xl">
+            <div className="border-b border-neutral-100 px-6 py-4">
+              <h2 className="text-lg font-bold text-neutral-900">{editing ? "Edit assessment fee" : "New assessment fee"}</h2>
+              <p className="mt-1 text-sm text-neutral-500">Gross amount must equal facility, state, and platform splits.</p>
             </div>
             <form
               className="grid gap-4 p-6"
@@ -212,35 +212,35 @@ export default function Page() {
               }}
             >
               <div className="grid gap-3 md:grid-cols-2">
-                <label className="grid gap-1 text-sm font-semibold text-slate-700">
+                <label className="grid gap-1 text-sm font-semibold text-neutral-700">
                   Fee name
-                  <input className="h-10 rounded border border-slate-200 bg-slate-50 px-3" required value={form.fee_name || ""} onChange={(event) => setForm((prev) => ({ ...prev, fee_name: event.target.value }))} />
+                  <input className="h-10 rounded border border-neutral-200 bg-neutral-50 px-3" required value={form.fee_name || ""} onChange={(event) => setForm((prev) => ({ ...prev, fee_name: event.target.value }))} />
                 </label>
-                <label className="grid gap-1 text-sm font-semibold text-slate-700">
+                <label className="grid gap-1 text-sm font-semibold text-neutral-700">
                   Facility type
-                  <select className="h-10 rounded border border-slate-200 bg-white px-3" value={form.facility_type} onChange={(event) => setForm((prev) => ({ ...prev, facility_type: event.target.value }))}>
+                  <select className="h-10 rounded border border-neutral-200 bg-white px-3" value={form.facility_type} onChange={(event) => setForm((prev) => ({ ...prev, facility_type: event.target.value }))}>
                     {FACILITY_TYPES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
                   </select>
                 </label>
-                <label className="grid gap-1 text-sm font-semibold text-slate-700">
+                <label className="grid gap-1 text-sm font-semibold text-neutral-700">
                   Gross amount
-                  <input className="h-10 rounded border border-slate-200 bg-slate-50 px-3" required type="number" min="0" step="0.01" value={form.amount} onChange={(event) => setForm((prev) => ({ ...prev, amount: event.target.value }))} />
+                  <input className="h-10 rounded border border-neutral-200 bg-neutral-50 px-3" required type="number" min="0" step="0.01" value={form.amount} onChange={(event) => setForm((prev) => ({ ...prev, amount: event.target.value }))} />
                 </label>
-                <label className="grid gap-1 text-sm font-semibold text-slate-700">
+                <label className="grid gap-1 text-sm font-semibold text-neutral-700">
                   Facility amount
-                  <input className="h-10 rounded border border-slate-200 bg-slate-50 px-3" required type="number" min="0" step="0.01" value={form.facility_fee} onChange={(event) => setForm((prev) => ({ ...prev, facility_fee: event.target.value }))} />
+                  <input className="h-10 rounded border border-neutral-200 bg-neutral-50 px-3" required type="number" min="0" step="0.01" value={form.facility_fee} onChange={(event) => setForm((prev) => ({ ...prev, facility_fee: event.target.value }))} />
                 </label>
-                <label className="grid gap-1 text-sm font-semibold text-slate-700">
+                <label className="grid gap-1 text-sm font-semibold text-neutral-700">
                   State amount
-                  <input className="h-10 rounded border border-slate-200 bg-slate-50 px-3" required type="number" min="0" step="0.01" value={form.state_fee} onChange={(event) => setForm((prev) => ({ ...prev, state_fee: event.target.value }))} />
+                  <input className="h-10 rounded border border-neutral-200 bg-neutral-50 px-3" required type="number" min="0" step="0.01" value={form.state_fee} onChange={(event) => setForm((prev) => ({ ...prev, state_fee: event.target.value }))} />
                 </label>
-                <label className="grid gap-1 text-sm font-semibold text-slate-700">
+                <label className="grid gap-1 text-sm font-semibold text-neutral-700">
                   Platform amount
-                  <input className="h-10 rounded border border-slate-200 bg-slate-50 px-3" required type="number" min="0" step="0.01" value={form.platform_fee} onChange={(event) => setForm((prev) => ({ ...prev, platform_fee: event.target.value }))} />
+                  <input className="h-10 rounded border border-neutral-200 bg-neutral-50 px-3" required type="number" min="0" step="0.01" value={form.platform_fee} onChange={(event) => setForm((prev) => ({ ...prev, platform_fee: event.target.value }))} />
                 </label>
-                <label className="grid gap-1 text-sm font-semibold text-slate-700">
+                <label className="grid gap-1 text-sm font-semibold text-neutral-700">
                   Status
-                  <select className="h-10 rounded border border-slate-200 bg-white px-3" value={form.status} onChange={(event) => setForm((prev) => ({ ...prev, status: event.target.value as AssessmentFee["status"] }))}>
+                  <select className="h-10 rounded border border-neutral-200 bg-white px-3" value={form.status} onChange={(event) => setForm((prev) => ({ ...prev, status: event.target.value as AssessmentFee["status"] }))}>
                     <option value="draft">Draft</option>
                     <option value="pending_approval">Pending approval</option>
                     <option value="active">Active</option>
@@ -249,27 +249,27 @@ export default function Page() {
                     <option value="inactive">Inactive</option>
                   </select>
                 </label>
-                <label className="grid gap-1 text-sm font-semibold text-slate-700">
+                <label className="grid gap-1 text-sm font-semibold text-neutral-700">
                   Effective from
-                  <input className="h-10 rounded border border-slate-200 bg-slate-50 px-3" required type="date" value={form.effective_from} onChange={(event) => setForm((prev) => ({ ...prev, effective_from: event.target.value }))} />
+                  <input className="h-10 rounded border border-neutral-200 bg-neutral-50 px-3" required type="date" value={form.effective_from} onChange={(event) => setForm((prev) => ({ ...prev, effective_from: event.target.value }))} />
                 </label>
-                <label className="grid gap-1 text-sm font-semibold text-slate-700">
+                <label className="grid gap-1 text-sm font-semibold text-neutral-700">
                   Effective to
-                  <input className="h-10 rounded border border-slate-200 bg-slate-50 px-3" type="date" value={form.effective_to || ""} onChange={(event) => setForm((prev) => ({ ...prev, effective_to: event.target.value }))} />
+                  <input className="h-10 rounded border border-neutral-200 bg-neutral-50 px-3" type="date" value={form.effective_to || ""} onChange={(event) => setForm((prev) => ({ ...prev, effective_to: event.target.value }))} />
                 </label>
-                <label className="grid gap-1 text-sm font-semibold text-slate-700 md:col-span-2">
+                <label className="grid gap-1 text-sm font-semibold text-neutral-700 md:col-span-2">
                   Notes
-                  <textarea className="min-h-20 rounded border border-slate-200 bg-slate-50 px-3 py-2" value={form.notes || ""} onChange={(event) => setForm((prev) => ({ ...prev, notes: event.target.value }))} />
+                  <textarea className="min-h-20 rounded border border-neutral-200 bg-neutral-50 px-3 py-2" value={form.notes || ""} onChange={(event) => setForm((prev) => ({ ...prev, notes: event.target.value }))} />
                 </label>
               </div>
 
-              <p className={`rounded px-3 py-2 text-sm font-semibold ${splitMatches(form) ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"}`}>
+              <p className={`rounded px-3 py-2 text-sm font-semibold ${splitMatches(form) ? "bg-brand-50 text-brand-700" : "bg-warning-50 text-warning-700"}`}>
                 Split preview: {money(form.facility_fee || "0")} + {money(form.state_fee || "0")} + {money(form.platform_fee || "0")} = {money(String(Number(form.facility_fee || 0) + Number(form.state_fee || 0) + Number(form.platform_fee || 0)))}
               </p>
-              {saveMutation.isError ? <p className="rounded bg-red-50 px-3 py-2 text-sm font-semibold text-red-700">Could not save this fee. Check split totals and overlapping active periods.</p> : null}
+              {saveMutation.isError ? <p className="rounded bg-danger-50 px-3 py-2 text-sm font-semibold text-danger-700">Could not save this fee. Check split totals and overlapping active periods.</p> : null}
               <div className="flex justify-end gap-3">
-                <button className="h-10 rounded border border-slate-200 px-4 text-sm font-semibold text-slate-600 hover:bg-slate-50" onClick={() => setFormOpen(false)} type="button">Cancel</button>
-                <button className="h-10 rounded bg-brand-green px-4 text-sm font-bold text-white hover:bg-brand-deep disabled:opacity-60" disabled={saveMutation.isPending || !splitMatches(form)} type="submit">Save fee</button>
+                <button className="h-10 rounded border border-neutral-200 px-4 text-sm font-semibold text-neutral-600 hover:bg-neutral-50" onClick={() => setFormOpen(false)} type="button">Cancel</button>
+                <button className="h-10 rounded bg-brand-600 px-4 text-sm font-bold text-white hover:bg-brand-700 disabled:opacity-60" disabled={saveMutation.isPending || !splitMatches(form)} type="submit">Save fee</button>
               </div>
             </form>
           </div>

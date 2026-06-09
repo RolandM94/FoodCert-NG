@@ -1,8 +1,8 @@
 const STATUS_COLORS: Record<string, string> = {
-  pending: "bg-amber-50 text-amber-700 ring-amber-200",
-  accepted: "bg-emerald-50 text-emerald-700 ring-emerald-200",
-  expired: "bg-slate-50 text-slate-500 ring-slate-200",
-  revoked: "bg-red-50 text-red-600 ring-red-200",
+  pending: "bg-warning-50 text-warning-700 ring-warning-100",
+  accepted: "bg-brand-50 text-brand-700 ring-brand-200",
+  expired: "bg-neutral-50 text-neutral-500 ring-neutral-200",
+  revoked: "bg-danger-50 text-danger-500 ring-danger-100",
 };
 
 const STATUS_LABELS: Record<string, string> = {

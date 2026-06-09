@@ -54,12 +54,12 @@ function MetricCard({
   icon: typeof UsersRound;
 }) {
   return (
-    <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+    <div className="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm">
       <div className="flex items-start justify-between gap-3">
-        <p className="text-xs font-bold uppercase tracking-wide text-slate-500">{label}</p>
+        <p className="text-xs font-bold uppercase tracking-wide text-neutral-500">{label}</p>
         <Icon className={tone} size={18} />
       </div>
-      <p className="mt-3 text-2xl font-bold text-slate-950">{value}</p>
+      <p className="mt-3 text-2xl font-bold text-neutral-900">{value}</p>
     </div>
   );
 }
@@ -69,11 +69,11 @@ function Bar({ label, value, max, detail }: { label: string; value: number; max:
   return (
     <div>
       <div className="mb-2 flex items-center justify-between gap-4 text-sm">
-        <span className="font-semibold text-slate-700">{label}</span>
-        <span className="text-slate-500">{detail || value}</span>
+        <span className="font-semibold text-neutral-700">{label}</span>
+        <span className="text-neutral-500">{detail || value}</span>
       </div>
-      <div className="h-2 rounded bg-slate-100">
-        <div className="h-2 rounded bg-brand-green" style={{ width: `${width}%` }} />
+      <div className="h-2 rounded bg-neutral-100">
+        <div className="h-2 rounded bg-brand-600" style={{ width: `${width}%` }} />
       </div>
     </div>
   );
@@ -81,10 +81,10 @@ function Bar({ label, value, max, detail }: { label: string; value: number; max:
 
 function Panel({ title, icon: Icon, children }: { title: string; icon: typeof BarChart3; children: React.ReactNode }) {
   return (
-    <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+    <section className="rounded-lg border border-neutral-200 bg-white p-5 shadow-sm">
       <div className="mb-5 flex items-center gap-2">
-        <Icon className="text-brand-deep" size={18} />
-        <h2 className="text-base font-bold text-slate-950">{title}</h2>
+        <Icon className="text-brand-700" size={18} />
+        <h2 className="text-base font-bold text-neutral-900">{title}</h2>
       </div>
       {children}
     </section>
@@ -125,31 +125,31 @@ export default function Page() {
     if (!dashboard) return [];
     const cards = dashboard.cards;
     return [
-      ["total_handlers", cards.total_handlers, UsersRound, "text-slate-700"],
-      ["fit", cards.fit, ShieldCheck, "text-brand-deep"],
+      ["total_handlers", cards.total_handlers, UsersRound, "text-neutral-700"],
+      ["fit", cards.fit, ShieldCheck, "text-brand-700"],
       ["certification_pending", cards.certification_pending, Clock3, "text-amber-600"],
-      ["expired_certificates", cards.expired_certificates, ShieldAlert, "text-rose-700"],
-      ["expiring_soon", cards.expiring_soon, AlertTriangle, "text-amber-700"],
-      ["expiring_7d", cards.expiring_7d, AlertTriangle, "text-rose-600"],
-      ["temporarily_not_fit", cards.temporarily_not_fit, Stethoscope, "text-orange-700"],
-      ["excluded", cards.excluded, ShieldAlert, "text-rose-700"],
-      ["vaccination_due", cards.vaccination_due, Syringe, "text-sky-700"],
-      ["active_branches", cards.active_branches, Building2, "text-slate-700"],
-      ["open_inspections", cards.open_inspections, ClipboardCheck, "text-amber-700"],
-      ["compliance_percentage", `${cards.compliance_percentage}%`, BadgeCheck, "text-brand-deep"],
+      ["expired_certificates", cards.expired_certificates, ShieldAlert, "text-danger-700"],
+      ["expiring_soon", cards.expiring_soon, AlertTriangle, "text-warning-700"],
+      ["expiring_7d", cards.expiring_7d, AlertTriangle, "text-danger-500"],
+      ["temporarily_not_fit", cards.temporarily_not_fit, Stethoscope, "text-warning-700"],
+      ["excluded", cards.excluded, ShieldAlert, "text-danger-700"],
+      ["vaccination_due", cards.vaccination_due, Syringe, "text-info-700"],
+      ["active_branches", cards.active_branches, Building2, "text-neutral-700"],
+      ["open_inspections", cards.open_inspections, ClipboardCheck, "text-warning-700"],
+      ["compliance_percentage", `${cards.compliance_percentage}%`, BadgeCheck, "text-brand-700"],
     ] as const;
   }, [dashboard]);
 
   return (
     <PortalShell role="employer" title="Employer Dashboard" description="Monitor certification, vaccination, illness exclusions, inspections, and compliance by branch.">
       <div className="grid gap-6">
-        <section className="flex flex-col gap-3 rounded-lg border border-slate-200 bg-white p-4 shadow-sm md:flex-row md:items-center md:justify-between">
+        <section className="flex flex-col gap-3 rounded-lg border border-neutral-200 bg-white p-4 shadow-sm md:flex-row md:items-center md:justify-between">
           <div>
-            <p className="text-xs font-bold uppercase tracking-wide text-brand-deep">Scope</p>
-            <p className="mt-1 text-sm text-slate-600">{branchLock.locked ? "Branch manager view is locked to the assigned branch." : "Head office can switch between all branches."}</p>
+            <p className="text-xs font-bold uppercase tracking-wide text-brand-700">Scope</p>
+            <p className="mt-1 text-sm text-neutral-600">{branchLock.locked ? "Branch manager view is locked to the assigned branch." : "Head office can switch between all branches."}</p>
           </div>
           <select
-            className="h-10 min-w-64 rounded border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 disabled:bg-slate-50 disabled:text-slate-500"
+            className="h-10 min-w-64 rounded border border-neutral-200 bg-white px-3 text-sm font-semibold text-neutral-700 disabled:bg-neutral-50 disabled:text-neutral-500"
             disabled={branchLock.locked}
             onChange={(event) => setBranch(event.target.value)}
             value={branch}
@@ -162,18 +162,18 @@ export default function Page() {
         </section>
 
         {dashboard?.open_inspection_notices.length ? (
-          <section className="rounded-lg border border-amber-200 bg-amber-50 p-4">
+          <section className="rounded-lg border border-warning-100 bg-warning-50 p-4">
             <div className="flex items-start gap-3">
-              <AlertTriangle className="mt-0.5 text-amber-700" size={20} />
+              <AlertTriangle className="mt-0.5 text-warning-700" size={20} />
               <div>
                 <p className="font-bold text-amber-900">{dashboard.open_inspection_notices.length} open inspection notice{dashboard.open_inspection_notices.length === 1 ? "" : "s"}</p>
-                <p className="mt-1 text-sm text-amber-800">{dashboard.open_inspection_notices[0].findings_summary || "Review recent inspection activity and respond where required."}</p>
+                <p className="mt-1 text-sm text-warning-700">{dashboard.open_inspection_notices[0].findings_summary || "Review recent inspection activity and respond where required."}</p>
               </div>
             </div>
           </section>
         ) : null}
 
-        {dashboardQuery.isError ? <p className="rounded-lg bg-rose-50 p-4 text-sm font-semibold text-rose-700">Could not load employer dashboard.</p> : null}
+        {dashboardQuery.isError ? <p className="rounded-lg bg-danger-50 p-4 text-sm font-semibold text-danger-700">Could not load employer dashboard.</p> : null}
 
         <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {metrics.map(([key, value, Icon, tone]) => (
@@ -187,7 +187,7 @@ export default function Page() {
               {branchRows.map((row) => (
                 <Bar key={row.branch} detail={`${row.compliance_percentage}% compliant`} label={row.branch_name} max={maxBranchHandlers} value={row.total_handlers} />
               ))}
-              {!branchRows.length ? <p className="text-sm text-slate-500">No branch compliance data yet.</p> : null}
+              {!branchRows.length ? <p className="text-sm text-neutral-500">No branch compliance data yet.</p> : null}
             </div>
           </Panel>
 
@@ -196,7 +196,7 @@ export default function Page() {
               {(dashboard?.charts.certificate_status_distribution || []).map((row) => (
                 <Bar key={row.status} label={row.status?.replaceAll("_", " ") || "Unknown"} max={certMax} value={row.count || 0} />
               ))}
-              {!dashboard?.charts.certificate_status_distribution.length ? <p className="text-sm text-slate-500">No certificates recorded yet.</p> : null}
+              {!dashboard?.charts.certificate_status_distribution.length ? <p className="text-sm text-neutral-500">No certificates recorded yet.</p> : null}
             </div>
           </Panel>
 
@@ -204,12 +204,12 @@ export default function Page() {
             <div className="grid gap-4">
               {(dashboard?.charts.vaccination_coverage_summary || []).map((row) => (
                 <div key={row.vaccine_type} className="grid gap-2 text-sm">
-                  <p className="font-bold capitalize text-slate-950">{row.vaccine_type?.replaceAll("_", " ")}</p>
+                  <p className="font-bold capitalize text-neutral-900">{row.vaccine_type?.replaceAll("_", " ")}</p>
                   <div className="grid grid-cols-4 gap-2 text-center">
-                    <span className="rounded bg-emerald-50 p-2 font-semibold text-brand-deep">Valid {row.valid || 0}</span>
-                    <span className="rounded bg-rose-50 p-2 font-semibold text-rose-700">Expired {row.expired || 0}</span>
-                    <span className="rounded bg-amber-50 p-2 font-semibold text-amber-700">Due {row.due || 0}</span>
-                    <span className="rounded bg-slate-50 p-2 font-semibold text-slate-600">Missing {row.missing || 0}</span>
+                    <span className="rounded bg-brand-50 p-2 font-semibold text-brand-700">Valid {row.valid || 0}</span>
+                    <span className="rounded bg-danger-50 p-2 font-semibold text-danger-700">Expired {row.expired || 0}</span>
+                    <span className="rounded bg-warning-50 p-2 font-semibold text-warning-700">Due {row.due || 0}</span>
+                    <span className="rounded bg-neutral-50 p-2 font-semibold text-neutral-600">Missing {row.missing || 0}</span>
                   </div>
                 </div>
               ))}
@@ -227,14 +227,14 @@ export default function Page() {
 
         <div className="grid gap-6 lg:grid-cols-2">
           <Panel icon={Bell} title="Recent Activity">
-            <div className="divide-y divide-slate-100">
+            <div className="divide-y divide-neutral-100">
               {(dashboard?.recent_activity || []).map((item) => (
                 <div key={`${item.kind}-${item.id}`} className="py-3">
-                  <p className="font-semibold text-slate-950">{item.title}</p>
-                  <p className="mt-1 text-sm text-slate-600">{item.description}</p>
+                  <p className="font-semibold text-neutral-900">{item.title}</p>
+                  <p className="mt-1 text-sm text-neutral-600">{item.description}</p>
                 </div>
               ))}
-              {!dashboard?.recent_activity.length ? <p className="text-sm text-slate-500">No recent activity yet.</p> : null}
+              {!dashboard?.recent_activity.length ? <p className="text-sm text-neutral-500">No recent activity yet.</p> : null}
             </div>
           </Panel>
 

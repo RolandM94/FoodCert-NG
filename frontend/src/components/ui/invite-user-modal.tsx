@@ -57,12 +57,12 @@ export function InviteUserModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4">
-      <div className="w-full max-w-lg rounded-lg border border-slate-200 bg-white shadow-xl">
-        <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4">
-          <h2 className="text-lg font-bold text-slate-950">Invite User</h2>
-          <button className="rounded p-1 hover:bg-slate-50" onClick={onClose}>
-            <X size={18} className="text-slate-500" />
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-neutral-900/50 p-4">
+      <div className="w-full max-w-lg rounded-lg border border-neutral-200 bg-white shadow-xl">
+        <div className="flex items-center justify-between border-b border-neutral-100 px-6 py-4">
+          <h2 className="text-lg font-bold text-neutral-900">Invite User</h2>
+          <button className="rounded p-1 hover:bg-neutral-50" onClick={onClose}>
+            <X size={18} className="text-neutral-500" />
           </button>
         </div>
 
@@ -77,10 +77,10 @@ export function InviteUserModal({
             });
           }}
         >
-          <label className="grid gap-1 text-sm font-semibold text-slate-700">
-            Email <span className="text-red-500">*</span>
+          <label className="grid gap-1 text-sm font-semibold text-neutral-700">
+            Email <span className="text-danger-500">*</span>
             <input
-              className="h-10 rounded border border-slate-200 bg-slate-50 px-3"
+              className="h-10 rounded border border-neutral-200 bg-neutral-50 px-3"
               type="email"
               required
               value={form.email}
@@ -89,10 +89,10 @@ export function InviteUserModal({
             />
           </label>
 
-          <label className="grid gap-1 text-sm font-semibold text-slate-700">
-            Role <span className="text-red-500">*</span>
+          <label className="grid gap-1 text-sm font-semibold text-neutral-700">
+            Role <span className="text-danger-500">*</span>
             <select
-              className="h-10 rounded border border-slate-200 bg-white px-3"
+              className="h-10 rounded border border-neutral-200 bg-white px-3"
               value={form.role}
               onChange={(e) => set("role", e.target.value)}
             >
@@ -106,10 +106,10 @@ export function InviteUserModal({
 
           {units && units.length > 0 && (
             <>
-              <label className="grid gap-1 text-sm font-semibold text-slate-700">
+              <label className="grid gap-1 text-sm font-semibold text-neutral-700">
                 Unit
                 <select
-                  className="h-10 rounded border border-slate-200 bg-white px-3"
+                  className="h-10 rounded border border-neutral-200 bg-white px-3"
                   value={form.unit ?? ""}
                   onChange={(e) => set("unit", e.target.value)}
                 >
@@ -122,10 +122,10 @@ export function InviteUserModal({
                 </select>
               </label>
               {form.unit && (
-                <label className="flex items-center gap-2 text-sm font-semibold text-slate-700">
+                <label className="flex items-center gap-2 text-sm font-semibold text-neutral-700">
                   <input
                     type="checkbox"
-                    className="h-4 w-4 rounded border-slate-300 text-brand-green focus:ring-brand-green"
+                    className="h-4 w-4 rounded border-neutral-300 text-brand-600 focus:ring-brand-600"
                     checked={form.unit_restricted}
                     onChange={(e) => setForm((prev) => ({ ...prev, unit_restricted: e.target.checked }))}
                   />
@@ -135,20 +135,20 @@ export function InviteUserModal({
             </>
           )}
 
-          <label className="grid gap-1 text-sm font-semibold text-slate-700">
+          <label className="grid gap-1 text-sm font-semibold text-neutral-700">
             Phone (optional)
             <input
-              className="h-10 rounded border border-slate-200 bg-slate-50 px-3"
+              className="h-10 rounded border border-neutral-200 bg-neutral-50 px-3"
               value={form.phone}
               onChange={(e) => set("phone", e.target.value)}
               placeholder="08030000000"
             />
           </label>
 
-          <label className="grid gap-1 text-sm font-semibold text-slate-700">
+          <label className="grid gap-1 text-sm font-semibold text-neutral-700">
             Message (optional)
             <textarea
-              className="rounded border border-slate-200 bg-slate-50 px-3 py-2 text-sm"
+              className="rounded border border-neutral-200 bg-neutral-50 px-3 py-2 text-sm"
               rows={2}
               value={form.message}
               onChange={(e) => set("message", e.target.value)}
@@ -156,10 +156,10 @@ export function InviteUserModal({
             />
           </label>
 
-          <label className="grid gap-1 text-sm font-semibold text-slate-700">
+          <label className="grid gap-1 text-sm font-semibold text-neutral-700">
             Expiry date (optional)
             <input
-              className="h-10 rounded border border-slate-200 bg-slate-50 px-3"
+              className="h-10 rounded border border-neutral-200 bg-neutral-50 px-3"
               type="datetime-local"
               value={form.expires_at ?? ""}
               onChange={(e) => set("expires_at", e.target.value)}
@@ -167,20 +167,20 @@ export function InviteUserModal({
           </label>
 
           {error && (
-            <p className="rounded bg-red-50 px-3 py-2 text-sm font-semibold text-red-700">{error}</p>
+            <p className="rounded bg-danger-50 px-3 py-2 text-sm font-semibold text-danger-700">{error}</p>
           )}
 
           <div className="flex items-center justify-end gap-3 pt-2">
             <button
               type="button"
-              className="inline-flex h-10 items-center gap-2 rounded border border-slate-200 px-4 text-sm font-semibold text-slate-600 hover:bg-slate-50"
+              className="inline-flex h-10 items-center gap-2 rounded border border-neutral-200 px-4 text-sm font-semibold text-neutral-600 hover:bg-neutral-50"
               onClick={onClose}
             >
               Cancel
             </button>
             <button
               type="submit"
-              className="inline-flex h-10 items-center gap-2 rounded bg-brand-green px-4 text-sm font-bold text-white hover:bg-brand-deep"
+              className="inline-flex h-10 items-center gap-2 rounded bg-brand-600 px-4 text-sm font-bold text-white hover:bg-brand-700"
             >
               <Send aria-hidden="true" size={16} />
               Send Invite

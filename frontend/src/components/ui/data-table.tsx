@@ -17,30 +17,30 @@ export function DataTable<T>({
 }) {
   if (!rows.length) {
     return (
-      <div className="rounded-lg border border-dashed border-slate-300 bg-white p-6 text-sm text-slate-600">
+      <div className="rounded-lg border border-dashed border-neutral-300 bg-white p-6 text-sm text-neutral-600">
         {empty ?? "No records yet."}
       </div>
     );
   }
 
   return (
-    <div className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
+    <div className="overflow-hidden rounded-lg border border-neutral-200 bg-white shadow-sm">
       <div className="overflow-x-auto">
-        <table className="min-w-full divide-y divide-slate-200 text-sm">
-          <thead className="bg-slate-50">
+        <table className="min-w-full divide-y divide-neutral-200 text-sm">
+          <thead className="bg-neutral-50">
             <tr>
               {columns.map((column) => (
-                <th key={column.key} className="px-4 py-3 text-left text-xs font-bold uppercase tracking-wide text-slate-500">
+                <th key={column.key} className="px-4 py-3 text-left text-xs font-bold uppercase tracking-wide text-neutral-500">
                   {column.header}
                 </th>
               ))}
             </tr>
           </thead>
-          <tbody className="divide-y divide-slate-100">
+          <tbody className="divide-y divide-neutral-100">
             {rows.map((row, index) => (
               <tr key={index} className="bg-white">
                 {columns.map((column) => (
-                  <td key={column.key} className="px-4 py-3 text-slate-700">
+                  <td key={column.key} className="px-4 py-3 text-neutral-700">
                     {column.render(row)}
                   </td>
                 ))}

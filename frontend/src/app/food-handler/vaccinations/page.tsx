@@ -42,26 +42,26 @@ export default function Page() {
   return (
     <PortalShell role="food_handler" title="Vaccinations" description="Review vaccination status, due dates, and compliance readiness.">
       <div className="grid gap-5">
-        {loading ? <p className="rounded-lg border border-slate-200 bg-white p-4 text-sm font-semibold text-slate-600 shadow-sm">Loading vaccinations...</p> : null}
-        {error ? <div className="flex items-start gap-2 rounded-lg bg-rose-50 p-3 text-sm font-semibold text-rose-800"><AlertCircle size={16} />{error}</div> : null}
+        {loading ? <p className="rounded-lg border border-neutral-200 bg-white p-4 text-sm font-semibold text-neutral-600 shadow-sm">Loading vaccinations...</p> : null}
+        {error ? <div className="flex items-start gap-2 rounded-lg bg-danger-50 p-3 text-sm font-semibold text-danger-700"><AlertCircle size={16} />{error}</div> : null}
         <section className="grid gap-3 md:grid-cols-3">
-          <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm"><Syringe className="text-brand-deep" size={18} /><p className="mt-2 text-xs font-bold uppercase text-slate-500">Records</p><p className="text-2xl font-bold text-slate-950">{rows.length}</p></div>
-          <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm"><p className="text-xs font-bold uppercase text-slate-500">Next due</p><p className="mt-2 text-sm font-bold text-slate-950">{dateLabel(nextDue?.next_dose_date || nextDue?.reminder_date)}</p></div>
-          <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm"><p className="text-xs font-bold uppercase text-slate-500">Latest status</p><div className="mt-2"><StatusBadge status={rows[0]?.compliance_status || "due"} /></div></div>
+          <div className="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm"><Syringe className="text-brand-700" size={18} /><p className="mt-2 text-xs font-bold uppercase text-neutral-500">Records</p><p className="text-2xl font-bold text-neutral-900">{rows.length}</p></div>
+          <div className="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm"><p className="text-xs font-bold uppercase text-neutral-500">Next due</p><p className="mt-2 text-sm font-bold text-neutral-900">{dateLabel(nextDue?.next_dose_date || nextDue?.reminder_date)}</p></div>
+          <div className="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm"><p className="text-xs font-bold uppercase text-neutral-500">Latest status</p><div className="mt-2"><StatusBadge status={rows[0]?.compliance_status || "due"} /></div></div>
         </section>
-        <section className="rounded-lg border border-slate-200 bg-white shadow-sm">
-          <div className="divide-y divide-slate-200">
+        <section className="rounded-lg border border-neutral-200 bg-white shadow-sm">
+          <div className="divide-y divide-neutral-200">
             {rows.map((row) => (
               <div className="grid gap-3 p-4 md:grid-cols-[1fr_auto]" key={row.id}>
                 <div>
-                  <p className="font-bold capitalize text-slate-950">{row.vaccine_name || row.vaccine_type.replaceAll("_", " ")}</p>
-                  <p className="text-xs text-slate-500">Dose {row.dose_number} · administered {dateLabel(row.date_administered)} · expires {dateLabel(row.expiry_date)}</p>
-                  {row.next_dose_date || row.reminder_date ? <p className="mt-1 text-xs font-semibold text-amber-700">Next dose due {dateLabel(row.next_dose_date || row.reminder_date)}</p> : null}
+                  <p className="font-bold capitalize text-neutral-900">{row.vaccine_name || row.vaccine_type.replaceAll("_", " ")}</p>
+                  <p className="text-xs text-neutral-500">Dose {row.dose_number} · administered {dateLabel(row.date_administered)} · expires {dateLabel(row.expiry_date)}</p>
+                  {row.next_dose_date || row.reminder_date ? <p className="mt-1 text-xs font-semibold text-warning-700">Next dose due {dateLabel(row.next_dose_date || row.reminder_date)}</p> : null}
                 </div>
                 <div className="flex items-center gap-2"><StatusBadge status={row.status} /><StatusBadge status={row.compliance_status || "due"} /></div>
               </div>
             ))}
-            {!rows.length && !loading ? <p className="p-4 text-sm text-slate-500">No vaccination records found.</p> : null}
+            {!rows.length && !loading ? <p className="p-4 text-sm text-neutral-500">No vaccination records found.</p> : null}
           </div>
         </section>
       </div>

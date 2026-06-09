@@ -16,7 +16,7 @@ export function AssessmentPrerequisiteChecklist({ blockers = [], warnings = [] }
 
   if (ready) {
     return (
-      <div className="rounded border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-900">
+      <div className="rounded border border-brand-200 bg-brand-50 px-3 py-2 text-sm text-brand-900">
         <div className="flex items-center gap-2 font-semibold">
           <CheckCircle2 size={16} />
           Assessment prerequisites are complete
@@ -33,7 +33,7 @@ export function AssessmentPrerequisiteChecklist({ blockers = [], warnings = [] }
           <div
             key={`${item.tone}-${item.code}`}
             className={`rounded border px-3 py-2 text-sm ${
-              isBlocker ? "border-rose-200 bg-rose-50 text-rose-900" : "border-amber-200 bg-amber-50 text-amber-900"
+              isBlocker ? "border-danger-100 bg-danger-50 text-rose-900" : "border-warning-100 bg-warning-50 text-amber-900"
             }`}
           >
             <div className="flex items-start gap-2">

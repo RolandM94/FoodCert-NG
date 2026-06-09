@@ -13,7 +13,7 @@ export function UnitMemberTable({
 }) {
   if (members.length === 0) {
     return (
-      <div className="rounded-lg border border-slate-200 bg-white p-6 text-center text-sm text-slate-500">
+      <div className="rounded-lg border border-neutral-200 bg-white p-6 text-center text-sm text-neutral-500">
         No members assigned to this unit yet.
       </div>
     );

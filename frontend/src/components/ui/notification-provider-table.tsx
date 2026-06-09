@@ -42,10 +42,10 @@ export function NotificationProviderTable({
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h3 className="text-base font-bold text-slate-950">Notification Providers</h3>
+        <h3 className="text-base font-bold text-neutral-900">Notification Providers</h3>
         {onCreate ? (
           <button
-            className="inline-flex h-10 items-center gap-1.5 rounded bg-brand-green px-4 text-sm font-bold text-white hover:bg-brand-deep"
+            className="inline-flex h-10 items-center gap-1.5 rounded bg-brand-600 px-4 text-sm font-bold text-white hover:bg-brand-700"
             onClick={onCreate}
             type="button"
           >
@@ -57,32 +57,32 @@ export function NotificationProviderTable({
 
       {isLoading ? (
         <div className="flex items-center justify-center py-12">
-          <Loader2 className="animate-spin text-slate-400" size={24} />
+          <Loader2 className="animate-spin text-neutral-400" size={24} />
         </div>
       ) : (
         <div className="grid gap-4 md:grid-cols-2">
           {providers.map((p) => {
             const result = testResults[p.id];
             return (
-              <div key={p.id} className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+              <div key={p.id} className="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm">
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <div className="flex items-center gap-2">
-                      <h4 className="font-bold text-slate-950">{p.name}</h4>
+                      <h4 className="font-bold text-neutral-900">{p.name}</h4>
                       {p.is_default ? (
-                        <span className="inline-flex items-center gap-1 rounded bg-amber-100 px-1.5 py-0.5 text-xs font-bold text-amber-800">
+                        <span className="inline-flex items-center gap-1 rounded bg-warning-100 px-1.5 py-0.5 text-xs font-bold text-warning-700">
                           <Star size={12} /> Default
                         </span>
                       ) : null}
                     </div>
-                    <p className="mt-1 text-sm text-slate-600 capitalize">{p.channel_display}</p>
+                    <p className="mt-1 text-sm text-neutral-600 capitalize">{p.channel_display}</p>
                     {p.sender_id ? (
-                      <p className="mt-0.5 text-xs text-slate-400">Sender: {p.sender_id}</p>
+                      <p className="mt-0.5 text-xs text-neutral-400">Sender: {p.sender_id}</p>
                     ) : null}
                   </div>
                   <span
                     className={`inline-block rounded-full px-2 py-0.5 text-xs font-semibold ${
-                      p.is_active ? "bg-emerald-100 text-emerald-800" : "bg-slate-100 text-slate-500"
+                      p.is_active ? "bg-brand-100 text-brand-800" : "bg-neutral-100 text-neutral-500"
                     }`}
                   >
                     {p.is_active ? "Active" : "Inactive"}
@@ -90,14 +90,14 @@ export function NotificationProviderTable({
                 </div>
 
                 {result ? (
-                  <p className={`mt-2 rounded p-2 text-xs font-semibold ${result.ok ? "bg-emerald-50 text-brand-deep" : "bg-rose-50 text-rose-700"}`}>
+                  <p className={`mt-2 rounded p-2 text-xs font-semibold ${result.ok ? "bg-brand-50 text-brand-700" : "bg-danger-50 text-danger-700"}`}>
                     {result.ok ? "Connection OK" : result.error}
                   </p>
                 ) : null}
 
                 <div className="mt-3 flex items-center gap-2">
                   <button
-                    className="inline-flex h-8 items-center gap-1 rounded border border-slate-200 px-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                    className="inline-flex h-8 items-center gap-1 rounded border border-neutral-200 px-2.5 text-xs font-semibold text-neutral-700 hover:bg-neutral-50 disabled:opacity-50"
                     disabled={testing === p.id}
                     onClick={() => handleTest(p.id)}
                     type="button"
@@ -107,7 +107,7 @@ export function NotificationProviderTable({
                   </button>
                   {onEdit ? (
                     <button
-                      className="inline-flex h-8 items-center gap-1 rounded border border-slate-200 px-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                      className="inline-flex h-8 items-center gap-1 rounded border border-neutral-200 px-2.5 text-xs font-semibold text-neutral-700 hover:bg-neutral-50"
                       onClick={() => onEdit(p)}
                       type="button"
                     >
@@ -116,7 +116,7 @@ export function NotificationProviderTable({
                   ) : null}
                   {!p.is_default ? (
                     <button
-                      className="inline-flex h-8 items-center gap-1 rounded border border-slate-200 px-2.5 text-xs font-semibold text-slate-700 hover:bg-amber-50 hover:text-amber-800"
+                      className="inline-flex h-8 items-center gap-1 rounded border border-neutral-200 px-2.5 text-xs font-semibold text-neutral-700 hover:bg-warning-50 hover:text-warning-700"
                       onClick={() => setDefaultMutation.mutate(p.id)}
                       type="button"
                     >
@@ -129,7 +129,7 @@ export function NotificationProviderTable({
             );
           })}
           {!providers.length ? (
-            <p className="col-span-2 py-8 text-center text-sm text-slate-500">No providers configured.</p>
+            <p className="col-span-2 py-8 text-center text-sm text-neutral-500">No providers configured.</p>
           ) : null}
         </div>
       )}

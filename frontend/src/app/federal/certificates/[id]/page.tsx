@@ -24,13 +24,13 @@ export default function Page() {
 
   return (
     <PortalShell role="federal_admin" title="Certificate detail" description="Privacy-safe federal certificate view. Detail access is audited.">
-      <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+      <section className="rounded-lg border border-neutral-200 bg-white p-5 shadow-sm">
         {certificate ? (
           <div className="grid gap-5">
-            <div className="flex flex-wrap items-start justify-between gap-4 border-b border-slate-100 pb-4">
+            <div className="flex flex-wrap items-start justify-between gap-4 border-b border-neutral-100 pb-4">
               <div>
-                <p className="text-sm font-semibold uppercase text-slate-500">Certificate</p>
-                <h1 className="mt-1 text-2xl font-bold text-slate-950">{certificate.certificate_number}</h1>
+                <p className="text-sm font-semibold uppercase text-neutral-500">Certificate</p>
+                <h1 className="mt-1 text-2xl font-bold text-neutral-900">{certificate.certificate_number}</h1>
               </div>
               <StatusCell status={certificate.effective_status} />
             </div>
@@ -44,25 +44,25 @@ export default function Page() {
                 ["Expiry date", dateLabel(certificate.expiry_date)],
                 ["Suspicious reports", String(certificate.suspicious_report_count)],
               ].map(([label, value]) => (
-                <div key={label} className="rounded border border-slate-100 bg-slate-50 p-3">
-                  <p className="text-xs font-semibold uppercase text-slate-500">{label}</p>
-                  <p className="mt-1 text-sm font-bold text-slate-950">{value}</p>
+                <div key={label} className="rounded border border-neutral-100 bg-neutral-50 p-3">
+                  <p className="text-xs font-semibold uppercase text-neutral-500">{label}</p>
+                  <p className="mt-1 text-sm font-bold text-neutral-900">{value}</p>
                 </div>
               ))}
             </div>
-            <div className="flex items-center gap-2 rounded border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-800">
+            <div className="flex items-center gap-2 rounded border border-brand-100 bg-brand-50 px-4 py-3 text-sm font-semibold text-brand-800">
               <ShieldCheck size={16} />
               Federal detail access is recorded in the audit trail.
             </div>
             <div>
-              <button className="inline-flex h-10 items-center gap-2 rounded bg-brand-green px-4 text-sm font-bold text-white hover:bg-brand-deep" onClick={() => void downloadCertificatePdf(certificate.id, certificate.certificate_number)} type="button">
+              <button className="inline-flex h-10 items-center gap-2 rounded bg-brand-600 px-4 text-sm font-bold text-white hover:bg-brand-700" onClick={() => void downloadCertificatePdf(certificate.id, certificate.certificate_number)} type="button">
                 <Download size={16} />
                 Download PDF certificate
               </button>
             </div>
           </div>
         ) : (
-          <p className="text-sm font-semibold text-slate-500">{certificateQuery.isLoading ? "Loading certificate..." : "Certificate not available."}</p>
+          <p className="text-sm font-semibold text-neutral-500">{certificateQuery.isLoading ? "Loading certificate..." : "Certificate not available."}</p>
         )}
       </section>
     </PortalShell>

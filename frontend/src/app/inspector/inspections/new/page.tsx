@@ -42,51 +42,51 @@ export default function Page() {
     <PortalShell role="inspector" title="New inspection" description="Start an inspection checklist, record GPS metadata, evidence, and findings.">
       <div className="grid gap-5">
         {branches.length > 0 && (
-          <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm">
             <div className="flex flex-wrap items-center gap-4">
               <BranchSelector branches={branches} value={branchId ?? undefined} onChange={(id) => setBranchId(id)} />
-              <span className="text-xs text-slate-400">
+              <span className="text-xs text-neutral-400">
                 {branchId ? "Inspection will target this specific branch." : "Inspection will target the entire business."}
               </span>
             </div>
           </div>
         )}
 
-        <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+        <div className="rounded-lg border border-neutral-200 bg-white p-5 shadow-sm">
           <div className="grid gap-4 sm:grid-cols-2">
-            <label className="grid gap-1 text-sm font-semibold text-slate-700">
-              Employer / Business <span className="text-red-500">*</span>
+            <label className="grid gap-1 text-sm font-semibold text-neutral-700">
+              Employer / Business <span className="text-danger-500">*</span>
               <input
-                className="h-10 rounded border border-slate-200 bg-slate-50 px-3"
+                className="h-10 rounded border border-neutral-200 bg-neutral-50 px-3"
                 placeholder="Search for employer..."
               />
             </label>
             {branchId && (
-              <label className="grid gap-1 text-sm font-semibold text-slate-700">
-                Branch <span className="text-xs text-slate-400">(pre-selected)</span>
-                <div className="flex h-10 items-center gap-2 rounded border border-amber-100 bg-amber-50 px-3 text-sm font-semibold text-amber-800">
+              <label className="grid gap-1 text-sm font-semibold text-neutral-700">
+                Branch <span className="text-xs text-neutral-400">(pre-selected)</span>
+                <div className="flex h-10 items-center gap-2 rounded border border-warning-100 bg-warning-50 px-3 text-sm font-semibold text-warning-700">
                   <MapPin size={14} />
                   {branches.find((b) => b.id === branchId)?.name ?? "Selected branch"}
                 </div>
               </label>
             )}
-            <label className="grid gap-1 text-sm font-semibold text-slate-700">
+            <label className="grid gap-1 text-sm font-semibold text-neutral-700">
               Inspection type
-              <select className="h-10 rounded border border-slate-200 bg-white px-3" defaultValue="routine">
+              <select className="h-10 rounded border border-neutral-200 bg-white px-3" defaultValue="routine">
                 <option value="routine">Routine</option>
                 <option value="follow_up">Follow-up</option>
                 <option value="complaint">Complaint-driven</option>
                 <option value="re_inspection">Re-inspection</option>
               </select>
             </label>
-            <label className="grid gap-1 text-sm font-semibold text-slate-700">
+            <label className="grid gap-1 text-sm font-semibold text-neutral-700">
               Date
-              <input className="h-10 rounded border border-slate-200 bg-slate-50 px-3" type="datetime-local" />
+              <input className="h-10 rounded border border-neutral-200 bg-neutral-50 px-3" type="datetime-local" />
             </label>
           </div>
 
-          <div className="mt-5 rounded bg-slate-50 p-4">
-            <p className="text-sm font-bold text-slate-800 mb-3">Inspection Checklist</p>
+          <div className="mt-5 rounded bg-neutral-50 p-4">
+            <p className="text-sm font-bold text-neutral-800 mb-3">Inspection Checklist</p>
             <div className="grid gap-2 text-sm">
               {[
                 "Are all food handlers registered?",
@@ -100,33 +100,33 @@ export default function Page() {
                 "Are employer records up to date?",
                 "Are expired certificates being used?",
               ].map((item, i) => (
-                <label key={i} className="flex items-center gap-3 rounded bg-white px-3 py-2 border border-slate-100">
-                  <input type="checkbox" className="h-4 w-4 rounded border-slate-300 text-brand-green" />
-                  <span className="text-slate-700">{item}</span>
+                <label key={i} className="flex items-center gap-3 rounded bg-white px-3 py-2 border border-neutral-100">
+                  <input type="checkbox" className="h-4 w-4 rounded border-neutral-300 text-brand-600" />
+                  <span className="text-neutral-700">{item}</span>
                 </label>
               ))}
             </div>
           </div>
 
           <div className="mt-5 flex items-center gap-3">
-            <button className="inline-flex h-10 items-center gap-2 rounded bg-brand-green px-4 text-sm font-bold text-white hover:bg-brand-deep">
+            <button className="inline-flex h-10 items-center gap-2 rounded bg-brand-600 px-4 text-sm font-bold text-white hover:bg-brand-700">
               <ClipboardCheck size={16} />
               Submit inspection
             </button>
-            <button className="inline-flex h-10 items-center gap-2 rounded border border-slate-200 px-4 text-sm font-semibold text-slate-600 hover:bg-slate-50">
+            <button className="inline-flex h-10 items-center gap-2 rounded border border-neutral-200 px-4 text-sm font-semibold text-neutral-600 hover:bg-neutral-50">
               Save draft
             </button>
           </div>
         </div>
 
         {inspections.length > 0 && (
-          <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-            <h3 className="mb-3 text-sm font-bold text-slate-950">Recent inspections</h3>
-            <div className="divide-y divide-slate-100">
+          <div className="rounded-lg border border-neutral-200 bg-white p-5 shadow-sm">
+            <h3 className="mb-3 text-sm font-bold text-neutral-900">Recent inspections</h3>
+            <div className="divide-y divide-neutral-100">
               {inspections.slice(0, 5).map((insp) => (
                 <div key={insp.id} className="flex items-center justify-between py-2 text-sm">
-                  <span className="text-slate-700">{insp.employer_name ?? "Employer"}</span>
-                  <span className="text-xs text-slate-400">{insp.status}</span>
+                  <span className="text-neutral-700">{insp.employer_name ?? "Employer"}</span>
+                  <span className="text-xs text-neutral-400">{insp.status}</span>
                 </div>
               ))}
             </div>

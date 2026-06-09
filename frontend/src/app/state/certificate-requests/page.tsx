@@ -100,39 +100,39 @@ export default function Page() {
   return (
     <PortalShell role="state_admin" title="Certificate requests" description="Validate fit assessments before certificate issuance.">
       <div className="grid gap-5">
-        <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+        <section className="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm">
           <div className="grid gap-3 md:grid-cols-[220px_180px_180px_1fr]">
-            <label className="grid gap-1 text-xs font-bold uppercase tracking-wide text-slate-500">
+            <label className="grid gap-1 text-xs font-bold uppercase tracking-wide text-neutral-500">
               Status
-              <select className="h-10 rounded border border-slate-200 bg-white px-3 text-sm normal-case tracking-normal text-slate-700" value={status} onChange={(event) => setStatus(event.target.value)}>
+              <select className="h-10 rounded border border-neutral-200 bg-white px-3 text-sm normal-case tracking-normal text-neutral-700" value={status} onChange={(event) => setStatus(event.target.value)}>
                 {STATUS_OPTIONS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
               </select>
             </label>
-            <label className="grid gap-1 text-xs font-bold uppercase tracking-wide text-slate-500">
+            <label className="grid gap-1 text-xs font-bold uppercase tracking-wide text-neutral-500">
               From
-              <input className="h-10 rounded border border-slate-200 bg-slate-50 px-3 text-sm normal-case tracking-normal text-slate-700" type="date" value={dateFrom} onChange={(event) => setDateFrom(event.target.value)} />
+              <input className="h-10 rounded border border-neutral-200 bg-neutral-50 px-3 text-sm normal-case tracking-normal text-neutral-700" type="date" value={dateFrom} onChange={(event) => setDateFrom(event.target.value)} />
             </label>
-            <label className="grid gap-1 text-xs font-bold uppercase tracking-wide text-slate-500">
+            <label className="grid gap-1 text-xs font-bold uppercase tracking-wide text-neutral-500">
               To
-              <input className="h-10 rounded border border-slate-200 bg-slate-50 px-3 text-sm normal-case tracking-normal text-slate-700" type="date" value={dateTo} onChange={(event) => setDateTo(event.target.value)} />
+              <input className="h-10 rounded border border-neutral-200 bg-neutral-50 px-3 text-sm normal-case tracking-normal text-neutral-700" type="date" value={dateTo} onChange={(event) => setDateTo(event.target.value)} />
             </label>
           </div>
         </section>
 
         <section className="grid gap-3">
           <div className="flex items-center gap-2">
-            <FileCheck2 className="text-brand-deep" size={18} />
-            <h2 className="text-base font-bold text-slate-950">Validation Queue</h2>
+            <FileCheck2 className="text-brand-700" size={18} />
+            <h2 className="text-base font-bold text-neutral-900">Validation Queue</h2>
           </div>
-          {queueQuery.isError ? <p className="rounded bg-rose-50 p-3 text-sm font-semibold text-rose-700">Could not load certificate validation requests.</p> : null}
+          {queueQuery.isError ? <p className="rounded bg-danger-50 p-3 text-sm font-semibold text-danger-700">Could not load certificate validation requests.</p> : null}
           <DataTable<StateCertificateValidationRequest>
             columns={[
-              { key: "handler", header: "Handler", render: (row) => <div><p className="font-bold text-slate-950">{row.food_handler_name || "Unknown"}</p><p className="text-xs text-slate-500">{row.food_handler_category?.replaceAll("_", " ") || "No category"}</p></div> },
+              { key: "handler", header: "Handler", render: (row) => <div><p className="font-bold text-neutral-900">{row.food_handler_name || "Unknown"}</p><p className="text-xs text-neutral-500">{row.food_handler_category?.replaceAll("_", " ") || "No category"}</p></div> },
               { key: "facility", header: "Facility", render: (row) => row.facility_name || "Unknown" },
               { key: "eligibility", header: "Evidence", render: (row) => {
                 const score = eligibilitySummary(row);
                 const [ready, total] = score.split("/");
-                return <span className={ready === total ? "font-bold text-emerald-700" : "font-bold text-amber-700"}>{score}</span>;
+                return <span className={ready === total ? "font-bold text-brand-700" : "font-bold text-warning-700"}>{score}</span>;
               } },
               { key: "status", header: "Status", render: (row) => <StatusCell status={row.status} /> },
               { key: "certificate", header: "Certificate", render: (row) => row.certificate_number || "Not issued" },
@@ -144,7 +144,7 @@ export default function Page() {
                   <div className="flex flex-wrap gap-2">
                     {allowedActions(row).map((action) => (
                       <button
-                        className="h-8 rounded border border-slate-200 px-3 text-xs font-bold capitalize text-slate-700 hover:bg-slate-50"
+                        className="h-8 rounded border border-neutral-200 px-3 text-xs font-bold capitalize text-neutral-700 hover:bg-neutral-50"
                         key={action}
                         onClick={() => setActionTarget({ request: row, action })}
                         type="button"
@@ -153,7 +153,7 @@ export default function Page() {
                       </button>
                     ))}
                     <button
-                      className="h-8 rounded border border-slate-200 px-3 text-xs font-bold text-slate-700 hover:bg-slate-50"
+                      className="h-8 rounded border border-neutral-200 px-3 text-xs font-bold text-neutral-700 hover:bg-neutral-50"
                       onClick={() => void openTimeline(row)}
                       type="button"
                     >
@@ -170,11 +170,11 @@ export default function Page() {
       </div>
 
       {actionTarget ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4">
-          <div className="w-full max-w-md rounded-lg border border-slate-200 bg-white shadow-xl">
-            <div className="border-b border-slate-100 px-6 py-4">
-              <h2 className="text-lg font-bold capitalize text-slate-950">{actionTarget.action.replace("-", " ")} certificate request</h2>
-              <p className="mt-1 text-sm text-slate-500">{actionTarget.request.food_handler_name} at {actionTarget.request.facility_name}</p>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-neutral-900/50 p-4">
+          <div className="w-full max-w-md rounded-lg border border-neutral-200 bg-white shadow-xl">
+            <div className="border-b border-neutral-100 px-6 py-4">
+              <h2 className="text-lg font-bold capitalize text-neutral-900">{actionTarget.action.replace("-", " ")} certificate request</h2>
+              <p className="mt-1 text-sm text-neutral-500">{actionTarget.request.food_handler_name} at {actionTarget.request.facility_name}</p>
             </div>
             <form
               className="grid gap-4 p-6"
@@ -183,14 +183,14 @@ export default function Page() {
                 actionMutation.mutate({ request: actionTarget.request, action: actionTarget.action, reviewNotes: notes });
               }}
             >
-              <label className="grid gap-1 text-sm font-semibold text-slate-700">
-                Review notes {requiresNotes ? <span className="text-red-500">*</span> : null}
-                <textarea className="rounded border border-slate-200 bg-slate-50 px-3 py-2 text-sm" required={requiresNotes} rows={3} value={notes} onChange={(event) => setNotes(event.target.value)} />
+              <label className="grid gap-1 text-sm font-semibold text-neutral-700">
+                Review notes {requiresNotes ? <span className="text-danger-500">*</span> : null}
+                <textarea className="rounded border border-neutral-200 bg-neutral-50 px-3 py-2 text-sm" required={requiresNotes} rows={3} value={notes} onChange={(event) => setNotes(event.target.value)} />
               </label>
-              {actionMutation.isError ? <p className="rounded bg-red-50 px-3 py-2 text-sm font-semibold text-red-700">Could not complete this validation action.</p> : null}
+              {actionMutation.isError ? <p className="rounded bg-danger-50 px-3 py-2 text-sm font-semibold text-danger-700">Could not complete this validation action.</p> : null}
               <div className="flex justify-end gap-3">
-                <button className="h-10 rounded border border-slate-200 px-4 text-sm font-semibold text-slate-600 hover:bg-slate-50" onClick={() => setActionTarget(null)} type="button">Cancel</button>
-                <button className="h-10 rounded bg-brand-green px-4 text-sm font-bold capitalize text-white hover:bg-brand-deep disabled:opacity-60" disabled={actionMutation.isPending} type="submit">{actionTarget.action.replace("-", " ")}</button>
+                <button className="h-10 rounded border border-neutral-200 px-4 text-sm font-semibold text-neutral-600 hover:bg-neutral-50" onClick={() => setActionTarget(null)} type="button">Cancel</button>
+                <button className="h-10 rounded bg-brand-600 px-4 text-sm font-bold capitalize text-white hover:bg-brand-700 disabled:opacity-60" disabled={actionMutation.isPending} type="submit">{actionTarget.action.replace("-", " ")}</button>
               </div>
             </form>
           </div>
@@ -198,14 +198,14 @@ export default function Page() {
       ) : null}
 
       {timelineTarget ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-neutral-900/50 p-4">
           <div className="max-h-[85vh] w-full max-w-2xl overflow-auto rounded-lg bg-white p-4 shadow-xl">
             <div className="mb-3 flex items-center justify-between gap-3">
               <div>
-                <h2 className="text-lg font-bold text-slate-950">Assessment timeline</h2>
-                <p className="text-sm text-slate-500">{timelineTarget.food_handler_name} at {timelineTarget.facility_name}</p>
+                <h2 className="text-lg font-bold text-neutral-900">Assessment timeline</h2>
+                <p className="text-sm text-neutral-500">{timelineTarget.food_handler_name} at {timelineTarget.facility_name}</p>
               </div>
-              <button className="h-9 rounded border border-slate-200 px-3 text-sm font-bold text-slate-700" onClick={() => setTimelineTarget(null)} type="button">Close</button>
+              <button className="h-9 rounded border border-neutral-200 px-3 text-sm font-bold text-neutral-700" onClick={() => setTimelineTarget(null)} type="button">Close</button>
             </div>
             <AssessmentAuditTimeline items={timeline} />
           </div>

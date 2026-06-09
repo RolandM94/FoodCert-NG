@@ -25,16 +25,16 @@ export default function Page() {
       <div className="grid gap-5">
         <section className="grid gap-3 md:grid-cols-3 xl:grid-cols-6">
           {metricCards.map(([label, value, Icon]) => (
-            <div key={label} className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-              <div className="mb-2 flex items-center gap-2 text-brand-deep"><Icon size={16} /><p className="text-xs font-bold uppercase text-slate-500">{label}</p></div>
-              <p className="text-xl font-bold text-slate-950">{String(value ?? 0)}</p>
+            <div key={label} className="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm">
+              <div className="mb-2 flex items-center gap-2 text-brand-700"><Icon size={16} /><p className="text-xs font-bold uppercase text-neutral-500">{label}</p></div>
+              <p className="text-xl font-bold text-neutral-900">{String(value ?? 0)}</p>
             </div>
           ))}
         </section>
 
         <section className="grid gap-5 xl:grid-cols-2">
           <div className="grid gap-3">
-            <h2 className="text-base font-bold text-slate-950">Low Certification Coverage</h2>
+            <h2 className="text-base font-bold text-neutral-900">Low Certification Coverage</h2>
             <DataTable<FederalStatePerformanceRow>
               columns={[
                 { key: "state", header: "State", render: (row) => row.state_name },
@@ -47,7 +47,7 @@ export default function Page() {
             />
           </div>
           <div className="grid gap-3">
-            <h2 className="text-base font-bold text-slate-950">Data Quality Watchlist</h2>
+            <h2 className="text-base font-bold text-neutral-900">Data Quality Watchlist</h2>
             <DataTable<FederalStatePerformanceRow>
               columns={[
                 { key: "state", header: "State", render: (row) => row.state_name },

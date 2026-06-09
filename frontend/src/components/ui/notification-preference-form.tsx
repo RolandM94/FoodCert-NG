@@ -100,7 +100,7 @@ export function NotificationPreferenceForm() {
   if (isLoading) {
     return (
       <div className="flex items-center justify-center py-12">
-        <Loader2 className="animate-spin text-slate-400" size={24} />
+        <Loader2 className="animate-spin text-neutral-400" size={24} />
       </div>
     );
   }
@@ -108,13 +108,13 @@ export function NotificationPreferenceForm() {
   return (
     <div className="space-y-6">
       {error ? (
-        <div className="rounded bg-rose-50 p-3 text-sm font-semibold text-rose-700">{error}</div>
+        <div className="rounded bg-danger-50 p-3 text-sm font-semibold text-danger-700">{error}</div>
       ) : null}
 
       <div className="grid gap-6 md:grid-cols-2">
         {CATEGORIES.map((cat) => (
-          <div key={cat.value} className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-            <h3 className="mb-3 text-sm font-bold text-slate-950">{cat.label}</h3>
+          <div key={cat.value} className="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm">
+            <h3 className="mb-3 text-sm font-bold text-neutral-900">{cat.label}</h3>
             <div className="space-y-2">
               {CHANNELS.map((ch) => {
                 const key = buildKey(cat.value, ch.value);
@@ -136,7 +136,7 @@ export function NotificationPreferenceForm() {
       </div>
 
       {dirty ? (
-        <div className="flex items-center gap-2 text-sm text-slate-500">
+        <div className="flex items-center gap-2 text-sm text-neutral-500">
           <Loader2 className="animate-spin" size={14} />
           Saving preferences...
         </div>

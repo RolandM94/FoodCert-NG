@@ -46,40 +46,40 @@ export default function Page() {
   return (
     <PortalShell role="lab_staff" title="Results" description="Track submitted, flagged, repeat-required, and reviewed lab results.">
       <div className="grid gap-5">
-        {loading ? <p className="rounded-lg border border-slate-200 bg-white p-4 text-sm font-semibold text-slate-600 shadow-sm">Loading lab results...</p> : null}
-        {error ? <div className="flex items-start gap-2 rounded-lg bg-rose-50 p-3 text-sm font-semibold text-rose-800"><AlertCircle size={16} />{error}</div> : null}
+        {loading ? <p className="rounded-lg border border-neutral-200 bg-white p-4 text-sm font-semibold text-neutral-600 shadow-sm">Loading lab results...</p> : null}
+        {error ? <div className="flex items-start gap-2 rounded-lg bg-danger-50 p-3 text-sm font-semibold text-danger-700"><AlertCircle size={16} />{error}</div> : null}
 
         <section className="grid gap-3 md:grid-cols-3">
-          <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm"><p className="text-xs font-bold uppercase text-slate-500">Submitted</p><p className="text-2xl font-bold text-slate-950">{metrics.submitted}</p></div>
-          <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm"><p className="text-xs font-bold uppercase text-slate-500">Flagged</p><p className="text-2xl font-bold text-slate-950">{metrics.flagged}</p></div>
-          <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm"><p className="text-xs font-bold uppercase text-slate-500">Repeats</p><p className="text-2xl font-bold text-slate-950">{metrics.repeats}</p></div>
+          <div className="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm"><p className="text-xs font-bold uppercase text-neutral-500">Submitted</p><p className="text-2xl font-bold text-neutral-900">{metrics.submitted}</p></div>
+          <div className="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm"><p className="text-xs font-bold uppercase text-neutral-500">Flagged</p><p className="text-2xl font-bold text-neutral-900">{metrics.flagged}</p></div>
+          <div className="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm"><p className="text-xs font-bold uppercase text-neutral-500">Repeats</p><p className="text-2xl font-bold text-neutral-900">{metrics.repeats}</p></div>
         </section>
 
-        <section className="flex flex-wrap items-center gap-3 rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-          <select className="h-10 rounded border border-slate-200 bg-white px-3 text-sm" value={status} onChange={(event) => setStatus(event.target.value)}>
+        <section className="flex flex-wrap items-center gap-3 rounded-lg border border-neutral-200 bg-white p-4 shadow-sm">
+          <select className="h-10 rounded border border-neutral-200 bg-white px-3 text-sm" value={status} onChange={(event) => setStatus(event.target.value)}>
             <option value="">All result statuses</option>
             {RESULT_STATUSES.map((value) => <option key={value} value={value}>{label(value)}</option>)}
           </select>
-          <button className="inline-flex h-10 items-center gap-2 rounded border border-slate-200 px-3 text-sm font-bold text-slate-700" type="button" onClick={() => void loadData()}><RefreshCw size={16} /> Refresh</button>
+          <button className="inline-flex h-10 items-center gap-2 rounded border border-neutral-200 px-3 text-sm font-bold text-neutral-700" type="button" onClick={() => void loadData()}><RefreshCw size={16} /> Refresh</button>
         </section>
 
-        <section className="rounded-lg border border-slate-200 bg-white shadow-sm">
+        <section className="rounded-lg border border-neutral-200 bg-white shadow-sm">
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm">
-              <thead className="bg-slate-50 text-xs font-bold uppercase text-slate-500">
+              <thead className="bg-neutral-50 text-xs font-bold uppercase text-neutral-500">
                 <tr><th className="p-3">Food handler</th><th className="p-3">Test</th><th className="p-3">Result</th><th className="p-3">Doctor</th><th className="p-3">Action</th></tr>
               </thead>
-              <tbody className="divide-y divide-slate-200">
+              <tbody className="divide-y divide-neutral-200">
                 {rows.map((row) => (
                   <tr key={row.id}>
-                    <td className="p-3 font-bold text-slate-950">{row.food_handler_name}</td>
-                    <td className="p-3"><p className="font-semibold capitalize text-slate-900">{row.test_name || label(row.test_type)}</p>{row.parent_lab_test ? <p className="text-xs font-semibold text-amber-700">Repeat</p> : null}</td>
-                    <td className="p-3"><StatusBadge status={row.status} />{row.is_flagged ? <p className="mt-1 text-xs font-semibold text-amber-700">Flagged</p> : null}</td>
-                    <td className="p-3 text-slate-600">{row.reviewed_at ? "Reviewed" : row.submitted_to_doctor_at ? "Submitted" : "Not submitted"}</td>
-                    <td className="p-3"><Link className="rounded border border-slate-200 px-3 py-1.5 text-xs font-bold text-slate-700" href={`/lab/test-requests/${row.id}`}>Open</Link></td>
+                    <td className="p-3 font-bold text-neutral-900">{row.food_handler_name}</td>
+                    <td className="p-3"><p className="font-semibold capitalize text-neutral-900">{row.test_name || label(row.test_type)}</p>{row.parent_lab_test ? <p className="text-xs font-semibold text-warning-700">Repeat</p> : null}</td>
+                    <td className="p-3"><StatusBadge status={row.status} />{row.is_flagged ? <p className="mt-1 text-xs font-semibold text-warning-700">Flagged</p> : null}</td>
+                    <td className="p-3 text-neutral-600">{row.reviewed_at ? "Reviewed" : row.submitted_to_doctor_at ? "Submitted" : "Not submitted"}</td>
+                    <td className="p-3"><Link className="rounded border border-neutral-200 px-3 py-1.5 text-xs font-bold text-neutral-700" href={`/lab/test-requests/${row.id}`}>Open</Link></td>
                   </tr>
                 ))}
-                {!rows.length && !loading ? <tr><td className="p-3 text-slate-500" colSpan={5}>No lab results match the current filters.</td></tr> : null}
+                {!rows.length && !loading ? <tr><td className="p-3 text-neutral-500" colSpan={5}>No lab results match the current filters.</td></tr> : null}
               </tbody>
             </table>
           </div>

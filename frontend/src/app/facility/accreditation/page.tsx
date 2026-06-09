@@ -194,7 +194,7 @@ export default function Page() {
   if (loading) {
     return (
       <PortalShell role="facility_admin" title="Accreditation" description="Complete checklist submission and monitor State review status.">
-        <p className="rounded-lg border border-slate-200 bg-white p-4 text-sm font-semibold text-slate-600 shadow-sm">Loading accreditation workflow...</p>
+        <p className="rounded-lg border border-neutral-200 bg-white p-4 text-sm font-semibold text-neutral-600 shadow-sm">Loading accreditation workflow...</p>
       </PortalShell>
     );
   }
@@ -204,119 +204,119 @@ export default function Page() {
       <div className="grid gap-5">
         {facility ? (
           <section className="grid gap-4 md:grid-cols-4">
-            <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-              <p className="text-xs font-bold uppercase tracking-wide text-slate-500">Facility status</p>
+            <div className="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm">
+              <p className="text-xs font-bold uppercase tracking-wide text-neutral-500">Facility status</p>
               <div className="mt-2"><StatusBadge status={facility.accreditation_status} /></div>
             </div>
-            <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-              <p className="text-xs font-bold uppercase tracking-wide text-slate-500">Current application</p>
+            <div className="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm">
+              <p className="text-xs font-bold uppercase tracking-wide text-neutral-500">Current application</p>
               <div className="mt-2"><StatusBadge status={activeApplication?.application_status || "draft"} /></div>
             </div>
-            <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-              <p className="text-xs font-bold uppercase tracking-wide text-slate-500">Expiry</p>
-              <p className="mt-2 text-sm font-bold text-slate-800">{formatDate(facility.accreditation_expiry_date)}</p>
+            <div className="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm">
+              <p className="text-xs font-bold uppercase tracking-wide text-neutral-500">Expiry</p>
+              <p className="mt-2 text-sm font-bold text-neutral-800">{formatDate(facility.accreditation_expiry_date)}</p>
             </div>
-            <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-              <p className="text-xs font-bold uppercase tracking-wide text-slate-500">Checklist</p>
-              <p className={`mt-2 text-sm font-bold ${checklistComplete ? "text-emerald-700" : "text-amber-700"}`}>{checklistComplete ? "Complete" : "Incomplete"}</p>
+            <div className="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm">
+              <p className="text-xs font-bold uppercase tracking-wide text-neutral-500">Checklist</p>
+              <p className={`mt-2 text-sm font-bold ${checklistComplete ? "text-brand-700" : "text-warning-700"}`}>{checklistComplete ? "Complete" : "Incomplete"}</p>
             </div>
           </section>
         ) : null}
 
-        <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+        <section className="rounded-lg border border-neutral-200 bg-white p-5 shadow-sm">
           <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <h2 className="text-sm font-bold text-slate-950">Accreditation Checklist</h2>
-              <p className="text-xs text-slate-500">Every item must be confirmed before State review.</p>
+              <h2 className="text-sm font-bold text-neutral-900">Accreditation Checklist</h2>
+              <p className="text-xs text-neutral-500">Every item must be confirmed before State review.</p>
             </div>
             <div className="flex flex-wrap gap-2">
-              <button className="inline-flex h-10 items-center justify-center gap-2 rounded bg-white px-4 text-sm font-bold text-slate-700 ring-1 ring-slate-200 hover:bg-slate-50 disabled:opacity-60" disabled={busy} type="button" onClick={saveChecklist}>
+              <button className="inline-flex h-10 items-center justify-center gap-2 rounded bg-white px-4 text-sm font-bold text-neutral-700 ring-1 ring-neutral-200 hover:bg-neutral-50 disabled:opacity-60" disabled={busy} type="button" onClick={saveChecklist}>
                 <Save size={16} /> Save
               </button>
-              <button className="inline-flex h-10 items-center justify-center gap-2 rounded bg-brand-green px-4 text-sm font-bold text-white hover:bg-brand-deep disabled:opacity-60" disabled={busy || !activeApplication || !checklistComplete} type="button" onClick={submitChecklist}>
+              <button className="inline-flex h-10 items-center justify-center gap-2 rounded bg-brand-600 px-4 text-sm font-bold text-white hover:bg-brand-700 disabled:opacity-60" disabled={busy || !activeApplication || !checklistComplete} type="button" onClick={submitChecklist}>
                 <Send size={16} /> Submit
               </button>
             </div>
           </div>
           <div className="grid gap-3 md:grid-cols-2">
             {CHECKLIST.map(([key, label]) => (
-              <label key={key} className="flex min-h-11 items-center gap-3 rounded border border-slate-200 bg-slate-50 px-3 text-sm font-semibold text-slate-700">
-                <input checked={checklist[key]} className="h-4 w-4 accent-brand-green" type="checkbox" onChange={() => toggle(key)} />
+              <label key={key} className="flex min-h-11 items-center gap-3 rounded border border-neutral-200 bg-neutral-50 px-3 text-sm font-semibold text-neutral-700">
+                <input checked={checklist[key]} className="h-4 w-4 accent-brand-600" type="checkbox" onChange={() => toggle(key)} />
                 <span>{label}</span>
               </label>
             ))}
           </div>
         </section>
 
-        <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+        <section className="rounded-lg border border-neutral-200 bg-white p-5 shadow-sm">
           <div className="mb-4 flex items-center gap-2">
-            <Upload className="text-brand-deep" size={18} />
-            <h2 className="text-sm font-bold text-slate-950">Evidence Documents</h2>
+            <Upload className="text-brand-700" size={18} />
+            <h2 className="text-sm font-bold text-neutral-900">Evidence Documents</h2>
           </div>
           <div className="grid gap-3 md:grid-cols-[240px_1fr_auto] md:items-end">
-            <label className="grid gap-1 text-xs font-bold uppercase tracking-wide text-slate-500">
+            <label className="grid gap-1 text-xs font-bold uppercase tracking-wide text-neutral-500">
               Document type
-              <select className="h-10 rounded border border-slate-200 bg-white px-3 text-sm normal-case tracking-normal text-slate-700" value={documentType} onChange={(event) => setDocumentType(event.target.value)}>
+              <select className="h-10 rounded border border-neutral-200 bg-white px-3 text-sm normal-case tracking-normal text-neutral-700" value={documentType} onChange={(event) => setDocumentType(event.target.value)}>
                 {DOCUMENT_TYPES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
               </select>
             </label>
-            <label className="grid gap-1 text-xs font-bold uppercase tracking-wide text-slate-500">
+            <label className="grid gap-1 text-xs font-bold uppercase tracking-wide text-neutral-500">
               File
-              <input className="h-10 rounded border border-slate-200 bg-slate-50 px-3 py-2 text-sm normal-case tracking-normal text-slate-700" type="file" onChange={(event) => setFile(event.target.files?.[0] || null)} />
+              <input className="h-10 rounded border border-neutral-200 bg-neutral-50 px-3 py-2 text-sm normal-case tracking-normal text-neutral-700" type="file" onChange={(event) => setFile(event.target.files?.[0] || null)} />
             </label>
-            <button className="inline-flex h-10 items-center justify-center gap-2 rounded bg-brand-green px-4 text-sm font-bold text-white hover:bg-brand-deep disabled:opacity-60" disabled={busy || !file} type="button" onClick={uploadDocument}>
+            <button className="inline-flex h-10 items-center justify-center gap-2 rounded bg-brand-600 px-4 text-sm font-bold text-white hover:bg-brand-700 disabled:opacity-60" disabled={busy || !file} type="button" onClick={uploadDocument}>
               <Upload size={16} /> Upload
             </button>
           </div>
-          <div className="mt-5 overflow-hidden rounded-lg border border-slate-200">
+          <div className="mt-5 overflow-hidden rounded-lg border border-neutral-200">
             <table className="w-full text-left text-sm">
-              <thead className="bg-slate-50 text-xs font-bold uppercase tracking-wide text-slate-500">
+              <thead className="bg-neutral-50 text-xs font-bold uppercase tracking-wide text-neutral-500">
                 <tr><th className="p-3">Type</th><th className="p-3">Status</th><th className="p-3">Uploaded</th></tr>
               </thead>
-              <tbody className="divide-y divide-slate-200">
+              <tbody className="divide-y divide-neutral-200">
                 {documents.length ? documents.map((document) => (
                   <tr key={document.id}>
-                    <td className="p-3 font-semibold text-slate-800">{document.document_type.replaceAll("_", " ")}</td>
+                    <td className="p-3 font-semibold text-neutral-800">{document.document_type.replaceAll("_", " ")}</td>
                     <td className="p-3"><StatusBadge status={document.status} /></td>
-                    <td className="p-3 text-slate-600">{formatDate(document.created_at)}</td>
+                    <td className="p-3 text-neutral-600">{formatDate(document.created_at)}</td>
                   </tr>
                 )) : (
-                  <tr><td className="p-3 text-slate-500" colSpan={3}>No accreditation documents uploaded yet.</td></tr>
+                  <tr><td className="p-3 text-neutral-500" colSpan={3}>No accreditation documents uploaded yet.</td></tr>
                 )}
               </tbody>
             </table>
           </div>
         </section>
 
-        <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+        <section className="rounded-lg border border-neutral-200 bg-white p-5 shadow-sm">
           <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <h2 className="text-sm font-bold text-slate-950">Application History</h2>
-              <p className="text-xs text-slate-500">State review decisions and renewal applications.</p>
+              <h2 className="text-sm font-bold text-neutral-900">Application History</h2>
+              <p className="text-xs text-neutral-500">State review decisions and renewal applications.</p>
             </div>
-            <button className="inline-flex h-10 items-center justify-center gap-2 rounded bg-white px-4 text-sm font-bold text-slate-700 ring-1 ring-slate-200 hover:bg-slate-50 disabled:opacity-60" disabled={busy || !facility || !["approved", "expired", "reaccreditation_due"].includes(facility.accreditation_status)} type="button" onClick={startRenewal}>
+            <button className="inline-flex h-10 items-center justify-center gap-2 rounded bg-white px-4 text-sm font-bold text-neutral-700 ring-1 ring-neutral-200 hover:bg-neutral-50 disabled:opacity-60" disabled={busy || !facility || !["approved", "expired", "reaccreditation_due"].includes(facility.accreditation_status)} type="button" onClick={startRenewal}>
               <RefreshCw size={16} /> Start renewal
             </button>
           </div>
           <div className="grid gap-3">
             {applications.length ? applications.map((application) => (
-              <div key={application.id} className="rounded border border-slate-200 bg-slate-50 p-3">
+              <div key={application.id} className="rounded border border-neutral-200 bg-neutral-50 p-3">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div className="flex items-center gap-2">
-                    <FileText size={16} className="text-brand-deep" />
-                    <p className="text-sm font-bold text-slate-900">{application.is_renewal ? "Renewal application" : "Accreditation application"}</p>
+                    <FileText size={16} className="text-brand-700" />
+                    <p className="text-sm font-bold text-neutral-900">{application.is_renewal ? "Renewal application" : "Accreditation application"}</p>
                   </div>
                   <StatusBadge status={application.application_status} />
                 </div>
-                {application.review_comment ? <p className="mt-2 text-sm text-slate-600">{application.review_comment}</p> : null}
-                <p className="mt-2 text-xs font-semibold text-slate-500">Created {formatDate(application.created_at)} · Submitted {formatDate(application.submitted_at)}</p>
+                {application.review_comment ? <p className="mt-2 text-sm text-neutral-600">{application.review_comment}</p> : null}
+                <p className="mt-2 text-xs font-semibold text-neutral-500">Created {formatDate(application.created_at)} · Submitted {formatDate(application.submitted_at)}</p>
               </div>
-            )) : <p className="rounded border border-slate-200 bg-slate-50 p-3 text-sm text-slate-500">No application has been started yet.</p>}
+            )) : <p className="rounded border border-neutral-200 bg-neutral-50 p-3 text-sm text-neutral-500">No application has been started yet.</p>}
           </div>
         </section>
 
-        {error ? <div className="flex items-start gap-2 rounded-lg bg-rose-50 p-3 text-sm font-semibold text-rose-800"><AlertCircle size={16} className="mt-0.5 shrink-0" />{error}</div> : null}
-        {success ? <div className="rounded-lg bg-emerald-50 p-3 text-sm font-semibold text-emerald-800">{success}</div> : null}
+        {error ? <div className="flex items-start gap-2 rounded-lg bg-danger-50 p-3 text-sm font-semibold text-danger-700"><AlertCircle size={16} className="mt-0.5 shrink-0" />{error}</div> : null}
+        {success ? <div className="rounded-lg bg-brand-50 p-3 text-sm font-semibold text-brand-800">{success}</div> : null}
       </div>
     </PortalShell>
   );

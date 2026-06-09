@@ -89,27 +89,27 @@ export default function Page() {
   return (
     <PortalShell role="state_admin" title="Certificates" description="Search and manage issued, revoked, suspended, and expired certificates.">
       <div className="grid gap-5">
-        <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+        <section className="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm">
           <div className="grid gap-3 md:grid-cols-[1fr_220px_220px]">
-            <label className="grid gap-1 text-xs font-bold uppercase tracking-wide text-slate-500">
+            <label className="grid gap-1 text-xs font-bold uppercase tracking-wide text-neutral-500">
               Search
-              <input className="h-10 rounded border border-slate-200 bg-slate-50 px-3 text-sm normal-case tracking-normal text-slate-700" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Certificate, handler, employer, facility" />
+              <input className="h-10 rounded border border-neutral-200 bg-neutral-50 px-3 text-sm normal-case tracking-normal text-neutral-700" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Certificate, handler, employer, facility" />
             </label>
-            <label className="grid gap-1 text-xs font-bold uppercase tracking-wide text-slate-500">
+            <label className="grid gap-1 text-xs font-bold uppercase tracking-wide text-neutral-500">
               Status
-              <select className="h-10 rounded border border-slate-200 bg-white px-3 text-sm normal-case tracking-normal text-slate-700" value={status} onChange={(event) => setStatus(event.target.value)}>
+              <select className="h-10 rounded border border-neutral-200 bg-white px-3 text-sm normal-case tracking-normal text-neutral-700" value={status} onChange={(event) => setStatus(event.target.value)}>
                 {STATUS_OPTIONS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
               </select>
             </label>
-            <label className="grid gap-1 text-xs font-bold uppercase tracking-wide text-slate-500">
+            <label className="grid gap-1 text-xs font-bold uppercase tracking-wide text-neutral-500">
               Expiry
-              <select className="h-10 rounded border border-slate-200 bg-white px-3 text-sm normal-case tracking-normal text-slate-700" value={expiryWindow} onChange={(event) => setExpiryWindow(event.target.value)}>
+              <select className="h-10 rounded border border-neutral-200 bg-white px-3 text-sm normal-case tracking-normal text-neutral-700" value={expiryWindow} onChange={(event) => setExpiryWindow(event.target.value)}>
                 {EXPIRY_OPTIONS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
               </select>
             </label>
           </div>
           <button
-            className="mt-3 inline-flex h-10 items-center gap-2 rounded border border-slate-200 bg-white px-3 text-sm font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+            className="mt-3 inline-flex h-10 items-center gap-2 rounded border border-neutral-200 bg-white px-3 text-sm font-bold text-neutral-700 hover:bg-neutral-50 disabled:opacity-50"
             disabled={exporting}
             onClick={async () => {
               setExporting(true);
@@ -128,14 +128,14 @@ export default function Page() {
 
         <section className="grid gap-3">
           <div className="flex items-center gap-2">
-            <BadgeCheck className="text-brand-deep" size={18} />
-            <h2 className="text-base font-bold text-slate-950">Certificate Registry</h2>
+            <BadgeCheck className="text-brand-700" size={18} />
+            <h2 className="text-base font-bold text-neutral-900">Certificate Registry</h2>
           </div>
-          {certificatesQuery.isError ? <p className="rounded bg-rose-50 p-3 text-sm font-semibold text-rose-700">Could not load certificates.</p> : null}
+          {certificatesQuery.isError ? <p className="rounded bg-danger-50 p-3 text-sm font-semibold text-danger-700">Could not load certificates.</p> : null}
           <CertificateRegistryTable<StateCertificateRegistryItem>
             columns={[
-              { key: "certificate", header: "Certificate", render: (row) => <div><p className="font-bold text-slate-950">{row.certificate_number}</p><p className="text-xs text-slate-500">{row.issuing_state_name}</p></div> },
-              { key: "handler", header: "Food handler", render: (row) => <div><p className="font-semibold text-slate-800">{row.food_handler_name || "Unknown"}</p><p className="text-xs text-slate-500">{row.food_handler_category?.replaceAll("_", " ") || "No category"}</p></div> },
+              { key: "certificate", header: "Certificate", render: (row) => <div><p className="font-bold text-neutral-900">{row.certificate_number}</p><p className="text-xs text-neutral-500">{row.issuing_state_name}</p></div> },
+              { key: "handler", header: "Food handler", render: (row) => <div><p className="font-semibold text-neutral-800">{row.food_handler_name || "Unknown"}</p><p className="text-xs text-neutral-500">{row.food_handler_category?.replaceAll("_", " ") || "No category"}</p></div> },
               { key: "employer", header: "Employer", render: (row) => row.employer_name || "Not linked" },
               { key: "facility", header: "Facility", render: (row) => row.facility_name || "Unknown" },
               { key: "expiry", header: "Issue / Expiry", render: (row) => `${dateLabel(row.issue_date)} - ${dateLabel(row.expiry_date)}` },
@@ -145,12 +145,12 @@ export default function Page() {
                 header: "Actions",
                 render: (row) => (
                   <div className="flex flex-wrap gap-2">
-                    <button className="inline-flex h-8 items-center gap-1 rounded border border-slate-200 px-3 text-xs font-bold text-slate-700 hover:bg-slate-50" onClick={() => void downloadCertificatePdf(row.id, row.certificate_number)} type="button"><Download size={13} /> PDF</button>
-                    {canManage(row) && row.status === "active" ? <button className="h-8 rounded border border-slate-200 px-3 text-xs font-bold text-slate-700 hover:bg-slate-50" onClick={() => setActionTarget({ certificate: row, action: "suspend" })} type="button">Suspend</button> : null}
-                    {canManage(row) && row.status === "suspended" ? <button className="h-8 rounded border border-emerald-200 px-3 text-xs font-bold text-emerald-700 hover:bg-emerald-50" onClick={() => setActionTarget({ certificate: row, action: "reinstate" })} type="button">Reinstate</button> : null}
-                    {canManage(row) && row.status !== "revoked" ? <button className="h-8 rounded border border-amber-200 px-3 text-xs font-bold text-amber-800 hover:bg-amber-50" onClick={() => setActionTarget({ certificate: row, action: "replace" })} type="button">Replace</button> : null}
-                    {canManage(row) ? <button className="h-8 rounded border border-red-200 px-3 text-xs font-bold text-red-700 hover:bg-red-50" onClick={() => setActionTarget({ certificate: row, action: "revoke" })} type="button">Revoke</button> : null}
-                    <button className="h-8 rounded border border-slate-200 px-3 text-xs font-bold text-slate-700 hover:bg-slate-50" onClick={() => setAuditTarget(row)} type="button">Audit</button>
+                    <button className="inline-flex h-8 items-center gap-1 rounded border border-neutral-200 px-3 text-xs font-bold text-neutral-700 hover:bg-neutral-50" onClick={() => void downloadCertificatePdf(row.id, row.certificate_number)} type="button"><Download size={13} /> PDF</button>
+                    {canManage(row) && row.status === "active" ? <button className="h-8 rounded border border-neutral-200 px-3 text-xs font-bold text-neutral-700 hover:bg-neutral-50" onClick={() => setActionTarget({ certificate: row, action: "suspend" })} type="button">Suspend</button> : null}
+                    {canManage(row) && row.status === "suspended" ? <button className="h-8 rounded border border-brand-200 px-3 text-xs font-bold text-brand-700 hover:bg-brand-50" onClick={() => setActionTarget({ certificate: row, action: "reinstate" })} type="button">Reinstate</button> : null}
+                    {canManage(row) && row.status !== "revoked" ? <button className="h-8 rounded border border-warning-100 px-3 text-xs font-bold text-warning-700 hover:bg-warning-50" onClick={() => setActionTarget({ certificate: row, action: "replace" })} type="button">Replace</button> : null}
+                    {canManage(row) ? <button className="h-8 rounded border border-danger-100 px-3 text-xs font-bold text-danger-700 hover:bg-danger-50" onClick={() => setActionTarget({ certificate: row, action: "revoke" })} type="button">Revoke</button> : null}
+                    <button className="h-8 rounded border border-neutral-200 px-3 text-xs font-bold text-neutral-700 hover:bg-neutral-50" onClick={() => setAuditTarget(row)} type="button">Audit</button>
                   </div>
                 ),
               },
@@ -175,18 +175,18 @@ export default function Page() {
       ) : null}
 
       {auditTarget ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4">
-          <div className="w-full max-w-2xl rounded-lg border border-slate-200 bg-white shadow-xl">
-            <div className="border-b border-slate-100 px-6 py-4">
-              <h2 className="text-lg font-bold text-slate-950">Certificate audit</h2>
-              <p className="mt-1 text-sm text-slate-500">{auditTarget.certificate_number}</p>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-neutral-900/50 p-4">
+          <div className="w-full max-w-2xl rounded-lg border border-neutral-200 bg-white shadow-xl">
+            <div className="border-b border-neutral-100 px-6 py-4">
+              <h2 className="text-lg font-bold text-neutral-900">Certificate audit</h2>
+              <p className="mt-1 text-sm text-neutral-500">{auditTarget.certificate_number}</p>
             </div>
             <div className="max-h-[60vh] overflow-auto p-6">
               {!auditQuery.isLoading ? <CertificateAuditTimeline items={auditQuery.data || []} /> : null}
-              {auditQuery.isLoading ? <p className="text-sm text-slate-500">Loading audit events...</p> : null}
+              {auditQuery.isLoading ? <p className="text-sm text-neutral-500">Loading audit events...</p> : null}
             </div>
-            <div className="border-t border-slate-100 px-6 py-4 text-right">
-              <button className="h-10 rounded border border-slate-200 px-4 text-sm font-semibold text-slate-600 hover:bg-slate-50" onClick={() => setAuditTarget(null)} type="button">Close</button>
+            <div className="border-t border-neutral-100 px-6 py-4 text-right">
+              <button className="h-10 rounded border border-neutral-200 px-4 text-sm font-semibold text-neutral-600 hover:bg-neutral-50" onClick={() => setAuditTarget(null)} type="button">Close</button>
             </div>
           </div>
         </div>

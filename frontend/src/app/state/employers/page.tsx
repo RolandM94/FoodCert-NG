@@ -20,17 +20,17 @@ export default function Page() {
   return (
     <PortalShell role="state_admin" title="Employers" description="Review registered food businesses and compliance status.">
       <div className="grid gap-5">
-        <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+        <section className="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm">
           <div className="grid gap-3 md:grid-cols-[1fr_220px_auto]">
-            <input className="h-10 rounded border border-slate-200 bg-slate-50 px-3 text-sm" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search business name or registration number" />
-            <select className="h-10 rounded border border-slate-200 bg-white px-3 text-sm" value={complianceStatus} onChange={(event) => setComplianceStatus(event.target.value)}>
+            <input className="h-10 rounded border border-neutral-200 bg-neutral-50 px-3 text-sm" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search business name or registration number" />
+            <select className="h-10 rounded border border-neutral-200 bg-white px-3 text-sm" value={complianceStatus} onChange={(event) => setComplianceStatus(event.target.value)}>
               <option value="">All compliance statuses</option>
               <option value="compliant">Compliant</option>
               <option value="non_compliant">Non compliant</option>
               <option value="under_review">Under review</option>
             </select>
             <button
-              className="inline-flex h-10 items-center justify-center gap-2 rounded bg-brand-deep px-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-300"
+              className="inline-flex h-10 items-center justify-center gap-2 rounded bg-brand-700 px-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-neutral-300"
               disabled={!rows.length}
               onClick={() =>
                 downloadCsv("state-employers-monitoring.csv", rows, [
@@ -53,10 +53,10 @@ export default function Page() {
           </div>
         </section>
         <section className="grid gap-3">
-          <div className="flex items-center gap-2"><Building2 className="text-brand-deep" size={18} /><h2 className="text-base font-bold text-slate-950">Food Business Monitoring</h2></div>
+          <div className="flex items-center gap-2"><Building2 className="text-brand-700" size={18} /><h2 className="text-base font-bold text-neutral-900">Food Business Monitoring</h2></div>
           <DataTable<StateEmployerMonitoringItem>
             columns={[
-              { key: "business", header: "Business", render: (row) => <div><p className="font-bold text-slate-950">{row.business_name}</p><p className="text-xs text-slate-500">{row.establishment_category.replaceAll("_", " ")}</p></div> },
+              { key: "business", header: "Business", render: (row) => <div><p className="font-bold text-neutral-900">{row.business_name}</p><p className="text-xs text-neutral-500">{row.establishment_category.replaceAll("_", " ")}</p></div> },
               { key: "lga", header: "LGA", render: (row) => row.lga_name || "Not set" },
               { key: "handlers", header: "Handlers", render: (row) => row.food_handler_count },
               { key: "certs", header: "Active certs", render: (row) => row.active_certificate_count },

@@ -25,9 +25,9 @@ export default function Page() {
   return (
     <PortalShell role="state_admin" title="Illness reports" description="Monitor illness exclusions and return-to-work clearance without exposing private clinical notes.">
       <div className="grid gap-5">
-        <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+        <section className="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm">
           <div className="grid gap-3 md:grid-cols-[220px_auto_1fr_auto]">
-            <select className="h-10 rounded border border-slate-200 bg-white px-3 text-sm" value={clearanceStatus} onChange={(event) => setClearanceStatus(event.target.value)}>
+            <select className="h-10 rounded border border-neutral-200 bg-white px-3 text-sm" value={clearanceStatus} onChange={(event) => setClearanceStatus(event.target.value)}>
               <option value="">All clearance statuses</option>
               <option value="pending">Pending</option>
               <option value="under_review">Under review</option>
@@ -35,13 +35,13 @@ export default function Page() {
               <option value="cleared">Cleared</option>
               <option value="rejected">Rejected</option>
             </select>
-            <label className="inline-flex h-10 items-center gap-2 text-sm font-semibold text-slate-700">
+            <label className="inline-flex h-10 items-center gap-2 text-sm font-semibold text-neutral-700">
               <input checked={activeOnly} onChange={(event) => setActiveOnly(event.target.checked)} type="checkbox" />
               Active only
             </label>
             <span />
             <button
-              className="inline-flex h-10 items-center justify-center gap-2 rounded bg-brand-deep px-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-300"
+              className="inline-flex h-10 items-center justify-center gap-2 rounded bg-brand-700 px-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-neutral-300"
               disabled={!rows.length}
               onClick={() =>
                 downloadCsv("state-illness-monitoring.csv", rows, [
@@ -66,10 +66,10 @@ export default function Page() {
           </div>
         </section>
         <section className="grid gap-3">
-          <div className="flex items-center gap-2"><HeartPulse className="text-brand-deep" size={18} /><h2 className="text-base font-bold text-slate-950">Illness & Return-to-Work Monitoring</h2></div>
+          <div className="flex items-center gap-2"><HeartPulse className="text-brand-700" size={18} /><h2 className="text-base font-bold text-neutral-900">Illness & Return-to-Work Monitoring</h2></div>
           <DataTable<StateIllnessMonitoringItem>
             columns={[
-              { key: "handler", header: "Handler", render: (row) => <div><p className="font-bold text-slate-950">{row.food_handler_name}</p><p className="text-xs text-slate-500">{row.food_handler_category?.replaceAll("_", " ")}</p></div> },
+              { key: "handler", header: "Handler", render: (row) => <div><p className="font-bold text-neutral-900">{row.food_handler_name}</p><p className="text-xs text-neutral-500">{row.food_handler_category?.replaceAll("_", " ")}</p></div> },
               { key: "employer", header: "Employer", render: (row) => row.employer_name || "Not linked" },
               { key: "lga", header: "LGA", render: (row) => row.lga_name || "Not set" },
               { key: "condition", header: "Public health flag", render: (row) => row.suspected_condition?.replaceAll("_", " ") || "Not specified" },

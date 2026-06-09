@@ -30,17 +30,17 @@ export function OrganizationScopeSwitcher({
   return (
     <div className="flex items-center gap-2 text-sm">
       {restricted && restrictedLabel ? (
-        <span className="inline-flex items-center gap-1.5 rounded bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-600">
+        <span className="inline-flex items-center gap-1.5 rounded bg-neutral-100 px-3 py-1.5 text-xs font-semibold text-neutral-600">
           <Network size={12} />
           {restrictedLabel}
         </span>
       ) : (
         <>
           {showBranches && (
-            <label className="flex items-center gap-1.5 rounded bg-white border border-slate-200 px-2 py-1.5">
-              <MapPin size={12} className="text-slate-400" />
+            <label className="flex items-center gap-1.5 rounded bg-white border border-neutral-200 px-2 py-1.5">
+              <MapPin size={12} className="text-neutral-400" />
               <select
-                className="bg-transparent text-xs font-semibold text-slate-700 outline-none max-w-[160px] truncate"
+                className="bg-transparent text-xs font-semibold text-neutral-700 outline-none max-w-[160px] truncate"
                 value={currentBranchId ?? ""}
                 onChange={(e) => onBranchChange?.(e.target.value || null)}
               >
@@ -54,10 +54,10 @@ export function OrganizationScopeSwitcher({
             </label>
           )}
           {showDepts && (
-            <label className="flex items-center gap-1.5 rounded bg-white border border-slate-200 px-2 py-1.5">
-              <Network size={12} className="text-slate-400" />
+            <label className="flex items-center gap-1.5 rounded bg-white border border-neutral-200 px-2 py-1.5">
+              <Network size={12} className="text-neutral-400" />
               <select
-                className="bg-transparent text-xs font-semibold text-slate-700 outline-none max-w-[160px] truncate"
+                className="bg-transparent text-xs font-semibold text-neutral-700 outline-none max-w-[160px] truncate"
                 value={currentDeptId ?? ""}
                 onChange={(e) => onDeptChange?.(e.target.value || null)}
               >

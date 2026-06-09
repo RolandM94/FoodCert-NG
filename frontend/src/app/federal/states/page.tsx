@@ -19,13 +19,13 @@ export default function Page() {
   return (
     <PortalShell role="federal_admin" title="States" description="Compare state implementation, federal reporting, open queues, and data quality.">
       <div className="grid gap-5">
-        <section className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+        <section className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-neutral-200 bg-white p-4 shadow-sm">
           <div className="flex items-center gap-2">
-            <MapPinned className="text-brand-deep" size={18} />
-            <h2 className="text-base font-bold text-slate-950">National State Performance Table</h2>
+            <MapPinned className="text-brand-700" size={18} />
+            <h2 className="text-base font-bold text-neutral-900">National State Performance Table</h2>
           </div>
           <button
-            className="inline-flex h-10 items-center justify-center gap-2 rounded bg-brand-deep px-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-300"
+            className="inline-flex h-10 items-center justify-center gap-2 rounded bg-brand-700 px-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-neutral-300"
             disabled={!rows.length}
             onClick={() =>
               downloadCsv("federal-state-performance.csv", rows, [
@@ -53,7 +53,7 @@ export default function Page() {
 
         <DataTable<FederalStatePerformanceRow>
           columns={[
-            { key: "state", header: "State", render: (row) => <Link className="font-bold text-brand-deep" href={`/federal/states/${row.state_id}`}>{row.state_name}{row.is_fct ? " (FCT)" : ""}</Link> },
+            { key: "state", header: "State", render: (row) => <Link className="font-bold text-brand-700" href={`/federal/states/${row.state_id}`}>{row.state_name}{row.is_fct ? " (FCT)" : ""}</Link> },
             { key: "handlers", header: "Handlers", render: (row) => numberLabel(row.registered_handlers) },
             { key: "certified", header: "Certified", render: (row) => numberLabel(row.certified_handlers) },
             { key: "coverage", header: "Coverage", render: (row) => `${row.certification_coverage}%` },

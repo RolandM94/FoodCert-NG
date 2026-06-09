@@ -15,7 +15,7 @@ export default function Page() {
     <PortalShell role="federal_admin" title="Revenue by state" description="Compare state-level finance totals using aggregate settlement data.">
       <DataTable<FederalRevenueByStateRow>
         columns={[
-          { key: "state", header: "State", render: (row) => <p className="font-bold text-slate-950">{row.state_name}</p> },
+          { key: "state", header: "State", render: (row) => <p className="font-bold text-neutral-900">{row.state_name}</p> },
           { key: "count", header: "Settlements", render: (row) => row.settlement_count },
           { key: "gross", header: "Gross", render: (row) => money(row.gross_amount) },
           { key: "state_share", header: "State share", render: (row) => money(row.state_amount) },

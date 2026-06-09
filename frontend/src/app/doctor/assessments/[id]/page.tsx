@@ -331,55 +331,55 @@ export default function Page() {
   return (
     <PortalShell role="doctor" title="Assessment Review" description="Validate health declaration risk, complete physical examination, and prepare next workflow steps.">
       <div className="grid gap-5">
-        <Link className="inline-flex w-fit items-center gap-2 rounded border border-slate-200 bg-white px-3 py-2 text-sm font-bold text-slate-700 shadow-sm" href="/doctor/assessments">
+        <Link className="inline-flex w-fit items-center gap-2 rounded border border-neutral-200 bg-white px-3 py-2 text-sm font-bold text-neutral-700 shadow-sm" href="/doctor/assessments">
           <ArrowLeft size={16} /> Back to assigned cases
         </Link>
 
-        {loading ? <p className="rounded-lg border border-slate-200 bg-white p-4 text-sm font-semibold text-slate-600 shadow-sm">Loading assessment...</p> : null}
-        {error ? <div className="flex items-start gap-2 rounded-lg bg-rose-50 p-3 text-sm font-semibold text-rose-800"><AlertCircle size={16} />{error}</div> : null}
-        {success ? <div className="rounded-lg bg-emerald-50 p-3 text-sm font-semibold text-emerald-800">{success}</div> : null}
+        {loading ? <p className="rounded-lg border border-neutral-200 bg-white p-4 text-sm font-semibold text-neutral-600 shadow-sm">Loading assessment...</p> : null}
+        {error ? <div className="flex items-start gap-2 rounded-lg bg-danger-50 p-3 text-sm font-semibold text-danger-700"><AlertCircle size={16} />{error}</div> : null}
+        {success ? <div className="rounded-lg bg-brand-50 p-3 text-sm font-semibold text-brand-800">{success}</div> : null}
 
         {assessment ? (
           <>
             <section className="grid gap-3 md:grid-cols-4">
-              <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm"><p className="text-xs font-bold uppercase text-slate-500">Food handler</p><p className="mt-2 font-bold text-slate-950">{assessment.food_handler_name}</p><p className="text-xs text-slate-500">{assessment.food_handler_identifier}</p></div>
-              <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm"><p className="text-xs font-bold uppercase text-slate-500">Declaration</p><StatusBadge status={assessment.declaration_status} /></div>
-              <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm"><p className="text-xs font-bold uppercase text-slate-500">Physical exam</p><StatusBadge status={assessment.physical_exam_status} /></div>
-              <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm"><p className="text-xs font-bold uppercase text-slate-500">Payment</p><StatusBadge status={assessment.payment_status || "missing"} /></div>
+              <div className="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm"><p className="text-xs font-bold uppercase text-neutral-500">Food handler</p><p className="mt-2 font-bold text-neutral-900">{assessment.food_handler_name}</p><p className="text-xs text-neutral-500">{assessment.food_handler_identifier}</p></div>
+              <div className="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm"><p className="text-xs font-bold uppercase text-neutral-500">Declaration</p><StatusBadge status={assessment.declaration_status} /></div>
+              <div className="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm"><p className="text-xs font-bold uppercase text-neutral-500">Physical exam</p><StatusBadge status={assessment.physical_exam_status} /></div>
+              <div className="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm"><p className="text-xs font-bold uppercase text-neutral-500">Payment</p><StatusBadge status={assessment.payment_status || "missing"} /></div>
             </section>
 
             <section className="grid gap-4 lg:grid-cols-2">
-              <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+              <div className="rounded-lg border border-neutral-200 bg-white p-5 shadow-sm">
                 <div className="mb-4 flex items-center gap-2">
-                  <ShieldAlert className="text-brand-deep" size={18} />
-                  <h2 className="text-sm font-bold text-slate-950">Declaration Review</h2>
+                  <ShieldAlert className="text-brand-700" size={18} />
+                  <h2 className="text-sm font-bold text-neutral-900">Declaration Review</h2>
                 </div>
                 {assessment.health_declaration ? (
                   <div className="grid gap-3">
-                    <div className={`rounded border p-3 text-sm font-bold ${assessment.health_declaration.risk_flag ? "border-amber-200 bg-amber-50 text-amber-900" : "border-emerald-200 bg-emerald-50 text-emerald-900"}`}>
+                    <div className={`rounded border p-3 text-sm font-bold ${assessment.health_declaration.risk_flag ? "border-warning-100 bg-warning-50 text-amber-900" : "border-brand-200 bg-brand-50 text-brand-900"}`}>
                       Risk flag: {assessment.health_declaration.risk_flag ? "Yes" : "No"}
                     </div>
-                    <div className="grid gap-2 rounded border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700 sm:grid-cols-2">
+                    <div className="grid gap-2 rounded border border-neutral-200 bg-neutral-50 p-3 text-sm text-neutral-700 sm:grid-cols-2">
                       <p>Version: <span className="font-bold">{assessment.health_declaration.version}</span></p>
                       <p>Lock state: <span className="font-bold">{assessment.health_declaration.is_locked ? "Locked" : "Editable when reopened"}</span></p>
                     </div>
-                    <p className="text-sm text-slate-600">Submitted: {formatDate(assessment.health_declaration.submitted_at)}</p>
-                    <p className="text-sm text-slate-600">Validated: {formatDate(assessment.health_declaration.validated_at)}</p>
-                    {assessment.health_declaration.reopen_reason ? <p className="rounded bg-amber-50 p-3 text-sm text-amber-900">Reopened: {assessment.health_declaration.reopen_reason}</p> : null}
-                    {assessment.health_declaration.clarification_reason ? <p className="rounded bg-slate-50 p-3 text-sm text-slate-700">Clarification: {assessment.health_declaration.clarification_reason}</p> : null}
-                    <textarea className="min-h-24 rounded border border-slate-200 bg-slate-50 p-3 text-sm" placeholder="Reason for requesting changes" value={clarificationReason} onChange={(event) => setClarificationReason(event.target.value)} />
+                    <p className="text-sm text-neutral-600">Submitted: {formatDate(assessment.health_declaration.submitted_at)}</p>
+                    <p className="text-sm text-neutral-600">Validated: {formatDate(assessment.health_declaration.validated_at)}</p>
+                    {assessment.health_declaration.reopen_reason ? <p className="rounded bg-warning-50 p-3 text-sm text-amber-900">Reopened: {assessment.health_declaration.reopen_reason}</p> : null}
+                    {assessment.health_declaration.clarification_reason ? <p className="rounded bg-neutral-50 p-3 text-sm text-neutral-700">Clarification: {assessment.health_declaration.clarification_reason}</p> : null}
+                    <textarea className="min-h-24 rounded border border-neutral-200 bg-neutral-50 p-3 text-sm" placeholder="Reason for requesting changes" value={clarificationReason} onChange={(event) => setClarificationReason(event.target.value)} />
                     <div className="flex flex-wrap gap-2">
-                      <button className="inline-flex h-10 items-center gap-2 rounded bg-brand-green px-4 text-sm font-bold text-white disabled:opacity-60" disabled={busy || Boolean(assessment.health_declaration.validated_at)} type="button" onClick={() => void validateDeclaration()}><ClipboardCheck size={16} /> Validate</button>
-                      <button className="inline-flex h-10 items-center gap-2 rounded border border-slate-200 px-4 text-sm font-bold text-slate-700 disabled:opacity-60" disabled={busy || Boolean(assessment.health_declaration.validated_at) || !clarificationReason.trim()} type="button" onClick={() => void requestChanges()}><Send size={16} /> Request changes</button>
+                      <button className="inline-flex h-10 items-center gap-2 rounded bg-brand-600 px-4 text-sm font-bold text-white disabled:opacity-60" disabled={busy || Boolean(assessment.health_declaration.validated_at)} type="button" onClick={() => void validateDeclaration()}><ClipboardCheck size={16} /> Validate</button>
+                      <button className="inline-flex h-10 items-center gap-2 rounded border border-neutral-200 px-4 text-sm font-bold text-neutral-700 disabled:opacity-60" disabled={busy || Boolean(assessment.health_declaration.validated_at) || !clarificationReason.trim()} type="button" onClick={() => void requestChanges()}><Send size={16} /> Request changes</button>
                     </div>
                   </div>
-                ) : <p className="text-sm text-slate-500">No declaration submitted yet.</p>}
+                ) : <p className="text-sm text-neutral-500">No declaration submitted yet.</p>}
               </div>
 
-              <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+              <div className="rounded-lg border border-neutral-200 bg-white p-5 shadow-sm">
                 <div className="mb-4 flex items-center gap-2">
-                  <Stethoscope className="text-brand-deep" size={18} />
-                  <h2 className="text-sm font-bold text-slate-950">Physical Examination</h2>
+                  <Stethoscope className="text-brand-700" size={18} />
+                  <h2 className="text-sm font-bold text-neutral-900">Physical Examination</h2>
                 </div>
                 <PhysicalExamForm
                   value={exam}
@@ -391,10 +391,10 @@ export default function Page() {
                 />
               </div>
 
-              <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm lg:col-span-2">
+              <div className="rounded-lg border border-neutral-200 bg-white p-5 shadow-sm lg:col-span-2">
                 <div className="mb-4 flex items-center gap-2">
-                  <FlaskConical className="text-brand-deep" size={18} />
-                  <h2 className="text-sm font-bold text-slate-950">Lab Requests</h2>
+                  <FlaskConical className="text-brand-700" size={18} />
+                  <h2 className="text-sm font-bold text-neutral-900">Lab Requests</h2>
                 </div>
                 <div className="grid gap-4 lg:grid-cols-2">
                   <LabResultReviewPanel
@@ -418,46 +418,46 @@ export default function Page() {
                 </div>
               </div>
 
-              <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm lg:col-span-2">
+              <div className="rounded-lg border border-neutral-200 bg-white p-5 shadow-sm lg:col-span-2">
                 <div className="mb-4 flex items-center gap-2">
-                  <Syringe className="text-brand-deep" size={18} />
-                  <h2 className="text-sm font-bold text-slate-950">Vaccination Review</h2>
+                  <Syringe className="text-brand-700" size={18} />
+                  <h2 className="text-sm font-bold text-neutral-900">Vaccination Review</h2>
                 </div>
                 <VaccinationReviewPanel records={assessment.vaccinations} value={vaccination} busy={busy} onChange={setVaccination} onSubmit={() => void saveVaccinationReview()} />
               </div>
 
-              <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm lg:col-span-2">
+              <div className="rounded-lg border border-neutral-200 bg-white p-5 shadow-sm lg:col-span-2">
                 <div className="mb-4 flex items-center gap-2">
-                  <FileCheck2 className="text-brand-deep" size={18} />
-                  <h2 className="text-sm font-bold text-slate-950">Final Decision & Medical Report</h2>
+                  <FileCheck2 className="text-brand-700" size={18} />
+                  <h2 className="text-sm font-bold text-neutral-900">Final Decision & Medical Report</h2>
                 </div>
                 <div className="grid gap-4 lg:grid-cols-[0.8fr_1.2fr]">
                   <div className="grid gap-2">
                     {readinessItems.map((item) => (
-                      <div className="flex items-center justify-between gap-3 rounded border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-700" key={item.label}>
+                      <div className="flex items-center justify-between gap-3 rounded border border-neutral-200 bg-neutral-50 px-3 py-2 text-sm font-semibold text-neutral-700" key={item.label}>
                         <span>{item.label}</span>
                         <StatusBadge status={item.ready ? "ready" : "pending"} />
                       </div>
                     ))}
                     {assessment.signed_at ? (
-                      <div className="rounded border border-emerald-200 bg-emerald-50 p-3 text-sm font-semibold text-emerald-900">
+                      <div className="rounded border border-brand-200 bg-brand-50 p-3 text-sm font-semibold text-brand-900">
                         Signed {formatDate(assessment.signed_at)}
-                        {assessment.digital_signature_hash ? <p className="mt-1 break-all text-xs text-emerald-800">Hash: {assessment.digital_signature_hash}</p> : null}
+                        {assessment.digital_signature_hash ? <p className="mt-1 break-all text-xs text-brand-800">Hash: {assessment.digital_signature_hash}</p> : null}
                       </div>
                     ) : null}
                     {!assessment.signed_at && assessment.decision_draft_saved_at ? (
-                      <div className="rounded border border-sky-200 bg-sky-50 p-3 text-sm font-semibold text-sky-900">
+                      <div className="rounded border border-info-100 bg-info-50 p-3 text-sm font-semibold text-sky-900">
                         Draft saved {formatDate(assessment.decision_draft_saved_at)}
-                        <p className="mt-1 capitalize text-xs text-sky-800">Draft decision: {assessment.decision_draft?.replaceAll("_", " ")}</p>
+                        <p className="mt-1 capitalize text-xs text-info-700">Draft decision: {assessment.decision_draft?.replaceAll("_", " ")}</p>
                       </div>
                     ) : null}
-                    <div className="rounded border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
+                    <div className="rounded border border-neutral-200 bg-neutral-50 p-3 text-sm text-neutral-700">
                       Certificate request: <span className="font-bold">{assessment.can_request_certificate ? "Eligible" : "Not eligible yet"}</span>
                     </div>
                   </div>
                   <div className="grid gap-3">
                     <select
-                      className="h-10 rounded border border-slate-200 bg-white px-3 text-sm"
+                      className="h-10 rounded border border-neutral-200 bg-white px-3 text-sm"
                       disabled={Boolean(assessment.signed_at)}
                       value={decision.final_decision}
                       onChange={(event) => setDecision((current) => ({ ...current, final_decision: event.target.value as FitnessDecision }))}
@@ -465,21 +465,21 @@ export default function Page() {
                       {DECISION_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
                     </select>
                     {["return_to_work_on_date", "temporarily_not_fit", "requires_public_health_clearance"].includes(decision.final_decision) ? (
-                      <label className="grid gap-1 text-xs font-bold uppercase text-slate-500">Return date<input className="h-10 rounded border border-slate-200 bg-slate-50 px-3 text-sm normal-case text-slate-700" disabled={Boolean(assessment.signed_at)} type="date" value={decision.return_to_work_date} onChange={(event) => setDecision((current) => ({ ...current, return_to_work_date: event.target.value }))} /></label>
+                      <label className="grid gap-1 text-xs font-bold uppercase text-neutral-500">Return date<input className="h-10 rounded border border-neutral-200 bg-neutral-50 px-3 text-sm normal-case text-neutral-700" disabled={Boolean(assessment.signed_at)} type="date" value={decision.return_to_work_date} onChange={(event) => setDecision((current) => ({ ...current, return_to_work_date: event.target.value }))} /></label>
                     ) : null}
                     {["temporarily_not_fit", "requires_public_health_clearance", "return_to_work_on_date"].includes(decision.final_decision) ? (
-                      <div className="rounded border border-amber-200 bg-amber-50 p-3 text-sm font-semibold text-amber-900">
+                      <div className="rounded border border-warning-100 bg-warning-50 p-3 text-sm font-semibold text-amber-900">
                         This decision will restrict food-handling duties and open return-to-work follow-up after sign-off.
                       </div>
                     ) : null}
-                    <textarea className="min-h-24 rounded border border-slate-200 bg-slate-50 p-3 text-sm" disabled={Boolean(assessment.signed_at)} placeholder="Clinical decision notes" value={decision.doctor_notes} onChange={(event) => setDecision((current) => ({ ...current, doctor_notes: event.target.value }))} />
-                    <label className="flex items-start gap-3 rounded border border-slate-200 bg-slate-50 p-3 text-sm font-semibold text-slate-700">
+                    <textarea className="min-h-24 rounded border border-neutral-200 bg-neutral-50 p-3 text-sm" disabled={Boolean(assessment.signed_at)} placeholder="Clinical decision notes" value={decision.doctor_notes} onChange={(event) => setDecision((current) => ({ ...current, doctor_notes: event.target.value }))} />
+                    <label className="flex items-start gap-3 rounded border border-neutral-200 bg-neutral-50 p-3 text-sm font-semibold text-neutral-700">
                       <input checked={decision.digital_signature_confirmation} disabled={Boolean(assessment.signed_at)} type="checkbox" onChange={(event) => setDecision((current) => ({ ...current, digital_signature_confirmation: event.target.checked }))} />
                       I confirm this is my final digital medical sign-off for this assessment.
                     </label>
                     <div className="flex flex-wrap gap-2">
-                      <button className="inline-flex h-10 w-fit items-center gap-2 rounded border border-slate-200 px-4 text-sm font-bold text-slate-700 disabled:opacity-60" disabled={busy || Boolean(assessment.signed_at)} type="button" onClick={() => void saveDecisionDraft()}><Save size={16} /> Save draft</button>
-                      <button className="inline-flex h-10 w-fit items-center gap-2 rounded bg-brand-green px-4 text-sm font-bold text-white disabled:opacity-60" disabled={busy || Boolean(assessment.signed_at) || !decision.digital_signature_confirmation} type="button" onClick={() => void submitDecision()}><FileCheck2 size={16} /> Sign decision</button>
+                      <button className="inline-flex h-10 w-fit items-center gap-2 rounded border border-neutral-200 px-4 text-sm font-bold text-neutral-700 disabled:opacity-60" disabled={busy || Boolean(assessment.signed_at)} type="button" onClick={() => void saveDecisionDraft()}><Save size={16} /> Save draft</button>
+                      <button className="inline-flex h-10 w-fit items-center gap-2 rounded bg-brand-600 px-4 text-sm font-bold text-white disabled:opacity-60" disabled={busy || Boolean(assessment.signed_at) || !decision.digital_signature_confirmation} type="button" onClick={() => void submitDecision()}><FileCheck2 size={16} /> Sign decision</button>
                     </div>
                   </div>
                 </div>

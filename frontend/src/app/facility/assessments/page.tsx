@@ -97,71 +97,71 @@ export default function Page() {
   return (
     <PortalShell role="facility_admin" title="Assessments" description="Coordinate paid assessments, doctor review, lab review, vaccination review, and state submission readiness.">
       <div className="grid gap-5">
-        {loading ? <p className="rounded-lg border border-slate-200 bg-white p-4 text-sm font-semibold text-slate-600 shadow-sm">Loading assessments...</p> : null}
+        {loading ? <p className="rounded-lg border border-neutral-200 bg-white p-4 text-sm font-semibold text-neutral-600 shadow-sm">Loading assessments...</p> : null}
 
         <section className="grid gap-3 md:grid-cols-4">
-          <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm"><ClipboardList className="text-brand-deep" size={18} /><p className="mt-2 text-xs font-bold uppercase text-slate-500">Queue</p><p className="text-2xl font-bold text-slate-950">{metrics.total}</p></div>
-          <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm"><UserRoundCheck className="text-brand-deep" size={18} /><p className="mt-2 text-xs font-bold uppercase text-slate-500">Unassigned</p><p className="text-2xl font-bold text-slate-950">{metrics.unassigned}</p></div>
-          <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm"><Stethoscope className="text-brand-deep" size={18} /><p className="mt-2 text-xs font-bold uppercase text-slate-500">Lab pending</p><p className="text-2xl font-bold text-slate-950">{metrics.labPending}</p></div>
-          <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm"><RefreshCw className="text-brand-deep" size={18} /><p className="mt-2 text-xs font-bold uppercase text-slate-500">State ready</p><p className="text-2xl font-bold text-slate-950">{metrics.stateReady}</p></div>
+          <div className="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm"><ClipboardList className="text-brand-700" size={18} /><p className="mt-2 text-xs font-bold uppercase text-neutral-500">Queue</p><p className="text-2xl font-bold text-neutral-900">{metrics.total}</p></div>
+          <div className="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm"><UserRoundCheck className="text-brand-700" size={18} /><p className="mt-2 text-xs font-bold uppercase text-neutral-500">Unassigned</p><p className="text-2xl font-bold text-neutral-900">{metrics.unassigned}</p></div>
+          <div className="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm"><Stethoscope className="text-brand-700" size={18} /><p className="mt-2 text-xs font-bold uppercase text-neutral-500">Lab pending</p><p className="text-2xl font-bold text-neutral-900">{metrics.labPending}</p></div>
+          <div className="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm"><RefreshCw className="text-brand-700" size={18} /><p className="mt-2 text-xs font-bold uppercase text-neutral-500">State ready</p><p className="text-2xl font-bold text-neutral-900">{metrics.stateReady}</p></div>
         </section>
 
-        <section className="flex flex-wrap items-center gap-3 rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-          <Filter size={18} className="text-brand-deep" />
-          <select className="h-10 rounded border border-slate-200 bg-white px-3 text-sm" value={filters.status} onChange={(event) => updateFilter("status", event.target.value)}>
+        <section className="flex flex-wrap items-center gap-3 rounded-lg border border-neutral-200 bg-white p-4 shadow-sm">
+          <Filter size={18} className="text-brand-700" />
+          <select className="h-10 rounded border border-neutral-200 bg-white px-3 text-sm" value={filters.status} onChange={(event) => updateFilter("status", event.target.value)}>
             {ASSESSMENT_STATUSES.map(([value, text]) => <option key={value} value={value}>{text}</option>)}
           </select>
-          <select className="h-10 rounded border border-slate-200 bg-white px-3 text-sm" value={filters.doctor} onChange={(event) => updateFilter("doctor", event.target.value)}>
+          <select className="h-10 rounded border border-neutral-200 bg-white px-3 text-sm" value={filters.doctor} onChange={(event) => updateFilter("doctor", event.target.value)}>
             <option value="">All doctors</option>
             {doctors.map((profile) => <option key={profile.user} value={profile.user}>{profile.user_name || profile.user_email}</option>)}
           </select>
-          <select className="h-10 rounded border border-slate-200 bg-white px-3 text-sm" value={filters.payment_status} onChange={(event) => updateFilter("payment_status", event.target.value)}>
+          <select className="h-10 rounded border border-neutral-200 bg-white px-3 text-sm" value={filters.payment_status} onChange={(event) => updateFilter("payment_status", event.target.value)}>
             <option value="">All payments</option><option value="success">Paid</option><option value="pending">Pending</option><option value="missing">Missing</option>
           </select>
-          <select className="h-10 rounded border border-slate-200 bg-white px-3 text-sm" value={filters.lab_status} onChange={(event) => updateFilter("lab_status", event.target.value)}>
+          <select className="h-10 rounded border border-neutral-200 bg-white px-3 text-sm" value={filters.lab_status} onChange={(event) => updateFilter("lab_status", event.target.value)}>
             <option value="">All lab states</option><option value="pending">Pending</option><option value="submitted">Submitted</option><option value="reviewed">Reviewed</option>
           </select>
-          <button className="inline-flex h-10 items-center gap-2 rounded bg-brand-green px-3 text-sm font-bold text-white" type="button" onClick={() => void loadData()}><RefreshCw size={16} /> Apply</button>
+          <button className="inline-flex h-10 items-center gap-2 rounded bg-brand-600 px-3 text-sm font-bold text-white" type="button" onClick={() => void loadData()}><RefreshCw size={16} /> Apply</button>
         </section>
 
-        <section className="rounded-lg border border-slate-200 bg-white shadow-sm">
-          <div className="border-b border-slate-200 p-4">
-            <h2 className="text-sm font-bold text-slate-950">Assessment Queue</h2>
+        <section className="rounded-lg border border-neutral-200 bg-white shadow-sm">
+          <div className="border-b border-neutral-200 p-4">
+            <h2 className="text-sm font-bold text-neutral-900">Assessment Queue</h2>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm">
-              <thead className="bg-slate-50 text-xs font-bold uppercase text-slate-500">
+              <thead className="bg-neutral-50 text-xs font-bold uppercase text-neutral-500">
                 <tr><th className="p-3">Food handler</th><th className="p-3">Payment</th><th className="p-3">Workflow</th><th className="p-3">Doctor</th><th className="p-3">State</th><th className="p-3">Action</th></tr>
               </thead>
-              <tbody className="divide-y divide-slate-200">
+              <tbody className="divide-y divide-neutral-200">
                 {assessments.length ? assessments.map((assessment) => (
                   <tr key={assessment.id}>
-                    <td className="p-3"><p className="font-bold text-slate-950">{assessment.food_handler_name}</p><p className="text-xs text-slate-500">{assessment.food_handler_identifier} · {assessment.employer_name || "Individual"} · {assessment.branch_name || "No branch"}</p></td>
+                    <td className="p-3"><p className="font-bold text-neutral-900">{assessment.food_handler_name}</p><p className="text-xs text-neutral-500">{assessment.food_handler_identifier} · {assessment.employer_name || "Individual"} · {assessment.branch_name || "No branch"}</p></td>
                     <td className="p-3"><StatusBadge status={assessment.payment_status || "missing"} /></td>
                     <td className="p-3">
                       <div className="flex flex-wrap gap-1">
-                        {STEP_ORDER.map((step) => <span className="rounded bg-slate-100 px-2 py-1 text-[11px] font-bold capitalize text-slate-600" key={step}>{label(assessment[step] as string)}</span>)}
+                        {STEP_ORDER.map((step) => <span className="rounded bg-neutral-100 px-2 py-1 text-[11px] font-bold capitalize text-neutral-600" key={step}>{label(assessment[step] as string)}</span>)}
                       </div>
                     </td>
                     <td className="p-3">
-                      <select className="h-9 rounded border border-slate-200 bg-white px-2 text-xs" disabled={busyId === assessment.id} value={assessment.doctor || ""} onChange={(event) => void assignDoctor(assessment, event.target.value)}>
+                      <select className="h-9 rounded border border-neutral-200 bg-white px-2 text-xs" disabled={busyId === assessment.id} value={assessment.doctor || ""} onChange={(event) => void assignDoctor(assessment, event.target.value)}>
                         <option value="">Unassigned</option>
                         {doctors.map((profile) => <option key={profile.user} value={profile.user}>{profile.user_name || profile.user_email}</option>)}
                       </select>
                     </td>
                     <td className="p-3"><StatusBadge status={assessment.status} /></td>
-                    <td className="p-3"><Link className="rounded border border-slate-200 px-3 py-1.5 text-xs font-bold text-slate-700" href={`/facility/assessments/${assessment.id}`}>Open</Link></td>
+                    <td className="p-3"><Link className="rounded border border-neutral-200 px-3 py-1.5 text-xs font-bold text-neutral-700" href={`/facility/assessments/${assessment.id}`}>Open</Link></td>
                   </tr>
                 )) : (
-                  <tr><td className="p-3 text-slate-500" colSpan={6}>No assessments match the current filters.</td></tr>
+                  <tr><td className="p-3 text-neutral-500" colSpan={6}>No assessments match the current filters.</td></tr>
                 )}
               </tbody>
             </table>
           </div>
         </section>
 
-        {error ? <div className="flex items-start gap-2 rounded-lg bg-rose-50 p-3 text-sm font-semibold text-rose-800"><AlertCircle size={16} />{error}</div> : null}
-        {success ? <div className="rounded-lg bg-emerald-50 p-3 text-sm font-semibold text-emerald-800">{success}</div> : null}
+        {error ? <div className="flex items-start gap-2 rounded-lg bg-danger-50 p-3 text-sm font-semibold text-danger-700"><AlertCircle size={16} />{error}</div> : null}
+        {success ? <div className="rounded-lg bg-brand-50 p-3 text-sm font-semibold text-brand-800">{success}</div> : null}
       </div>
     </PortalShell>
   );

@@ -75,11 +75,11 @@ export function NotificationFilters({
 
   return (
     <div className="space-y-3">
-      <div className="flex flex-col gap-3 rounded-lg border border-slate-200 bg-white p-3 shadow-sm sm:flex-row sm:items-center">
+      <div className="flex flex-col gap-3 rounded-lg border border-neutral-200 bg-white p-3 shadow-sm sm:flex-row sm:items-center">
         <label className="relative flex-1">
-          <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+          <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400" size={16} />
           <input
-            className="h-10 w-full rounded border border-slate-200 bg-slate-50 pl-9 pr-3 text-sm outline-none ring-brand-green/20 focus:border-brand-green focus:ring-2"
+            className="h-10 w-full rounded border border-neutral-200 bg-neutral-50 pl-9 pr-3 text-sm outline-none ring-brand-600/20 focus:border-brand-600 focus:ring-2"
             placeholder="Search notifications..."
             type="search"
             value={filters.search}
@@ -87,7 +87,7 @@ export function NotificationFilters({
           />
         </label>
         <select
-          className="h-10 rounded border border-slate-200 bg-white px-3 text-sm text-slate-700"
+          className="h-10 rounded border border-neutral-200 bg-white px-3 text-sm text-neutral-700"
           value={filters.readFilter}
           onChange={(e) => onChange({ ...filters, readFilter: e.target.value as FilterState["readFilter"] })}
         >
@@ -96,7 +96,7 @@ export function NotificationFilters({
           <option value="read">Read</option>
         </select>
         <select
-          className="h-10 rounded border border-slate-200 bg-white px-3 text-sm text-slate-700"
+          className="h-10 rounded border border-neutral-200 bg-white px-3 text-sm text-neutral-700"
           value={filters.archivedFilter}
           onChange={(e) => onChange({ ...filters, archivedFilter: e.target.value as FilterState["archivedFilter"] })}
         >
@@ -106,7 +106,7 @@ export function NotificationFilters({
         </select>
         {onMarkAllRead ? (
           <button
-            className="inline-flex h-10 items-center gap-1.5 rounded border border-slate-200 px-3 text-sm font-semibold text-slate-700 hover:bg-emerald-50 hover:text-brand-green"
+            className="inline-flex h-10 items-center gap-1.5 rounded border border-neutral-200 px-3 text-sm font-semibold text-neutral-700 hover:bg-brand-50 hover:text-brand-600"
             onClick={onMarkAllRead}
             type="button"
           >
@@ -116,7 +116,7 @@ export function NotificationFilters({
         ) : null}
         {hasFilters && onClearFilters ? (
           <button
-            className="inline-flex h-10 items-center gap-1.5 rounded border border-slate-200 px-3 text-sm font-semibold text-slate-700 hover:bg-rose-50 hover:text-rose-700"
+            className="inline-flex h-10 items-center gap-1.5 rounded border border-neutral-200 px-3 text-sm font-semibold text-neutral-700 hover:bg-danger-50 hover:text-danger-700"
             onClick={onClearFilters}
             type="button"
           >
@@ -127,7 +127,7 @@ export function NotificationFilters({
       </div>
 
       <div className="flex flex-wrap gap-2">
-        <span className="text-xs font-bold uppercase tracking-wide text-slate-500 pt-1">Category:</span>
+        <span className="text-xs font-bold uppercase tracking-wide text-neutral-500 pt-1">Category:</span>
         {CATEGORIES.map((cat) => {
           const active = filters.selectedCategories.includes(cat.value);
           return (
@@ -135,8 +135,8 @@ export function NotificationFilters({
               key={cat.value}
               className={`rounded-full px-2.5 py-1 text-xs font-semibold transition ${
                 active
-                  ? "bg-brand-green text-white"
-                  : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                  ? "bg-brand-600 text-white"
+                  : "bg-neutral-100 text-neutral-600 hover:bg-neutral-200"
               }`}
               onClick={() => toggleCategory(cat.value)}
               type="button"
@@ -148,7 +148,7 @@ export function NotificationFilters({
       </div>
 
       <div className="flex flex-wrap gap-2">
-        <span className="text-xs font-bold uppercase tracking-wide text-slate-500 pt-1">Priority:</span>
+        <span className="text-xs font-bold uppercase tracking-wide text-neutral-500 pt-1">Priority:</span>
         {PRIORITIES.map((pri) => {
           const active = filters.selectedPriorities.includes(pri.value);
           return (
@@ -157,7 +157,7 @@ export function NotificationFilters({
               className={`rounded-full px-2.5 py-1 text-xs font-semibold transition ${
                 active
                   ? "bg-amber-600 text-white"
-                  : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                  : "bg-neutral-100 text-neutral-600 hover:bg-neutral-200"
               }`}
               onClick={() => togglePriority(pri.value)}
               type="button"

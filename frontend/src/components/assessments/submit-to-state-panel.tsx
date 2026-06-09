@@ -45,33 +45,33 @@ export function SubmitToStatePanel({
   const blockedStatus = ["pending_validation", "approved", "certificate_issued"].includes(assessment.certificate_submission_status || "");
 
   return (
-    <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm lg:col-span-2">
+    <section className="rounded-lg border border-neutral-200 bg-white p-5 shadow-sm lg:col-span-2">
       <div className="mb-4 flex items-center gap-2">
-        <FileCheck2 className="text-brand-deep" size={18} />
-        <h2 className="text-sm font-bold text-slate-950">State Certificate Validation</h2>
+        <FileCheck2 className="text-brand-700" size={18} />
+        <h2 className="text-sm font-bold text-neutral-900">State Certificate Validation</h2>
       </div>
       <div className="grid gap-4 lg:grid-cols-[0.9fr_1.1fr]">
         <div className="grid gap-2">
           {readinessItems.map((item) => (
-            <div className="flex items-center justify-between gap-3 rounded border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-700" key={item.label}>
+            <div className="flex items-center justify-between gap-3 rounded border border-neutral-200 bg-neutral-50 px-3 py-2 text-sm font-semibold text-neutral-700" key={item.label}>
               <span>{item.label}</span>
               <StatusBadge status={item.ready ? "ready" : "pending"} />
             </div>
           ))}
         </div>
         <div className="grid gap-3">
-          <div className="rounded border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
+          <div className="rounded border border-neutral-200 bg-neutral-50 p-3 text-sm text-neutral-700">
             Current State status: <span className="font-bold capitalize">{label(assessment.certificate_submission_status)}</span>
           </div>
           {awaitingClarification ? (
             <>
-              <textarea className="min-h-24 rounded border border-slate-200 bg-slate-50 p-3 text-sm" placeholder="Response to State clarification" value={clarificationResponse} onChange={(event) => onClarificationResponseChange(event.target.value)} />
-              <button className="inline-flex h-10 w-fit items-center gap-2 rounded bg-brand-green px-4 text-sm font-bold text-white disabled:opacity-60" disabled={busy || !clarificationResponse.trim()} type="button" onClick={onRespondToClarification}><Send size={16} /> Send response</button>
+              <textarea className="min-h-24 rounded border border-neutral-200 bg-neutral-50 p-3 text-sm" placeholder="Response to State clarification" value={clarificationResponse} onChange={(event) => onClarificationResponseChange(event.target.value)} />
+              <button className="inline-flex h-10 w-fit items-center gap-2 rounded bg-brand-600 px-4 text-sm font-bold text-white disabled:opacity-60" disabled={busy || !clarificationResponse.trim()} type="button" onClick={onRespondToClarification}><Send size={16} /> Send response</button>
             </>
           ) : (
             <>
-              <textarea className="min-h-20 rounded border border-slate-200 bg-slate-50 p-3 text-sm" placeholder="Submission notes for State reviewer" value={submissionNotes} onChange={(event) => onSubmissionNotesChange(event.target.value)} />
-              <button className="inline-flex h-10 w-fit items-center gap-2 rounded bg-brand-green px-4 text-sm font-bold text-white disabled:opacity-60" disabled={busy || !assessment.can_request_certificate || blockedStatus} type="button" onClick={onSubmitToState}><Send size={16} /> Submit to State</button>
+              <textarea className="min-h-20 rounded border border-neutral-200 bg-neutral-50 p-3 text-sm" placeholder="Submission notes for State reviewer" value={submissionNotes} onChange={(event) => onSubmissionNotesChange(event.target.value)} />
+              <button className="inline-flex h-10 w-fit items-center gap-2 rounded bg-brand-600 px-4 text-sm font-bold text-white disabled:opacity-60" disabled={busy || !assessment.can_request_certificate || blockedStatus} type="button" onClick={onSubmitToState}><Send size={16} /> Submit to State</button>
             </>
           )}
         </div>

@@ -12,28 +12,28 @@ export function QueueRoutingPanel({
   units: { id: string; name: string; unit_type: string }[];
 }) {
   return (
-    <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-      <h3 className="mb-3 text-sm font-bold text-slate-950">Queue Routing</h3>
-      <p className="mb-4 text-xs text-slate-500">
+    <div className="rounded-lg border border-neutral-200 bg-white p-5 shadow-sm">
+      <h3 className="mb-3 text-sm font-bold text-neutral-900">Queue Routing</h3>
+      <p className="mb-4 text-xs text-neutral-500">
         Assign workflows to units for default queue filtering.
       </p>
       <div className="overflow-x-auto">
         <table className="w-full text-xs">
           <thead>
-            <tr className="border-b border-slate-100 text-left">
-              <th className="pb-2 font-semibold text-slate-600">Workflow</th>
-              <th className="pb-2 font-semibold text-slate-600">Suggested Unit</th>
-              <th className="pb-2 font-semibold text-slate-600">Assigned</th>
+            <tr className="border-b border-neutral-100 text-left">
+              <th className="pb-2 font-semibold text-neutral-600">Workflow</th>
+              <th className="pb-2 font-semibold text-neutral-600">Suggested Unit</th>
+              <th className="pb-2 font-semibold text-neutral-600">Assigned</th>
             </tr>
           </thead>
           <tbody>
             {ROUTING_SUGGESTIONS.map((row) => (
-              <tr key={row.workflow} className="border-b border-slate-50">
-                <td className="py-2 pr-4 font-medium text-slate-800">{row.workflow}</td>
-                <td className="py-2 pr-4 text-slate-500">{row.label}</td>
+              <tr key={row.workflow} className="border-b border-neutral-50">
+                <td className="py-2 pr-4 font-medium text-neutral-800">{row.workflow}</td>
+                <td className="py-2 pr-4 text-neutral-500">{row.label}</td>
                 <td className="py-2 pr-4">
                   <select
-                    className="h-8 rounded border border-slate-200 bg-white px-2 text-xs"
+                    className="h-8 rounded border border-neutral-200 bg-white px-2 text-xs"
                     defaultValue=""
                   >
                     <option value="">-- Select --</option>
@@ -49,7 +49,7 @@ export function QueueRoutingPanel({
           </tbody>
         </table>
       </div>
-      <button className="mt-4 inline-flex h-9 items-center gap-2 rounded bg-brand-green px-4 text-xs font-bold text-white hover:bg-brand-deep">
+      <button className="mt-4 inline-flex h-9 items-center gap-2 rounded bg-brand-600 px-4 text-xs font-bold text-white hover:bg-brand-700">
         Save Routing
       </button>
     </div>

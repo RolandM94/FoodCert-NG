@@ -97,9 +97,9 @@ export default function Page() {
 
   return (
     <PortalShell role="employer" title="Certificates" description="Monitor certificate status, expiry dates, and compliance across your food handlers.">
-      {loading && <p className="text-slate-500 text-sm">Loading...</p>}
-      {error && <div className="rounded-lg border border-rose-200 bg-rose-50 p-4 text-sm font-semibold text-rose-700">{error}</div>}
-      {actionMessage && <div className="mb-4 rounded-lg border border-slate-200 bg-white p-3 text-sm font-semibold text-slate-700 shadow-sm">{actionMessage}</div>}
+      {loading && <p className="text-neutral-500 text-sm">Loading...</p>}
+      {error && <div className="rounded-lg border border-danger-100 bg-danger-50 p-4 text-sm font-semibold text-danger-700">{error}</div>}
+      {actionMessage && <div className="mb-4 rounded-lg border border-neutral-200 bg-white p-3 text-sm font-semibold text-neutral-700 shadow-sm">{actionMessage}</div>}
 
       {metrics && (
         <>
@@ -115,21 +115,21 @@ export default function Page() {
           </div>
 
           <div className="mb-4 grid gap-3 md:grid-cols-[180px_180px_auto]">
-            <select className="h-10 rounded border border-slate-200 bg-white px-3 text-sm" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+            <select className="h-10 rounded border border-neutral-200 bg-white px-3 text-sm" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
               <option value="">All statuses</option>
               <option value="active">Active</option>
               <option value="expired">Expired</option>
               <option value="suspended">Suspended</option>
               <option value="revoked">Revoked</option>
             </select>
-            <select className="h-10 rounded border border-slate-200 bg-white px-3 text-sm" value={expiryWindow} onChange={(e) => setExpiryWindow(e.target.value)}>
+            <select className="h-10 rounded border border-neutral-200 bg-white px-3 text-sm" value={expiryWindow} onChange={(e) => setExpiryWindow(e.target.value)}>
               <option value="">Any expiry</option>
               <option value="7">Expiring 7d</option>
               <option value="30">Expiring 30d</option>
               <option value="expired">Expired</option>
             </select>
             <button
-              className="inline-flex h-10 items-center justify-center gap-2 rounded border border-slate-200 bg-white px-3 text-sm font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+              className="inline-flex h-10 items-center justify-center gap-2 rounded border border-neutral-200 bg-white px-3 text-sm font-bold text-neutral-700 hover:bg-neutral-50 disabled:opacity-50"
               disabled={!certs.length}
               onClick={() => downloadCsv("employer-certificates.csv", certs, [
                 { header: "Certificate", value: (row) => row.certificate_number },
@@ -150,12 +150,12 @@ export default function Page() {
 
           <EmployerCertificateTable<CertRow>
             columns={[
-              { key: "certificate", header: "Certificate", render: (c) => <div><p className="font-mono text-xs font-bold text-slate-800">{c.certificate_number}</p><p className="text-xs text-slate-500 sm:hidden">{c.food_handler_name}</p></div> },
-              { key: "handler", header: "Handler", render: (c) => <div><p className="font-semibold text-slate-800">{c.food_handler_name}</p>{c.branch_name ? <p className="text-xs text-slate-500">{c.branch_name}</p> : null}</div> },
+              { key: "certificate", header: "Certificate", render: (c) => <div><p className="font-mono text-xs font-bold text-neutral-800">{c.certificate_number}</p><p className="text-xs text-neutral-500 sm:hidden">{c.food_handler_name}</p></div> },
+              { key: "handler", header: "Handler", render: (c) => <div><p className="font-semibold text-neutral-800">{c.food_handler_name}</p>{c.branch_name ? <p className="text-xs text-neutral-500">{c.branch_name}</p> : null}</div> },
               { key: "facility", header: "Facility", render: (c) => c.facility_name },
               { key: "expiry", header: "Expiry", render: (c) => new Date(c.expiry_date).toLocaleDateString("en-NG") },
               { key: "status", header: "Status", render: (c) => <CertificateStatusBadge status={c.effective_status || c.status} /> },
-              { key: "actions", header: "Actions", render: (c) => <div className="flex flex-wrap gap-2"><a className="inline-flex h-8 items-center gap-1 rounded border border-slate-200 px-2 text-xs font-bold text-slate-700 hover:bg-slate-50" href={c.verification_url}><ExternalLink size={13} /> Verify</a><button className="inline-flex h-8 items-center gap-1 rounded border border-slate-200 px-2 text-xs font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-50" disabled={!c.can_download} onClick={() => void downloadCertificate(c)} type="button"><Download size={13} /> PDF</button><button className="inline-flex h-8 items-center gap-1 rounded border border-amber-200 px-2 text-xs font-bold text-amber-800 hover:bg-amber-50" onClick={() => void sendReminder(c)} type="button"><Send size={13} /> Remind</button></div> },
+              { key: "actions", header: "Actions", render: (c) => <div className="flex flex-wrap gap-2"><a className="inline-flex h-8 items-center gap-1 rounded border border-neutral-200 px-2 text-xs font-bold text-neutral-700 hover:bg-neutral-50" href={c.verification_url}><ExternalLink size={13} /> Verify</a><button className="inline-flex h-8 items-center gap-1 rounded border border-neutral-200 px-2 text-xs font-bold text-neutral-700 hover:bg-neutral-50 disabled:opacity-50" disabled={!c.can_download} onClick={() => void downloadCertificate(c)} type="button"><Download size={13} /> PDF</button><button className="inline-flex h-8 items-center gap-1 rounded border border-warning-100 px-2 text-xs font-bold text-warning-700 hover:bg-warning-50" onClick={() => void sendReminder(c)} type="button"><Send size={13} /> Remind</button></div> },
             ]}
             rows={certs}
             empty="No certificates found."

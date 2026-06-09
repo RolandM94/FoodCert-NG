@@ -49,41 +49,41 @@ export default function Page() {
 
   return (
     <PortalShell role="employer" title="Compliance" description="Monitor return-to-work status, excluded handlers, and regulatory compliance.">
-      {loading && <p className="text-sm text-slate-500">Loading...</p>}
-      {error && <div className="rounded-lg border border-rose-200 bg-rose-50 p-4 text-sm font-semibold text-rose-700">{error}</div>}
+      {loading && <p className="text-sm text-neutral-500">Loading...</p>}
+      {error && <div className="rounded-lg border border-danger-100 bg-danger-50 p-4 text-sm font-semibold text-danger-700">{error}</div>}
 
       {!loading && (
         <>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5 mb-5">
-            <div className="rounded-lg border border-slate-200 bg-white p-4 text-center"><p className="text-2xl font-bold text-slate-950">{stats.total}</p><p className="text-xs font-semibold text-slate-500">Total Handlers</p></div>
-            <div className="rounded-lg border border-slate-200 bg-white p-4 text-center"><p className="text-2xl font-bold text-emerald-700">{stats.fit}</p><p className="text-xs font-semibold text-slate-500">Fit to Handle Food</p></div>
-            <div className="rounded-lg border border-slate-200 bg-white p-4 text-center"><p className="text-2xl font-bold text-red-600">{stats.excluded}</p><p className="text-xs font-semibold text-slate-500">Excluded</p></div>
-            <div className="rounded-lg border border-slate-200 bg-white p-4 text-center"><p className="text-2xl font-bold text-amber-600">{stats.pending}</p><p className="text-xs font-semibold text-slate-500">RTW Pending</p></div>
-            <div className="rounded-lg border border-slate-200 bg-white p-4 text-center"><p className="text-2xl font-bold text-emerald-600">{stats.cleared}</p><p className="text-xs font-semibold text-slate-500">Cleared</p></div>
+            <div className="rounded-lg border border-neutral-200 bg-white p-4 text-center"><p className="text-2xl font-bold text-neutral-900">{stats.total}</p><p className="text-xs font-semibold text-neutral-500">Total Handlers</p></div>
+            <div className="rounded-lg border border-neutral-200 bg-white p-4 text-center"><p className="text-2xl font-bold text-brand-700">{stats.fit}</p><p className="text-xs font-semibold text-neutral-500">Fit to Handle Food</p></div>
+            <div className="rounded-lg border border-neutral-200 bg-white p-4 text-center"><p className="text-2xl font-bold text-danger-500">{stats.excluded}</p><p className="text-xs font-semibold text-neutral-500">Excluded</p></div>
+            <div className="rounded-lg border border-neutral-200 bg-white p-4 text-center"><p className="text-2xl font-bold text-amber-600">{stats.pending}</p><p className="text-xs font-semibold text-neutral-500">RTW Pending</p></div>
+            <div className="rounded-lg border border-neutral-200 bg-white p-4 text-center"><p className="text-2xl font-bold text-brand-600">{stats.cleared}</p><p className="text-xs font-semibold text-neutral-500">Cleared</p></div>
           </div>
 
-          <h3 className="text-sm font-bold text-slate-950 mb-3 flex items-center gap-2"><AlertCircle size={16} className="text-amber-500" /> Excluded & Return-to-Work Pending</h3>
+          <h3 className="text-sm font-bold text-neutral-900 mb-3 flex items-center gap-2"><AlertCircle size={16} className="text-warning-500" /> Excluded & Return-to-Work Pending</h3>
           {excluded.length === 0 ? (
-            <div className="rounded-lg border border-slate-200 bg-white p-6 text-center text-sm text-slate-500">All food handlers are either fit or cleared to return to work.</div>
+            <div className="rounded-lg border border-neutral-200 bg-white p-6 text-center text-sm text-neutral-500">All food handlers are either fit or cleared to return to work.</div>
           ) : (
-            <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white shadow-sm">
+            <div className="overflow-x-auto rounded-lg border border-neutral-200 bg-white shadow-sm">
               <table className="w-full text-sm">
-                <thead><tr className="border-b border-slate-100 bg-slate-50 text-left"><th className="px-4 py-2 text-xs font-bold uppercase text-slate-500">Handler</th><th className="px-4 py-2 text-xs font-bold uppercase text-slate-500 hidden sm:table-cell">Condition</th><th className="px-4 py-2 text-xs font-bold uppercase text-slate-500">Excluded Since</th><th className="px-4 py-2 text-xs font-bold uppercase text-slate-500">Clearance</th><th className="px-4 py-2 text-xs font-bold uppercase text-slate-500 hidden md:table-cell">RTW Date</th></tr></thead>
-                <tbody className="divide-y divide-slate-50">
+                <thead><tr className="border-b border-neutral-100 bg-neutral-50 text-left"><th className="px-4 py-2 text-xs font-bold uppercase text-neutral-500">Handler</th><th className="px-4 py-2 text-xs font-bold uppercase text-neutral-500 hidden sm:table-cell">Condition</th><th className="px-4 py-2 text-xs font-bold uppercase text-neutral-500">Excluded Since</th><th className="px-4 py-2 text-xs font-bold uppercase text-neutral-500">Clearance</th><th className="px-4 py-2 text-xs font-bold uppercase text-neutral-500 hidden md:table-cell">RTW Date</th></tr></thead>
+                <tbody className="divide-y divide-neutral-50">
                   {excluded.map((r) => (
-                    <tr key={r.food_handler_id} className="hover:bg-slate-50/50">
-                      <td className="px-4 py-2"><span className="text-xs text-slate-700 font-medium">{r.food_handler_name}</span>{r.branch_name && <span className="text-[10px] text-slate-400 block">{r.branch_name}</span>}</td>
-                      <td className="px-4 py-2 hidden sm:table-cell"><span className="text-xs text-slate-600 capitalize">{r.suspected_condition?.replace(/_/g, " ")}</span></td>
-                      <td className="px-4 py-2"><span className="text-xs text-slate-600">{r.exclusion_start_date ? new Date(r.exclusion_start_date).toLocaleDateString() : "—"}</span></td>
+                    <tr key={r.food_handler_id} className="hover:bg-neutral-50/50">
+                      <td className="px-4 py-2"><span className="text-xs text-neutral-700 font-medium">{r.food_handler_name}</span>{r.branch_name && <span className="text-[10px] text-neutral-400 block">{r.branch_name}</span>}</td>
+                      <td className="px-4 py-2 hidden sm:table-cell"><span className="text-xs text-neutral-600 capitalize">{r.suspected_condition?.replace(/_/g, " ")}</span></td>
+                      <td className="px-4 py-2"><span className="text-xs text-neutral-600">{r.exclusion_start_date ? new Date(r.exclusion_start_date).toLocaleDateString() : "—"}</span></td>
                       <td className="px-4 py-2"><FitnessStatusBadge status={r.clearance_status || "pending"} /></td>
-                      <td className="px-4 py-2 hidden md:table-cell"><span className="text-xs text-slate-500">{r.earliest_return_date ? new Date(r.earliest_return_date).toLocaleDateString() : "—"}</span></td>
+                      <td className="px-4 py-2 hidden md:table-cell"><span className="text-xs text-neutral-500">{r.earliest_return_date ? new Date(r.earliest_return_date).toLocaleDateString() : "—"}</span></td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
           )}
-          <p className="mt-4 text-xs text-slate-400">Illness reports are reviewed by a doctor. Return-to-work clearance can only be granted by authorised medical or regulatory users.</p>
+          <p className="mt-4 text-xs text-neutral-400">Illness reports are reviewed by a doctor. Return-to-work clearance can only be granted by authorised medical or regulatory users.</p>
         </>
       )}
     </PortalShell>

@@ -55,12 +55,12 @@ export default function Page() {
   return (
     <PortalShell role="federal_admin" title="Policy configuration" description="Configure national policy defaults and monitor state-specific overrides.">
       <div className="grid gap-5">
-        <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-          <div className="mb-4 flex items-center gap-2"><Settings2 className="text-brand-deep" size={18} /><h2 className="text-base font-bold text-slate-950">National Policy Defaults</h2></div>
+        <section className="rounded-lg border border-neutral-200 bg-white p-5 shadow-sm">
+          <div className="mb-4 flex items-center gap-2"><Settings2 className="text-brand-700" size={18} /><h2 className="text-base font-bold text-neutral-900">National Policy Defaults</h2></div>
           <div className="grid gap-4 md:grid-cols-3">
-            <label className="grid gap-1 text-sm font-semibold text-slate-700">Certificate validity months<input className="h-10 rounded border border-slate-200 bg-slate-50 px-3" type="number" value={certificateValidityMonths} onChange={(event) => setCertificateValidityMonths(Number(event.target.value))} /></label>
-            <label className="grid gap-1 text-sm font-semibold text-slate-700">Typhoid validity years<input className="h-10 rounded border border-slate-200 bg-slate-50 px-3" type="number" value={typhoidValidityYears} onChange={(event) => setTyphoidValidityYears(Number(event.target.value))} /></label>
-            <label className="grid gap-1 text-sm font-semibold text-slate-700">Hep A second dose months<input className="h-10 rounded border border-slate-200 bg-slate-50 px-3" type="number" value={hepatitisSecondDoseMonths} onChange={(event) => setHepatitisSecondDoseMonths(Number(event.target.value))} /></label>
+            <label className="grid gap-1 text-sm font-semibold text-neutral-700">Certificate validity months<input className="h-10 rounded border border-neutral-200 bg-neutral-50 px-3" type="number" value={certificateValidityMonths} onChange={(event) => setCertificateValidityMonths(Number(event.target.value))} /></label>
+            <label className="grid gap-1 text-sm font-semibold text-neutral-700">Typhoid validity years<input className="h-10 rounded border border-neutral-200 bg-neutral-50 px-3" type="number" value={typhoidValidityYears} onChange={(event) => setTyphoidValidityYears(Number(event.target.value))} /></label>
+            <label className="grid gap-1 text-sm font-semibold text-neutral-700">Hep A second dose months<input className="h-10 rounded border border-neutral-200 bg-neutral-50 px-3" type="number" value={hepatitisSecondDoseMonths} onChange={(event) => setHepatitisSecondDoseMonths(Number(event.target.value))} /></label>
           </div>
           <div className="mt-4 grid gap-3 md:grid-cols-2">
             {[
@@ -70,23 +70,23 @@ export default function Page() {
               ["Public QR verification", qrVerification, setQrVerification],
               ["State certificate template overrides", stateTemplateOverrides, setStateTemplateOverrides],
             ].map(([label, checked, setChecked]) => (
-              <label key={label as string} className="flex items-center justify-between rounded border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-700">
+              <label key={label as string} className="flex items-center justify-between rounded border border-neutral-200 bg-neutral-50 px-3 py-2 text-sm font-semibold text-neutral-700">
                 {label as string}
                 <input checked={checked as boolean} onChange={(event) => (setChecked as (value: boolean) => void)(event.target.checked)} type="checkbox" />
               </label>
             ))}
           </div>
-          <button className="mt-4 inline-flex h-10 items-center gap-2 rounded bg-brand-deep px-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-300" disabled={updateMutation.isPending} onClick={() => updateMutation.mutate()} type="button">
+          <button className="mt-4 inline-flex h-10 items-center gap-2 rounded bg-brand-700 px-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-neutral-300" disabled={updateMutation.isPending} onClick={() => updateMutation.mutate()} type="button">
             <Save size={16} />
             {updateMutation.isPending ? "Saving..." : "Save policy"}
           </button>
         </section>
 
         <section className="grid gap-3">
-          <h2 className="text-base font-bold text-slate-950">State Override Monitoring</h2>
+          <h2 className="text-base font-bold text-neutral-900">State Override Monitoring</h2>
           <DataTable<FederalStateOverrideItem>
             columns={[
-              { key: "state", header: "State", render: (row) => <span className="font-bold text-slate-950">{row.state_name}</span> },
+              { key: "state", header: "State", render: (row) => <span className="font-bold text-neutral-900">{row.state_name}</span> },
               { key: "validation", header: "State validation", render: (row) => <StatusCell status={row.requires_state_certificate_validation ? "enabled" : "disabled"} /> },
               { key: "cert", header: "Certificate months", render: (row) => row.certificate_validity_months },
               { key: "typhoid", header: "Typhoid years", render: (row) => row.typhoid_validity_years },

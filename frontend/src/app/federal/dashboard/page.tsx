@@ -48,15 +48,15 @@ export default function Page() {
   }, [loadData]);
 
   const complianceBadge = (status: string) => {
-    const map: Record<string, string> = { compliant: "bg-emerald-100 text-emerald-800", partially_compliant: "bg-amber-100 text-amber-800", non_compliant: "bg-rose-100 text-rose-800", high_risk: "bg-red-600 text-white" };
-    return <span className={`inline-flex items-center rounded px-2 py-0.5 text-xs font-bold ${map[status] || "bg-slate-100 text-slate-600"}`}>{status?.replaceAll("_", " ") ?? "N/A"}</span>;
+    const map: Record<string, string> = { compliant: "bg-brand-100 text-brand-800", partially_compliant: "bg-warning-100 text-warning-700", non_compliant: "bg-danger-100 text-danger-700", high_risk: "bg-danger-500 text-white" };
+    return <span className={`inline-flex items-center rounded px-2 py-0.5 text-xs font-bold ${map[status] || "bg-neutral-100 text-neutral-600"}`}>{status?.replaceAll("_", " ") ?? "N/A"}</span>;
   };
 
   return (
     <PortalShell role="federal_admin" title="National Dashboard" description="Federal oversight: national certification, state performance, M&E indicators, and compliance analytics.">
       <div className="grid gap-5">
-        {loading ? <p className="rounded-lg border border-slate-200 bg-white p-4 text-sm font-semibold text-slate-600 shadow-sm">Loading national dashboard...</p> : null}
-        {error ? <div className="flex items-start gap-2 rounded-lg bg-rose-50 p-3 text-sm font-semibold text-rose-800"><AlertCircle size={16} />{error}</div> : null}
+        {loading ? <p className="rounded-lg border border-neutral-200 bg-white p-4 text-sm font-semibold text-neutral-600 shadow-sm">Loading national dashboard...</p> : null}
+        {error ? <div className="flex items-start gap-2 rounded-lg bg-danger-50 p-3 text-sm font-semibold text-danger-700"><AlertCircle size={16} />{error}</div> : null}
 
         <section className="grid gap-3 sm:grid-cols-2 md:grid-cols-4">
           <KPICard label="Coverage" value={`${data?.cards?.national_certification_coverage ?? "—"}%`} icon={BadgeCheck} subtitle="Certification" />
@@ -70,8 +70,8 @@ export default function Page() {
         </section>
 
         {data?.cards?.overall_compliance_status ? (
-          <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm flex items-center gap-3">
-            <p className="text-sm text-slate-500">National Compliance Status:</p>
+          <div className="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm flex items-center gap-3">
+            <p className="text-sm text-neutral-500">National Compliance Status:</p>
             {complianceBadge(String(data.cards.overall_compliance_status))}
           </div>
         ) : null}
@@ -82,15 +82,15 @@ export default function Page() {
               <div className="space-y-2">
                 {data.charts.certification_coverage_by_state.slice(0, 10).map((s) => (
                   <div className="flex items-center gap-3 text-sm" key={s.state_code}>
-                    <p className="w-32 truncate font-medium text-slate-700">{s.state_name || "Unknown"}</p>
-                    <div className="flex-1 rounded-full bg-slate-100 h-2">
-                      <div className="rounded-full bg-brand-green h-2" style={{ width: `${s.coverage || 0}%` }} />
+                    <p className="w-32 truncate font-medium text-neutral-700">{s.state_name || "Unknown"}</p>
+                    <div className="flex-1 rounded-full bg-neutral-100 h-2">
+                      <div className="rounded-full bg-brand-600 h-2" style={{ width: `${s.coverage || 0}%` }} />
                     </div>
-                    <p className="w-12 text-right text-xs font-bold text-slate-500">{s.coverage ?? 0}%</p>
+                    <p className="w-12 text-right text-xs font-bold text-neutral-500">{s.coverage ?? 0}%</p>
                   </div>
                 ))}
               </div>
-            ) : <p className="text-sm text-slate-500">No state data available.</p>}
+            ) : <p className="text-sm text-neutral-500">No state data available.</p>}
           </ChartCard>
 
           <ChartCard title="Facility Accreditation by State">
@@ -98,15 +98,15 @@ export default function Page() {
               <div className="space-y-2">
                 {data.charts.approved_facilities_by_state.slice(0, 10).map((s) => (
                   <div className="flex items-center gap-3 text-sm" key={s.state__name}>
-                    <p className="w-32 truncate font-medium text-slate-700">{s.state__name || "Unknown"}</p>
-                    <div className="flex-1 rounded-full bg-slate-100 h-2">
-                      <div className="rounded-full bg-sky-500 h-2" style={{ width: `${Math.min((s.total || 0) * 20, 100)}%` }} />
+                    <p className="w-32 truncate font-medium text-neutral-700">{s.state__name || "Unknown"}</p>
+                    <div className="flex-1 rounded-full bg-neutral-100 h-2">
+                      <div className="rounded-full bg-info-500 h-2" style={{ width: `${Math.min((s.total || 0) * 20, 100)}%` }} />
                     </div>
-                    <p className="w-12 text-right text-xs font-bold text-slate-500">{s.total ?? 0}</p>
+                    <p className="w-12 text-right text-xs font-bold text-neutral-500">{s.total ?? 0}</p>
                   </div>
                 ))}
               </div>
-            ) : <p className="text-sm text-slate-500">No facility data.</p>}
+            ) : <p className="text-sm text-neutral-500">No facility data.</p>}
           </ChartCard>
         </div>
 
@@ -114,7 +114,7 @@ export default function Page() {
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-slate-200 text-left text-xs font-bold uppercase text-slate-500">
+                <tr className="border-b border-neutral-200 text-left text-xs font-bold uppercase text-neutral-500">
                   <th className="p-3">State</th>
                   <th className="p-3">Handlers</th>
                   <th className="p-3">Certified</th>
@@ -124,11 +124,11 @@ export default function Page() {
                   <th className="p-3">Inspections</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-200">
+              <tbody className="divide-y divide-neutral-200">
                 {data?.charts?.state_comparison_table?.length ? (
                   data.charts.state_comparison_table.slice(0, 15).map((row, i) => (
-                    <tr className="hover:bg-slate-50" key={String(row.state_id ?? i)}>
-                      <td className="p-3 font-bold text-slate-950">{row.state_name as string || "Unknown"}</td>
+                    <tr className="hover:bg-neutral-50" key={String(row.state_id ?? i)}>
+                      <td className="p-3 font-bold text-neutral-900">{row.state_name as string || "Unknown"}</td>
                       <td className="p-3">{row.registered_handlers ?? 0}</td>
                       <td className="p-3">{row.certified_handlers ?? 0}</td>
                       <td className="p-3">{row.certification_coverage ?? 0}%</td>
@@ -138,7 +138,7 @@ export default function Page() {
                     </tr>
                   ))
                 ) : (
-                  <tr><td className="p-3 text-slate-500" colSpan={7}>No state comparison data yet.</td></tr>
+                  <tr><td className="p-3 text-neutral-500" colSpan={7}>No state comparison data yet.</td></tr>
                 )}
               </tbody>
             </table>

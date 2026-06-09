@@ -9,11 +9,11 @@ export function ApprovedFacilitiesClient() {
   const query = useQuery({ queryKey: ["approved-facilities"], queryFn: listMedicalFacilities });
 
   if (query.isLoading) {
-    return <div className="rounded-lg border border-slate-200 bg-white p-6 text-sm text-slate-600">Loading facilities...</div>;
+    return <div className="rounded-lg border border-neutral-200 bg-white p-6 text-sm text-neutral-600">Loading facilities...</div>;
   }
 
   if (query.isError) {
-    return <div className="rounded-lg border border-rose-200 bg-rose-50 p-6 text-sm font-semibold text-rose-800">Unable to load approved facilities.</div>;
+    return <div className="rounded-lg border border-danger-100 bg-danger-50 p-6 text-sm font-semibold text-danger-700">Unable to load approved facilities.</div>;
   }
 
   const facilities = (query.data ?? []).filter((facility) => facility.accreditation_status === "approved");

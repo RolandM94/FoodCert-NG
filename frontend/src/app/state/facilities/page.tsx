@@ -47,25 +47,25 @@ export default function Page() {
   return (
     <PortalShell role="state_admin" title="Facilities" description="Review medical facilities and accreditation status in your state.">
       <div className="grid gap-5">
-        <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+        <section className="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm">
           <div className="grid gap-3 md:grid-cols-[1fr_220px_220px_auto] md:items-end">
-            <label className="grid gap-1 text-xs font-bold uppercase tracking-wide text-slate-500">
+            <label className="grid gap-1 text-xs font-bold uppercase tracking-wide text-neutral-500">
               Search
-              <input className="h-10 rounded border border-slate-200 bg-slate-50 px-3 text-sm normal-case tracking-normal text-slate-700" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Facility name" />
+              <input className="h-10 rounded border border-neutral-200 bg-neutral-50 px-3 text-sm normal-case tracking-normal text-neutral-700" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Facility name" />
             </label>
-            <label className="grid gap-1 text-xs font-bold uppercase tracking-wide text-slate-500">
+            <label className="grid gap-1 text-xs font-bold uppercase tracking-wide text-neutral-500">
               Status
-              <select className="h-10 rounded border border-slate-200 bg-white px-3 text-sm normal-case tracking-normal text-slate-700" value={status} onChange={(event) => setStatus(event.target.value)}>
+              <select className="h-10 rounded border border-neutral-200 bg-white px-3 text-sm normal-case tracking-normal text-neutral-700" value={status} onChange={(event) => setStatus(event.target.value)}>
                 {STATUS_OPTIONS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
               </select>
             </label>
-            <label className="grid gap-1 text-xs font-bold uppercase tracking-wide text-slate-500">
+            <label className="grid gap-1 text-xs font-bold uppercase tracking-wide text-neutral-500">
               Type
-              <select className="h-10 rounded border border-slate-200 bg-white px-3 text-sm normal-case tracking-normal text-slate-700" value={facilityType} onChange={(event) => setFacilityType(event.target.value)}>
+              <select className="h-10 rounded border border-neutral-200 bg-white px-3 text-sm normal-case tracking-normal text-neutral-700" value={facilityType} onChange={(event) => setFacilityType(event.target.value)}>
                 {TYPE_OPTIONS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
               </select>
             </label>
-            <Link className="inline-flex h-10 items-center justify-center rounded bg-brand-green px-4 text-sm font-bold text-white hover:bg-brand-deep" href="/state/facilities/accreditation">
+            <Link className="inline-flex h-10 items-center justify-center rounded bg-brand-600 px-4 text-sm font-bold text-white hover:bg-brand-700" href="/state/facilities/accreditation">
               Accreditation queue
             </Link>
           </div>
@@ -73,13 +73,13 @@ export default function Page() {
 
         <section className="grid gap-3">
           <div className="flex items-center gap-2">
-            <Building2 className="text-brand-deep" size={18} />
-            <h2 className="text-base font-bold text-slate-950">Facility Registry</h2>
+            <Building2 className="text-brand-700" size={18} />
+            <h2 className="text-base font-bold text-neutral-900">Facility Registry</h2>
           </div>
-          {facilitiesQuery.isError ? <p className="rounded bg-rose-50 p-3 text-sm font-semibold text-rose-700">Could not load facilities.</p> : null}
+          {facilitiesQuery.isError ? <p className="rounded bg-danger-50 p-3 text-sm font-semibold text-danger-700">Could not load facilities.</p> : null}
           <DataTable<MedicalFacility>
             columns={[
-              { key: "facility", header: "Facility", render: (row) => <div><p className="font-bold text-slate-950">{row.facility_name}</p><p className="text-xs text-slate-500">{row.license_number}</p></div> },
+              { key: "facility", header: "Facility", render: (row) => <div><p className="font-bold text-neutral-900">{row.facility_name}</p><p className="text-xs text-neutral-500">{row.license_number}</p></div> },
               { key: "type", header: "Type", render: (row) => row.facility_type.replaceAll("_", " ") },
               { key: "lga", header: "LGA", render: (row) => row.lga_name || "Not set" },
               { key: "status", header: "Status", render: (row) => <StatusCell status={row.accreditation_status} /> },

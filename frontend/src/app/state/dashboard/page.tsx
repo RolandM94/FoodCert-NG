@@ -77,40 +77,40 @@ export default function Page() {
   return (
     <PortalShell role="state_admin" title="State dashboard" description="Monitor FoodCert NG compliance, facilities, certificates, inspections, and illness events in your state.">
       <div className="grid gap-6">
-        <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+        <section className="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm">
           <div className="grid gap-3 md:grid-cols-5">
-            <label className="grid gap-1 text-xs font-bold uppercase tracking-wide text-slate-500">
+            <label className="grid gap-1 text-xs font-bold uppercase tracking-wide text-neutral-500">
               LGA
-              <select className="h-10 rounded border border-slate-200 bg-white px-3 text-sm font-semibold normal-case tracking-normal text-slate-700" value={filters.lga || ""} onChange={(event) => setFilters((prev) => ({ ...prev, lga: event.target.value || undefined }))}>
+              <select className="h-10 rounded border border-neutral-200 bg-white px-3 text-sm font-semibold normal-case tracking-normal text-neutral-700" value={filters.lga || ""} onChange={(event) => setFilters((prev) => ({ ...prev, lga: event.target.value || undefined }))}>
                 <option value="">All LGAs</option>
                 {(lgasQuery.data || []).map((lga) => <option key={lga.id} value={lga.id}>{lga.name}</option>)}
               </select>
             </label>
-            <label className="grid gap-1 text-xs font-bold uppercase tracking-wide text-slate-500">
+            <label className="grid gap-1 text-xs font-bold uppercase tracking-wide text-neutral-500">
               From
-              <input className="h-10 rounded border border-slate-200 bg-slate-50 px-3 text-sm normal-case tracking-normal text-slate-700" type="date" value={filters.date_from || ""} onChange={(event) => setFilters((prev) => ({ ...prev, date_from: event.target.value || undefined }))} />
+              <input className="h-10 rounded border border-neutral-200 bg-neutral-50 px-3 text-sm normal-case tracking-normal text-neutral-700" type="date" value={filters.date_from || ""} onChange={(event) => setFilters((prev) => ({ ...prev, date_from: event.target.value || undefined }))} />
             </label>
-            <label className="grid gap-1 text-xs font-bold uppercase tracking-wide text-slate-500">
+            <label className="grid gap-1 text-xs font-bold uppercase tracking-wide text-neutral-500">
               To
-              <input className="h-10 rounded border border-slate-200 bg-slate-50 px-3 text-sm normal-case tracking-normal text-slate-700" type="date" value={filters.date_to || ""} onChange={(event) => setFilters((prev) => ({ ...prev, date_to: event.target.value || undefined }))} />
+              <input className="h-10 rounded border border-neutral-200 bg-neutral-50 px-3 text-sm normal-case tracking-normal text-neutral-700" type="date" value={filters.date_to || ""} onChange={(event) => setFilters((prev) => ({ ...prev, date_to: event.target.value || undefined }))} />
             </label>
-            <label className="grid gap-1 text-xs font-bold uppercase tracking-wide text-slate-500">
+            <label className="grid gap-1 text-xs font-bold uppercase tracking-wide text-neutral-500">
               Employer category
-              <select className="h-10 rounded border border-slate-200 bg-white px-3 text-sm font-semibold normal-case tracking-normal text-slate-700" value={filters.employer_category || ""} onChange={(event) => setFilters((prev) => ({ ...prev, employer_category: event.target.value || undefined }))}>
+              <select className="h-10 rounded border border-neutral-200 bg-white px-3 text-sm font-semibold normal-case tracking-normal text-neutral-700" value={filters.employer_category || ""} onChange={(event) => setFilters((prev) => ({ ...prev, employer_category: event.target.value || undefined }))}>
                 {EMPLOYER_CATEGORIES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
               </select>
             </label>
-            <label className="grid gap-1 text-xs font-bold uppercase tracking-wide text-slate-500">
+            <label className="grid gap-1 text-xs font-bold uppercase tracking-wide text-neutral-500">
               Certificate status
-              <select className="h-10 rounded border border-slate-200 bg-white px-3 text-sm font-semibold normal-case tracking-normal text-slate-700" value={filters.certificate_status || ""} onChange={(event) => setFilters((prev) => ({ ...prev, certificate_status: event.target.value || undefined }))}>
+              <select className="h-10 rounded border border-neutral-200 bg-white px-3 text-sm font-semibold normal-case tracking-normal text-neutral-700" value={filters.certificate_status || ""} onChange={(event) => setFilters((prev) => ({ ...prev, certificate_status: event.target.value || undefined }))}>
                 {CERTIFICATE_STATUSES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
               </select>
             </label>
           </div>
         </section>
 
-        {dashboardQuery.isLoading ? <div className="rounded-lg border border-slate-200 bg-white p-6 text-sm text-slate-600">Loading state dashboard...</div> : null}
-        {dashboardQuery.isError ? <div className="rounded-lg border border-rose-200 bg-rose-50 p-6 text-sm font-semibold text-rose-800">State dashboard data needs a signed-in state ministry user.</div> : null}
+        {dashboardQuery.isLoading ? <div className="rounded-lg border border-neutral-200 bg-white p-6 text-sm text-neutral-600">Loading state dashboard...</div> : null}
+        {dashboardQuery.isError ? <div className="rounded-lg border border-danger-100 bg-danger-50 p-6 text-sm font-semibold text-danger-700">State dashboard data needs a signed-in state ministry user.</div> : null}
 
         {!dashboardQuery.isLoading && !dashboardQuery.isError ? (
           <>
@@ -131,10 +131,10 @@ export default function Page() {
 
             <section className="grid gap-5 xl:grid-cols-[1fr_1fr]">
               <div className="grid gap-3">
-                <h2 className="text-base font-bold text-slate-950">Operational queues</h2>
+                <h2 className="text-base font-bold text-neutral-900">Operational queues</h2>
                 <DataTable
                   columns={[
-                    { key: "name", header: "Queue", render: (row) => row.href ? <Link className="font-bold text-brand-deep hover:underline" href={row.href}>{row.name}</Link> : row.name },
+                    { key: "name", header: "Queue", render: (row) => row.href ? <Link className="font-bold text-brand-700 hover:underline" href={row.href}>{row.name}</Link> : row.name },
                     { key: "count", header: "Count", render: (row) => row.count ?? 0 },
                     { key: "status", header: "Status", render: (row) => <StatusCell status={row.status} /> },
                   ]}
@@ -143,7 +143,7 @@ export default function Page() {
                 />
               </div>
               <div className="grid gap-3">
-                <h2 className="text-base font-bold text-slate-950">Pending certificate requests</h2>
+                <h2 className="text-base font-bold text-neutral-900">Pending certificate requests</h2>
                 <DataTable
                   columns={[
                     { key: "handler", header: "Handler", render: (row) => row.handler || "Unknown" },
@@ -158,7 +158,7 @@ export default function Page() {
             </section>
 
             <section className="grid gap-3">
-              <h2 className="text-base font-bold text-slate-950">Pending facility applications</h2>
+              <h2 className="text-base font-bold text-neutral-900">Pending facility applications</h2>
               <DataTable
                 columns={[
                   { key: "facility", header: "Facility", render: (row) => row.facility || "Unknown" },

@@ -22,28 +22,28 @@ const DEFAULT_ACTIONS: AssessmentReportAction[] = [
 export function AssessmentReportsPanel({ report, busy, actions = DEFAULT_ACTIONS, onGenerate }: AssessmentReportsPanelProps) {
   const cards = report?.summary?.cards || {};
   return (
-    <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+    <section className="rounded-lg border border-neutral-200 bg-white p-5 shadow-sm">
       <div className="mb-4 flex items-center gap-2">
-        <FileText className="text-brand-deep" size={18} />
-        <h2 className="text-sm font-bold text-slate-950">Assessment Reports</h2>
+        <FileText className="text-brand-700" size={18} />
+        <h2 className="text-sm font-bold text-neutral-900">Assessment Reports</h2>
       </div>
       <div className="flex flex-wrap gap-2">
         {actions.map((action) => (
-          <button className="h-9 rounded border border-slate-200 px-3 text-xs font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-60" disabled={busy} key={action.kind} type="button" onClick={() => onGenerate(action.kind)}>
+          <button className="h-9 rounded border border-neutral-200 px-3 text-xs font-bold text-neutral-700 hover:bg-neutral-50 disabled:opacity-60" disabled={busy} key={action.kind} type="button" onClick={() => onGenerate(action.kind)}>
             {action.label}
           </button>
         ))}
       </div>
       {report ? (
-        <div className="mt-4 grid gap-2 rounded border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700 sm:grid-cols-2">
+        <div className="mt-4 grid gap-2 rounded border border-neutral-200 bg-neutral-50 p-3 text-sm text-neutral-700 sm:grid-cols-2">
           {Object.entries(cards).slice(0, 8).map(([key, value]) => (
             <div className="flex justify-between gap-3" key={key}>
-              <span className="capitalize text-slate-500">{key.replaceAll("_", " ")}</span>
-              <strong className="text-right text-slate-950">{String(value || "Not set")}</strong>
+              <span className="capitalize text-neutral-500">{key.replaceAll("_", " ")}</span>
+              <strong className="text-right text-neutral-900">{String(value || "Not set")}</strong>
             </div>
           ))}
         </div>
-      ) : <p className="mt-3 text-sm font-semibold text-slate-500">Generate a permitted report view for this assessment.</p>}
+      ) : <p className="mt-3 text-sm font-semibold text-neutral-500">Generate a permitted report view for this assessment.</p>}
     </section>
   );
 }

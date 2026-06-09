@@ -85,18 +85,18 @@ export function PortalShell({
   const notificationHref = role === "employer" ? "/employer/notifications" : "/food-handler/notifications";
 
   return (
-    <main className="min-h-screen bg-[#f7faf8] text-slate-950">
-      <header className="border-b border-emerald-100 bg-white">
+    <main className="min-h-screen bg-neutral-50 text-neutral-900">
+      <header className="border-b border-brand-100 bg-white">
         <div className="mx-auto flex min-h-16 max-w-7xl flex-col gap-3 px-4 py-3 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between gap-4">
             <div className="flex items-center gap-4">
               <Link href="/" className="flex items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-brand-green text-white">
+                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-brand-600 text-white">
                   <ShieldCheck aria-hidden="true" size={22} />
                 </div>
                 <div>
-                  <p className="text-sm font-bold text-slate-950">FoodCert NG</p>
-                  <p className="text-xs text-slate-500">{ROLE_LABELS[role]}</p>
+                  <p className="text-sm font-bold text-neutral-900">FoodCert NG</p>
+                  <p className="text-xs text-neutral-500">{ROLE_LABELS[role]}</p>
                 </div>
               </Link>
               <UnitScopeBadge
@@ -110,7 +110,7 @@ export function PortalShell({
               <NotificationBell href={notificationHref} />
               {isLoggedIn ? (
                 <button
-                  className="inline-flex items-center gap-2 rounded border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+                  className="inline-flex items-center gap-2 rounded border border-neutral-200 px-3 py-2 text-sm font-semibold text-neutral-700 hover:bg-neutral-50 disabled:opacity-60"
                   disabled={loggingOut}
                   onClick={handleLogout}
                   type="button"
@@ -119,21 +119,21 @@ export function PortalShell({
                   Sign out
                 </button>
               ) : (
-                <Link className="rounded border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-700" href="/login">
+                <Link className="rounded border border-neutral-200 px-3 py-2 text-sm font-semibold text-neutral-700" href="/login">
                   Sign in
                 </Link>
               )}
             </div>
           </div>
-          <nav className="flex gap-2 overflow-x-auto pb-1">
+          <nav className="flex gap-0 overflow-x-auto">
             {nav.map((item) => {
               const Icon = item.icon;
               const active = pathname === item.href;
               return (
                 <Link
                   key={item.href}
-                  className={`flex shrink-0 items-center gap-2 rounded px-3 py-2 text-sm font-semibold ${
-                    active ? "bg-emerald-50 text-brand-deep ring-1 ring-emerald-200" : "text-slate-600 hover:bg-slate-50"
+                  className={`flex shrink-0 items-center gap-2 border-b-2 px-3 py-3 text-sm font-medium ${
+                    active ? "border-brand-600 text-brand-700" : "border-transparent text-neutral-500 hover:text-neutral-800"
                   }`}
                   href={item.href}
                 >
@@ -147,9 +147,9 @@ export function PortalShell({
       </header>
       <section className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
         <div className="mb-6">
-          <p className="text-xs font-bold uppercase tracking-wide text-brand-deep">{ROLE_LABELS[role]}</p>
-          <h1 className="mt-2 text-2xl font-bold tracking-tight text-slate-950 sm:text-3xl">{title}</h1>
-          <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">{description}</p>
+          <p className="text-xs font-bold uppercase tracking-wide text-brand-700">{ROLE_LABELS[role]}</p>
+          <h1 className="mt-2 text-2xl font-bold tracking-tight text-neutral-900 sm:text-3xl">{title}</h1>
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-neutral-600">{description}</p>
         </div>
         {children}
       </section>

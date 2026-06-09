@@ -26,10 +26,10 @@ export default function Page() {
   return (
     <PortalShell role="state_admin" title="Food handlers" description="Search food handler registry without exposing private medical details unnecessarily.">
       <div className="grid gap-5">
-        <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+        <section className="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm">
           <div className="grid gap-3 md:grid-cols-[1fr_220px_220px_auto]">
-            <input className="h-10 rounded border border-slate-200 bg-slate-50 px-3 text-sm" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search name or system ID" />
-            <select className="h-10 rounded border border-slate-200 bg-white px-3 text-sm" value={status} onChange={(event) => setStatus(event.target.value)}>
+            <input className="h-10 rounded border border-neutral-200 bg-neutral-50 px-3 text-sm" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search name or system ID" />
+            <select className="h-10 rounded border border-neutral-200 bg-white px-3 text-sm" value={status} onChange={(event) => setStatus(event.target.value)}>
               <option value="">All handler statuses</option>
               <option value="fit">Fit</option>
               <option value="certification_pending">Certification pending</option>
@@ -37,7 +37,7 @@ export default function Page() {
               <option value="temporarily_not_fit">Temporarily not fit</option>
               <option value="excluded">Excluded</option>
             </select>
-            <select className="h-10 rounded border border-slate-200 bg-white px-3 text-sm" value={certificateStatus} onChange={(event) => setCertificateStatus(event.target.value)}>
+            <select className="h-10 rounded border border-neutral-200 bg-white px-3 text-sm" value={certificateStatus} onChange={(event) => setCertificateStatus(event.target.value)}>
               <option value="">All certificate statuses</option>
               <option value="active">Active</option>
               <option value="expired">Expired</option>
@@ -46,7 +46,7 @@ export default function Page() {
               <option value="not_issued">Not issued</option>
             </select>
             <button
-              className="inline-flex h-10 items-center justify-center gap-2 rounded bg-brand-deep px-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-300"
+              className="inline-flex h-10 items-center justify-center gap-2 rounded bg-brand-700 px-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-neutral-300"
               disabled={!rows.length}
               onClick={() =>
                 downloadCsv("state-food-handlers-monitoring.csv", rows, [
@@ -71,14 +71,14 @@ export default function Page() {
           </div>
         </section>
         <section className="grid gap-3">
-          <div className="flex items-center gap-2"><UsersRound className="text-brand-deep" size={18} /><h2 className="text-base font-bold text-slate-950">Food Handler Monitoring</h2></div>
+          <div className="flex items-center gap-2"><UsersRound className="text-brand-700" size={18} /><h2 className="text-base font-bold text-neutral-900">Food Handler Monitoring</h2></div>
           <DataTable<StateFoodHandlerMonitoringItem>
             columns={[
-              { key: "handler", header: "Handler", render: (row) => <div><p className="font-bold text-slate-950">{row.full_name}</p><p className="text-xs text-slate-500">{row.system_identifier}</p></div> },
+              { key: "handler", header: "Handler", render: (row) => <div><p className="font-bold text-neutral-900">{row.full_name}</p><p className="text-xs text-neutral-500">{row.system_identifier}</p></div> },
               { key: "employer", header: "Employer", render: (row) => row.employer_name || "Not linked" },
               { key: "category", header: "Category", render: (row) => row.food_handler_category.replaceAll("_", " ") },
               { key: "fitness", header: "Fitness", render: (row) => <StatusCell status={row.current_status} /> },
-              { key: "certificate", header: "Certificate", render: (row) => <div><StatusCell status={row.certificate_status} /><p className="mt-1 text-xs text-slate-500">{row.certificate_number || "No certificate"} / {dateLabel(row.certificate_expiry_date)}</p></div> },
+              { key: "certificate", header: "Certificate", render: (row) => <div><StatusCell status={row.certificate_status} /><p className="mt-1 text-xs text-neutral-500">{row.certificate_number || "No certificate"} / {dateLabel(row.certificate_expiry_date)}</p></div> },
               { key: "illness", header: "Illness", render: (row) => row.active_illness_status ? <StatusCell status={row.active_illness_status} /> : "None active" },
             ]}
             rows={rows}

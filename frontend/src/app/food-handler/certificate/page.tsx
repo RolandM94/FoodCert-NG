@@ -80,47 +80,47 @@ export default function Page() {
   return (
     <PortalShell role="food_handler" title="Certificate" description="Access issued certificate details, QR verification, and State validation status.">
       <div className="grid gap-5">
-        {loading ? <p className="rounded-lg border border-slate-200 bg-white p-4 text-sm font-semibold text-slate-600 shadow-sm">Loading certificate...</p> : null}
-        {error ? <div className="flex items-start gap-2 rounded-lg bg-rose-50 p-3 text-sm font-semibold text-rose-800"><AlertCircle size={16} />{error}</div> : null}
-        {actionMessage ? <div className="rounded-lg border border-slate-200 bg-white p-3 text-sm font-semibold text-slate-700 shadow-sm">{actionMessage}</div> : null}
+        {loading ? <p className="rounded-lg border border-neutral-200 bg-white p-4 text-sm font-semibold text-neutral-600 shadow-sm">Loading certificate...</p> : null}
+        {error ? <div className="flex items-start gap-2 rounded-lg bg-danger-50 p-3 text-sm font-semibold text-danger-700"><AlertCircle size={16} />{error}</div> : null}
+        {actionMessage ? <div className="rounded-lg border border-neutral-200 bg-white p-3 text-sm font-semibold text-neutral-700 shadow-sm">{actionMessage}</div> : null}
 
         {latestCertificate ? (
           <>
             <CertificatePreview certificate={latestCertificate} />
             <section className="grid gap-4 lg:grid-cols-[1fr_0.8fr]">
-              <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-                <h2 className="text-sm font-bold text-slate-950">Certificate Details</h2>
+              <div className="rounded-lg border border-neutral-200 bg-white p-5 shadow-sm">
+                <h2 className="text-sm font-bold text-neutral-900">Certificate Details</h2>
                 <dl className="mt-4 grid gap-3 text-sm">
-                  <div className="flex items-center justify-between gap-3"><dt className="text-slate-500">Facility</dt><dd className="font-bold text-slate-950">{latestCertificate.facility_name || "Medical facility"}</dd></div>
-                  <div className="flex items-center justify-between gap-3"><dt className="text-slate-500">Doctor</dt><dd className="font-bold text-slate-950">{latestCertificate.doctor_name || "Doctor"}</dd></div>
-                  <div className="flex items-center justify-between gap-3"><dt className="text-slate-500">State</dt><dd className="font-bold text-slate-950">{latestCertificate.issuing_state_name || "Issuing state"}</dd></div>
-                  <div className="flex items-center justify-between gap-3"><dt className="text-slate-500">Issued</dt><dd className="font-bold text-slate-950">{dateLabel(latestCertificate.issue_date)}</dd></div>
-                  <div className="flex items-center justify-between gap-3"><dt className="text-slate-500">Renewal</dt><dd className="font-bold capitalize text-slate-950">{latestCertificate.renewal_status?.replaceAll("_", " ") || "not started"}</dd></div>
-                  <div className="flex items-center justify-between gap-3"><dt className="text-slate-500">Status</dt><dd><StatusBadge status={latestCertificate.effective_status} /></dd></div>
+                  <div className="flex items-center justify-between gap-3"><dt className="text-neutral-500">Facility</dt><dd className="font-bold text-neutral-900">{latestCertificate.facility_name || "Medical facility"}</dd></div>
+                  <div className="flex items-center justify-between gap-3"><dt className="text-neutral-500">Doctor</dt><dd className="font-bold text-neutral-900">{latestCertificate.doctor_name || "Doctor"}</dd></div>
+                  <div className="flex items-center justify-between gap-3"><dt className="text-neutral-500">State</dt><dd className="font-bold text-neutral-900">{latestCertificate.issuing_state_name || "Issuing state"}</dd></div>
+                  <div className="flex items-center justify-between gap-3"><dt className="text-neutral-500">Issued</dt><dd className="font-bold text-neutral-900">{dateLabel(latestCertificate.issue_date)}</dd></div>
+                  <div className="flex items-center justify-between gap-3"><dt className="text-neutral-500">Renewal</dt><dd className="font-bold capitalize text-neutral-900">{latestCertificate.renewal_status?.replaceAll("_", " ") || "not started"}</dd></div>
+                  <div className="flex items-center justify-between gap-3"><dt className="text-neutral-500">Status</dt><dd><StatusBadge status={latestCertificate.effective_status} /></dd></div>
                 </dl>
                 <div className="mt-5 flex flex-wrap gap-2">
-                  {latestCertificate.pdf_url ? <button className="inline-flex h-10 items-center gap-2 rounded bg-brand-green px-4 text-sm font-bold text-white" onClick={() => void handleDownload(latestCertificate)} type="button"><Download size={16} /> Download PDF certificate</button> : null}
-                  {latestCertificate.verification_url ? <a className="inline-flex h-10 items-center gap-2 rounded border border-slate-200 px-4 text-sm font-bold text-slate-700" href={latestCertificate.verification_url}><ExternalLink size={16} /> Verify</a> : null}
-                  {latestCertificate.verification_url ? <button className="inline-flex h-10 items-center gap-2 rounded border border-slate-200 px-4 text-sm font-bold text-slate-700" onClick={() => void handleCopy(latestCertificate.verification_url)} type="button"><Copy size={16} /> Share</button> : null}
-                  <Link className="inline-flex h-10 items-center gap-2 rounded border border-slate-200 px-4 text-sm font-bold text-slate-700" href="/food-handler/assessments">Assessments</Link>
+                  {latestCertificate.pdf_url ? <button className="inline-flex h-10 items-center gap-2 rounded bg-brand-600 px-4 text-sm font-bold text-white" onClick={() => void handleDownload(latestCertificate)} type="button"><Download size={16} /> Download PDF certificate</button> : null}
+                  {latestCertificate.verification_url ? <a className="inline-flex h-10 items-center gap-2 rounded border border-neutral-200 px-4 text-sm font-bold text-neutral-700" href={latestCertificate.verification_url}><ExternalLink size={16} /> Verify</a> : null}
+                  {latestCertificate.verification_url ? <button className="inline-flex h-10 items-center gap-2 rounded border border-neutral-200 px-4 text-sm font-bold text-neutral-700" onClick={() => void handleCopy(latestCertificate.verification_url)} type="button"><Copy size={16} /> Share</button> : null}
+                  <Link className="inline-flex h-10 items-center gap-2 rounded border border-neutral-200 px-4 text-sm font-bold text-neutral-700" href="/food-handler/assessments">Assessments</Link>
                 </div>
                 {isRenewable ? <div className="mt-4"><CertificateRenewalCard disabled={!isRenewable} onRenew={() => void handleRenewal(latestCertificate)} status={latestCertificate.renewal_status} /></div> : null}
               </div>
-              <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-                <h2 className="text-sm font-bold text-slate-950">QR Code</h2>
+              <div className="rounded-lg border border-neutral-200 bg-white p-5 shadow-sm">
+                <h2 className="text-sm font-bold text-neutral-900">QR Code</h2>
                 <div className="mt-4"><QRCodeDisplay qrUrl={latestCertificate.qr_code_url} /></div>
               </div>
             </section>
           </>
         ) : (
-          <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+          <section className="rounded-lg border border-neutral-200 bg-white p-5 shadow-sm">
             <div className="flex items-start gap-3">
-              <BadgeCheck className="text-brand-deep" size={22} />
+              <BadgeCheck className="text-brand-700" size={22} />
               <div>
-                <h2 className="text-sm font-bold text-slate-950">No Certificate Issued</h2>
-                <p className="mt-2 text-sm text-slate-600">Latest request: {latestRequest ? latestRequest.status.replaceAll("_", " ") : "No request submitted"}</p>
-                {latestRequest ? <p className="mt-1 text-xs text-slate-500">Requested {dateLabel(latestRequest.created_at)}</p> : null}
-                <Link className="mt-4 inline-flex h-10 items-center rounded bg-brand-green px-4 text-sm font-bold text-white" href="/food-handler/assessments">Open assessments</Link>
+                <h2 className="text-sm font-bold text-neutral-900">No Certificate Issued</h2>
+                <p className="mt-2 text-sm text-neutral-600">Latest request: {latestRequest ? latestRequest.status.replaceAll("_", " ") : "No request submitted"}</p>
+                {latestRequest ? <p className="mt-1 text-xs text-neutral-500">Requested {dateLabel(latestRequest.created_at)}</p> : null}
+                <Link className="mt-4 inline-flex h-10 items-center rounded bg-brand-600 px-4 text-sm font-bold text-white" href="/food-handler/assessments">Open assessments</Link>
               </div>
             </div>
           </section>

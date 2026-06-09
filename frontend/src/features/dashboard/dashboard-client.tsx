@@ -111,12 +111,12 @@ export function DashboardClient({ kind }: { kind: DashboardKind }) {
   });
 
   if (query.isLoading) {
-    return <div className="rounded-lg border border-slate-200 bg-white p-6 text-sm text-slate-600">Loading dashboard...</div>;
+    return <div className="rounded-lg border border-neutral-200 bg-white p-6 text-sm text-neutral-600">Loading dashboard...</div>;
   }
 
   if (query.isError) {
     return (
-      <div className="rounded-lg border border-rose-200 bg-rose-50 p-6 text-sm font-semibold text-rose-800">
+      <div className="rounded-lg border border-danger-100 bg-danger-50 p-6 text-sm font-semibold text-danger-700">
         Dashboard data needs a signed-in user with the right role.
       </div>
     );
@@ -144,7 +144,7 @@ export function DashboardClient({ kind }: { kind: DashboardKind }) {
         />
       )}
       {payload?.branch && (
-        <div className="rounded-lg border border-amber-100 bg-amber-50 px-4 py-2 text-sm font-semibold text-amber-800">
+        <div className="rounded-lg border border-warning-100 bg-warning-50 px-4 py-2 text-sm font-semibold text-warning-700">
           Viewing branch: {payload.branch.name}
         </div>
       )}

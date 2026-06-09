@@ -17,7 +17,7 @@ export function RoleGuard({ allowed, children }: { allowed: UserRole[]; children
 
   if (!allowed.includes(role)) {
     return (
-      <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm font-semibold text-amber-900">
+      <div className="rounded-lg border border-warning-100 bg-warning-50 p-4 text-sm font-semibold text-amber-900">
         This page is not available for your current role.
       </div>
     );

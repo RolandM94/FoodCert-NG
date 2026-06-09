@@ -44,7 +44,7 @@ export default function OrganizationAuditPage() {
     >
       <div className="space-y-6">
         <div className="flex flex-wrap gap-3">
-          <select className="h-10 rounded border border-slate-200 bg-white px-3 text-sm text-slate-700">
+          <select className="h-10 rounded border border-neutral-200 bg-white px-3 text-sm text-neutral-700">
             <option value="">All actions</option>
             <option value="org">Organization changes</option>
             <option value="unit">Unit changes</option>
@@ -52,7 +52,7 @@ export default function OrganizationAuditPage() {
             <option value="role">Role changes</option>
             <option value="invite">Invite events</option>
           </select>
-          <select className="h-10 rounded border border-slate-200 bg-white px-3 text-sm text-slate-700">
+          <select className="h-10 rounded border border-neutral-200 bg-white px-3 text-sm text-neutral-700">
             <option value="">All dates</option>
             <option value="today">Today</option>
             <option value="7d">Last 7 days</option>
@@ -60,27 +60,27 @@ export default function OrganizationAuditPage() {
           </select>
         </div>
 
-        <section className="rounded-lg border border-slate-200 bg-white shadow-sm">
+        <section className="rounded-lg border border-neutral-200 bg-white shadow-sm">
           <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-slate-200 text-sm">
-              <thead className="bg-slate-50">
+            <table className="min-w-full divide-y divide-neutral-200 text-sm">
+              <thead className="bg-neutral-50">
                 <tr>
-                  <th className="px-4 py-3 text-left text-xs font-bold uppercase tracking-wide text-slate-500">Action</th>
-                  <th className="px-4 py-3 text-left text-xs font-bold uppercase tracking-wide text-slate-500">Actor</th>
-                  <th className="px-4 py-3 text-left text-xs font-bold uppercase tracking-wide text-slate-500">Target</th>
-                  <th className="px-4 py-3 text-left text-xs font-bold uppercase tracking-wide text-slate-500">Timestamp</th>
+                  <th className="px-4 py-3 text-left text-xs font-bold uppercase tracking-wide text-neutral-500">Action</th>
+                  <th className="px-4 py-3 text-left text-xs font-bold uppercase tracking-wide text-neutral-500">Actor</th>
+                  <th className="px-4 py-3 text-left text-xs font-bold uppercase tracking-wide text-neutral-500">Target</th>
+                  <th className="px-4 py-3 text-left text-xs font-bold uppercase tracking-wide text-neutral-500">Timestamp</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100">
+              <tbody className="divide-y divide-neutral-100">
                 {loading ? (
                   <tr>
-                    <td className="px-4 py-8 text-center text-slate-500" colSpan={4}>
+                    <td className="px-4 py-8 text-center text-neutral-500" colSpan={4}>
                       Loading audit log data...
                     </td>
                   </tr>
                 ) : logs.length === 0 ? (
                   <tr>
-                    <td className="px-4 py-8 text-center text-slate-500" colSpan={4}>
+                    <td className="px-4 py-8 text-center text-neutral-500" colSpan={4}>
                       No audit events recorded yet.
                     </td>
                   </tr>
@@ -91,16 +91,16 @@ export default function OrganizationAuditPage() {
                     );
                     const Icon = matchedKey ? ACTION_ICONS[matchedKey] : ACTION_ICONS.default;
                     return (
-                      <tr key={log.id} className="hover:bg-slate-50">
+                      <tr key={log.id} className="hover:bg-neutral-50">
                         <td className="px-4 py-3">
                           <div className="flex items-center gap-2">
-                            <Icon size={14} className="text-slate-400 shrink-0" />
-                            <span className="font-semibold text-slate-800">{log.action}</span>
+                            <Icon size={14} className="text-neutral-400 shrink-0" />
+                            <span className="font-semibold text-neutral-800">{log.action}</span>
                           </div>
                         </td>
-                        <td className="px-4 py-3 text-slate-600">{log.actor}</td>
-                        <td className="px-4 py-3 text-slate-600">{log.target}</td>
-                        <td className="px-4 py-3 text-slate-500">{formatDate(log.timestamp)}</td>
+                        <td className="px-4 py-3 text-neutral-600">{log.actor}</td>
+                        <td className="px-4 py-3 text-neutral-600">{log.target}</td>
+                        <td className="px-4 py-3 text-neutral-500">{formatDate(log.timestamp)}</td>
                       </tr>
                     );
                   })
@@ -110,7 +110,7 @@ export default function OrganizationAuditPage() {
           </div>
         </section>
 
-        <p className="text-xs text-slate-400">
+        <p className="text-xs text-neutral-400">
           Audit logs for organization ID: {organizationId}. Backend integration required for production audit events.
         </p>
       </div>

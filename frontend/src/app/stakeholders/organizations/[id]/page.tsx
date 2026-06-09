@@ -65,7 +65,7 @@ export default function OrganizationProfilePage() {
     return (
       <PortalShell role="super_admin" title="Organization Profile" description="Loading...">
         <div className="flex items-center justify-center py-20">
-          <p className="text-slate-500">Loading organization profile...</p>
+          <p className="text-neutral-500">Loading organization profile...</p>
         </div>
       </PortalShell>
     );
@@ -81,7 +81,7 @@ export default function OrganizationProfilePage() {
     >
       <div className="space-y-6">
         {error ? (
-          <div className="rounded border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700">
+          <div className="rounded border border-danger-100 bg-danger-50 px-4 py-3 text-sm font-semibold text-danger-700">
             {error}
           </div>
         ) : null}
@@ -93,7 +93,7 @@ export default function OrganizationProfilePage() {
           </div>
           <div className="flex flex-wrap gap-2">
             <button
-              className="inline-flex h-10 items-center gap-2 rounded border border-slate-200 px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+              className="inline-flex h-10 items-center gap-2 rounded border border-neutral-200 px-4 text-sm font-semibold text-neutral-700 hover:bg-neutral-50"
               onClick={() => setEditing(!editing)}
               type="button"
             >
@@ -101,7 +101,7 @@ export default function OrganizationProfilePage() {
             </button>
             <button
               className={`inline-flex h-10 items-center gap-2 rounded px-4 text-sm font-bold text-white disabled:opacity-60 ${
-                isSuspended ? "bg-emerald-600 hover:bg-emerald-700" : "bg-rose-600 hover:bg-rose-700"
+                isSuspended ? "bg-brand-600 hover:bg-brand-700" : "bg-danger-500 hover:bg-danger-700"
               }`}
               disabled={statusBusy || organization.status === "archived"}
               onClick={handleStatusToggle}
@@ -133,40 +133,40 @@ export default function OrganizationProfilePage() {
                 loading={updateMutation.isPending}
               />
             ) : (
-              <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-                <h3 className="text-base font-bold text-slate-950">Profile Details</h3>
+              <section className="rounded-lg border border-neutral-200 bg-white p-5 shadow-sm">
+                <h3 className="text-base font-bold text-neutral-900">Profile Details</h3>
                 <div className="mt-4 grid gap-3 text-sm sm:grid-cols-2">
-                  <div className="flex items-center gap-2 text-slate-600">
-                    <Building2 size={14} className="text-slate-400 shrink-0" />
-                    <span className="font-semibold text-slate-800">{organization.name}</span>
+                  <div className="flex items-center gap-2 text-neutral-600">
+                    <Building2 size={14} className="text-neutral-400 shrink-0" />
+                    <span className="font-semibold text-neutral-800">{organization.name}</span>
                   </div>
                   {organization.contact_person_name && (
-                    <div className="flex items-center gap-2 text-slate-600">
-                      <User size={14} className="text-slate-400 shrink-0" />
+                    <div className="flex items-center gap-2 text-neutral-600">
+                      <User size={14} className="text-neutral-400 shrink-0" />
                       <span>{organization.contact_person_name}</span>
                     </div>
                   )}
                   {organization.email && (
-                    <div className="flex items-center gap-2 text-slate-600">
-                      <Mail size={14} className="text-slate-400 shrink-0" />
+                    <div className="flex items-center gap-2 text-neutral-600">
+                      <Mail size={14} className="text-neutral-400 shrink-0" />
                       <span className="break-all">{organization.email}</span>
                     </div>
                   )}
                   {organization.phone && (
-                    <div className="flex items-center gap-2 text-slate-600">
-                      <Phone size={14} className="text-slate-400 shrink-0" />
+                    <div className="flex items-center gap-2 text-neutral-600">
+                      <Phone size={14} className="text-neutral-400 shrink-0" />
                       <span>{organization.phone}</span>
                     </div>
                   )}
                   {organization.website && (
-                    <div className="flex items-center gap-2 text-slate-600">
-                      <Globe size={14} className="text-slate-400 shrink-0" />
+                    <div className="flex items-center gap-2 text-neutral-600">
+                      <Globe size={14} className="text-neutral-400 shrink-0" />
                       <span className="break-all">{organization.website}</span>
                     </div>
                   )}
                   {organization.address && (
-                    <div className="flex items-start gap-2 text-slate-600 sm:col-span-2">
-                      <MapPin size={14} className="text-slate-400 shrink-0 mt-0.5" />
+                    <div className="flex items-start gap-2 text-neutral-600 sm:col-span-2">
+                      <MapPin size={14} className="text-neutral-400 shrink-0 mt-0.5" />
                       <span>{organization.address}</span>
                     </div>
                   )}
@@ -175,69 +175,69 @@ export default function OrganizationProfilePage() {
             )}
 
             {organization.parent_name && (
-              <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-                <h3 className="text-base font-bold text-slate-950">Parent Organization</h3>
-                <p className="mt-2 text-sm text-slate-600">{organization.parent_name}</p>
+              <section className="rounded-lg border border-neutral-200 bg-white p-5 shadow-sm">
+                <h3 className="text-base font-bold text-neutral-900">Parent Organization</h3>
+                <p className="mt-2 text-sm text-neutral-600">{organization.parent_name}</p>
               </section>
             )}
           </div>
 
           <div className="space-y-4">
-            <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-              <h3 className="text-base font-bold text-slate-950">Quick Stats</h3>
+            <section className="rounded-lg border border-neutral-200 bg-white p-5 shadow-sm">
+              <h3 className="text-base font-bold text-neutral-900">Quick Stats</h3>
               <div className="mt-4 space-y-3">
                 <div className="flex items-center justify-between text-sm">
-                  <span className="text-slate-600">{getUnitLabel(organization.organization_type)}</span>
-                  <span className="font-bold text-slate-950">{organization.unit_count ?? 0}</span>
+                  <span className="text-neutral-600">{getUnitLabel(organization.organization_type)}</span>
+                  <span className="font-bold text-neutral-900">{organization.unit_count ?? 0}</span>
                 </div>
                 <div className="flex items-center justify-between text-sm">
-                  <span className="text-slate-600">Active Members</span>
-                  <span className="font-bold text-slate-950">{organization.membership_count ?? 0}</span>
+                  <span className="text-neutral-600">Active Members</span>
+                  <span className="font-bold text-neutral-900">{organization.membership_count ?? 0}</span>
                 </div>
                 <div className="flex items-center justify-between text-sm">
-                  <span className="text-slate-600">Child Organizations</span>
-                  <span className="font-bold text-slate-950">{organization.children_count ?? 0}</span>
+                  <span className="text-neutral-600">Child Organizations</span>
+                  <span className="font-bold text-neutral-900">{organization.children_count ?? 0}</span>
                 </div>
               </div>
             </section>
 
-            <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-              <h3 className="text-base font-bold text-slate-950">Timestamps</h3>
+            <section className="rounded-lg border border-neutral-200 bg-white p-5 shadow-sm">
+              <h3 className="text-base font-bold text-neutral-900">Timestamps</h3>
               <div className="mt-4 space-y-2 text-sm">
                 <div>
-                  <span className="text-slate-500">Created</span>
-                  <p className="font-semibold text-slate-800">{formatDate(organization.created_at)}</p>
+                  <span className="text-neutral-500">Created</span>
+                  <p className="font-semibold text-neutral-800">{formatDate(organization.created_at)}</p>
                 </div>
                 <div>
-                  <span className="text-slate-500">Last Updated</span>
-                  <p className="font-semibold text-slate-800">{formatDate(organization.updated_at)}</p>
+                  <span className="text-neutral-500">Last Updated</span>
+                  <p className="font-semibold text-neutral-800">{formatDate(organization.updated_at)}</p>
                 </div>
                 {organization.created_by_email && (
                   <div>
-                    <span className="text-slate-500">Created By</span>
-                    <p className="font-semibold text-slate-800">{organization.created_by_email}</p>
+                    <span className="text-neutral-500">Created By</span>
+                    <p className="font-semibold text-neutral-800">{organization.created_by_email}</p>
                   </div>
                 )}
               </div>
             </section>
 
-            <nav className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-              <h3 className="text-xs font-bold uppercase tracking-wide text-slate-500">Quick Links</h3>
+            <nav className="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm">
+              <h3 className="text-xs font-bold uppercase tracking-wide text-neutral-500">Quick Links</h3>
               <div className="mt-3 flex flex-col gap-2">
                 <a
-                  className="text-sm font-semibold text-brand-green hover:text-brand-deep"
+                  className="text-sm font-semibold text-brand-600 hover:text-brand-700"
                   href={`/stakeholders/organizations/${organizationId}/units`}
                 >
                   {getUnitLabel(organization.organization_type)}
                 </a>
                 <a
-                  className="text-sm font-semibold text-brand-green hover:text-brand-deep"
+                  className="text-sm font-semibold text-brand-600 hover:text-brand-700"
                   href={`/stakeholders/organizations/${organizationId}/roles`}
                 >
                   Roles
                 </a>
                 <a
-                  className="text-sm font-semibold text-brand-green hover:text-brand-deep"
+                  className="text-sm font-semibold text-brand-600 hover:text-brand-700"
                   href={`/stakeholders/organizations/${organizationId}/invites`}
                 >
                   Invites

@@ -29,14 +29,14 @@ export function ChannelPreferenceToggle({
   const locked = disabled || isMandatory;
 
   return (
-    <div className="flex items-center justify-between gap-3 rounded border border-slate-200 bg-white px-3 py-2">
-      <span className="text-sm font-medium text-slate-700">{channelLabel}</span>
+    <div className="flex items-center justify-between gap-3 rounded border border-neutral-200 bg-white px-3 py-2">
+      <span className="text-sm font-medium text-neutral-700">{channelLabel}</span>
       <button
         className={`inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-semibold transition ${
           enabled
-            ? "bg-emerald-50 text-brand-deep"
-            : "bg-slate-100 text-slate-400"
-        } ${locked ? "cursor-not-allowed opacity-60" : "hover:bg-emerald-100"}`}
+            ? "bg-brand-50 text-brand-700"
+            : "bg-neutral-100 text-neutral-400"
+        } ${locked ? "cursor-not-allowed opacity-60" : "hover:bg-brand-100"}`}
         disabled={locked}
         onClick={() => onChange(category, channel, !enabled)}
         title={isMandatory ? "This notification category is mandatory" : enabled ? "Click to disable" : "Click to enable"}

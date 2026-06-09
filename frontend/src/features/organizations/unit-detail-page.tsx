@@ -53,37 +53,37 @@ export function UnitDetailPage({
   return (
     <PortalShell role={role} title={title} description="Review unit scope, linked workflows, members, and operational status.">
       <div className="grid gap-6">
-        <Link className="inline-flex w-fit items-center gap-2 rounded border border-slate-200 px-3 py-2 text-sm font-bold text-slate-700 hover:bg-slate-50" href={backHref}>
+        <Link className="inline-flex w-fit items-center gap-2 rounded border border-neutral-200 px-3 py-2 text-sm font-bold text-neutral-700 hover:bg-neutral-50" href={backHref}>
           <ArrowLeft size={16} />
           Back
         </Link>
 
-        {unitQuery.isError ? <p className="rounded-lg bg-rose-50 p-4 text-sm font-semibold text-rose-700">Could not load this unit.</p> : null}
+        {unitQuery.isError ? <p className="rounded-lg bg-danger-50 p-4 text-sm font-semibold text-danger-700">Could not load this unit.</p> : null}
         {unit ? <OrganizationUnitDetail unit={unit} memberCount={unit.member_count ?? 0} /> : null}
 
-        <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+        <section className="rounded-lg border border-neutral-200 bg-white p-5 shadow-sm">
           <div className="mb-4 flex flex-wrap gap-2">
             {tabs.map((tab) => (
-              <button key={tab} className="rounded border border-slate-200 px-3 py-2 text-sm font-bold text-slate-700 hover:bg-slate-50" type="button">
+              <button key={tab} className="rounded border border-neutral-200 px-3 py-2 text-sm font-bold text-neutral-700 hover:bg-neutral-50" type="button">
                 {tab}
               </button>
             ))}
           </div>
           <div className="grid gap-4 md:grid-cols-3">
-            <div className="rounded border border-slate-100 p-4">
-              <UsersRound className="text-brand-deep" size={18} />
-              <p className="mt-2 text-sm font-bold text-slate-950">Members</p>
-              <p className="mt-1 text-sm text-slate-500">Assigned users and scoped staff appear here.</p>
+            <div className="rounded border border-neutral-100 p-4">
+              <UsersRound className="text-brand-700" size={18} />
+              <p className="mt-2 text-sm font-bold text-neutral-900">Members</p>
+              <p className="mt-1 text-sm text-neutral-500">Assigned users and scoped staff appear here.</p>
             </div>
-            <div className="rounded border border-slate-100 p-4">
-              <ClipboardCheck className="text-brand-deep" size={18} />
-              <p className="mt-2 text-sm font-bold text-slate-950">Workload</p>
-              <p className="mt-1 text-sm text-slate-500">Linked inspections, queues, and tasks are grouped by scope.</p>
+            <div className="rounded border border-neutral-100 p-4">
+              <ClipboardCheck className="text-brand-700" size={18} />
+              <p className="mt-2 text-sm font-bold text-neutral-900">Workload</p>
+              <p className="mt-1 text-sm text-neutral-500">Linked inspections, queues, and tasks are grouped by scope.</p>
             </div>
-            <div className="rounded border border-slate-100 p-4">
-              {kind === "branch" ? <ShieldCheck className="text-brand-deep" size={18} /> : <FileText className="text-brand-deep" size={18} />}
-              <p className="mt-2 text-sm font-bold text-slate-950">Reports</p>
-              <p className="mt-1 text-sm text-slate-500">Scope-specific compliance and activity reports stay privacy-filtered.</p>
+            <div className="rounded border border-neutral-100 p-4">
+              {kind === "branch" ? <ShieldCheck className="text-brand-700" size={18} /> : <FileText className="text-brand-700" size={18} />}
+              <p className="mt-2 text-sm font-bold text-neutral-900">Reports</p>
+              <p className="mt-1 text-sm text-neutral-500">Scope-specific compliance and activity reports stay privacy-filtered.</p>
             </div>
           </div>
         </section>

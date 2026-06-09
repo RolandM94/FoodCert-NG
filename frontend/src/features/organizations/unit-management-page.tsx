@@ -86,7 +86,7 @@ export function UnitManagementPage({
         <div>
           {canEdit && (
             <button
-              className="mb-3 inline-flex w-full h-10 items-center justify-center gap-2 rounded bg-brand-green text-sm font-bold text-white hover:bg-brand-deep"
+              className="mb-3 inline-flex w-full h-10 items-center justify-center gap-2 rounded bg-brand-600 text-sm font-bold text-white hover:bg-brand-700"
               onClick={handleCreate}
             >
               <Plus aria-hidden="true" size={16} />
@@ -148,20 +148,20 @@ export function UnitManagementPage({
               {canEdit && (
                 <div className="flex gap-2">
                   <button
-                    className="inline-flex h-10 items-center gap-2 rounded border border-slate-200 px-4 text-sm font-semibold text-slate-600 hover:bg-slate-50"
+                    className="inline-flex h-10 items-center gap-2 rounded border border-neutral-200 px-4 text-sm font-semibold text-neutral-600 hover:bg-neutral-50"
                     onClick={() => handleEdit(selectedUnit)}
                   >
                     Edit
                   </button>
                   <button
-                    className="inline-flex h-10 items-center gap-2 rounded border border-slate-200 px-4 text-sm font-semibold text-slate-600 hover:bg-slate-50"
+                    className="inline-flex h-10 items-center gap-2 rounded border border-neutral-200 px-4 text-sm font-semibold text-neutral-600 hover:bg-neutral-50"
                     onClick={() => handleInviteOpen(selectedUnit)}
                   >
                     <UserPlus size={14} />
                     Invite
                   </button>
                   <button
-                    className="inline-flex h-10 items-center gap-2 rounded border border-red-200 px-4 text-sm font-semibold text-red-600 hover:bg-red-50"
+                    className="inline-flex h-10 items-center gap-2 rounded border border-danger-100 px-4 text-sm font-semibold text-danger-500 hover:bg-danger-50"
                     onClick={() => {
                       if (confirm("Deactivate this unit? Members will be unassigned.")) {
                         handleDelete(selectedUnit);
@@ -178,8 +178,8 @@ export function UnitManagementPage({
 
           {mode === "view" && !selectedUnit && filteredUnits.length > 0 && (
             <div className="flex flex-col items-center justify-center gap-3 py-16 text-center">
-              <p className="text-sm font-semibold text-slate-500">Select a unit to view details</p>
-              <p className="text-xs text-slate-400">Choose from the tree on the left or create a new one.</p>
+              <p className="text-sm font-semibold text-neutral-500">Select a unit to view details</p>
+              <p className="text-xs text-neutral-400">Choose from the tree on the left or create a new one.</p>
             </div>
           )}
         </div>

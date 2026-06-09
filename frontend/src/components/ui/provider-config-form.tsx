@@ -77,13 +77,13 @@ export function ProviderConfigForm({
   const saving = createMutation.isPending || updateMutation.isPending;
 
   return (
-    <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+    <div className="rounded-lg border border-neutral-200 bg-white p-5 shadow-sm">
       <div className="mb-5 flex items-center justify-between">
-        <h2 className="text-base font-bold text-slate-950">
+        <h2 className="text-base font-bold text-neutral-900">
           {isEdit ? "Edit Provider" : "Add Provider"}
         </h2>
         <button
-          className="inline-flex h-8 w-8 items-center justify-center rounded text-slate-400 hover:bg-slate-100"
+          className="inline-flex h-8 w-8 items-center justify-center rounded text-neutral-400 hover:bg-neutral-100"
           onClick={onClose}
           type="button"
         >
@@ -92,18 +92,18 @@ export function ProviderConfigForm({
       </div>
 
       <div className="grid gap-4 md:grid-cols-2">
-        <label className="grid gap-1 text-sm font-semibold text-slate-700">
+        <label className="grid gap-1 text-sm font-semibold text-neutral-700">
           Name
           <input
-            className="h-10 rounded border border-slate-200 px-3 text-sm"
+            className="h-10 rounded border border-neutral-200 px-3 text-sm"
             value={form.name}
             onChange={(e) => setForm({ ...form, name: e.target.value })}
           />
         </label>
-        <label className="grid gap-1 text-sm font-semibold text-slate-700">
+        <label className="grid gap-1 text-sm font-semibold text-neutral-700">
           Channel
           <select
-            className="h-10 rounded border border-slate-200 bg-white px-3 text-sm"
+            className="h-10 rounded border border-neutral-200 bg-white px-3 text-sm"
             disabled={isEdit}
             value={form.channel}
             onChange={(e) => setForm({ ...form, channel: e.target.value as NotificationChannel })}
@@ -113,29 +113,29 @@ export function ProviderConfigForm({
             ))}
           </select>
         </label>
-        <label className="grid gap-1 text-sm font-semibold text-slate-700">
+        <label className="grid gap-1 text-sm font-semibold text-neutral-700">
           Sender ID
           <input
-            className="h-10 rounded border border-slate-200 px-3 text-sm"
+            className="h-10 rounded border border-neutral-200 px-3 text-sm"
             placeholder="noreply@example.com or brand name"
             value={form.sender_id || ""}
             onChange={(e) => setForm({ ...form, sender_id: e.target.value })}
           />
         </label>
-        <label className="grid gap-1 text-sm font-semibold text-slate-700">
+        <label className="grid gap-1 text-sm font-semibold text-neutral-700">
           Priority Order
           <input
-            className="h-10 rounded border border-slate-200 px-3 text-sm"
+            className="h-10 rounded border border-neutral-200 px-3 text-sm"
             min={1}
             type="number"
             value={form.priority_order || 1}
             onChange={(e) => setForm({ ...form, priority_order: Number(e.target.value) })}
           />
         </label>
-        <label className="grid gap-1 text-sm font-semibold text-slate-700">
+        <label className="grid gap-1 text-sm font-semibold text-neutral-700">
           Rate Limit (per minute)
           <input
-            className="h-10 rounded border border-slate-200 px-3 text-sm"
+            className="h-10 rounded border border-neutral-200 px-3 text-sm"
             min={1}
             type="number"
             value={form.rate_limit_per_minute || ""}
@@ -145,19 +145,19 @@ export function ProviderConfigForm({
       </div>
 
       <div className="mt-4 flex items-center gap-4">
-        <label className="flex items-center gap-2 text-sm font-semibold text-slate-700">
+        <label className="flex items-center gap-2 text-sm font-semibold text-neutral-700">
           <input
             checked={form.is_active ?? true}
-            className="h-4 w-4 accent-brand-green"
+            className="h-4 w-4 accent-brand-600"
             type="checkbox"
             onChange={(e) => setForm({ ...form, is_active: e.target.checked })}
           />
           Active
         </label>
-        <label className="flex items-center gap-2 text-sm font-semibold text-slate-700">
+        <label className="flex items-center gap-2 text-sm font-semibold text-neutral-700">
           <input
             checked={form.is_default || false}
-            className="h-4 w-4 accent-brand-green"
+            className="h-4 w-4 accent-brand-600"
             type="checkbox"
             onChange={(e) => setForm({ ...form, is_default: e.target.checked })}
           />
@@ -166,15 +166,15 @@ export function ProviderConfigForm({
       </div>
 
       <div className="mt-4">
-        <p className="text-sm font-semibold text-slate-700">Configuration (API keys, secrets, etc.)</p>
+        <p className="text-sm font-semibold text-neutral-700">Configuration (API keys, secrets, etc.)</p>
         <div className="mt-2 space-y-1">
           {Object.entries(form.config || {}).map(([k, v]) => (
-            <div key={k} className="flex items-center gap-2 rounded border border-slate-100 px-3 py-1.5">
-              <span className="text-sm font-mono font-semibold text-slate-700">{k}</span>
-              <span className="text-sm text-slate-500">=</span>
-              <span className="flex-1 text-sm text-slate-600">{String(v)}</span>
+            <div key={k} className="flex items-center gap-2 rounded border border-neutral-100 px-3 py-1.5">
+              <span className="text-sm font-mono font-semibold text-neutral-700">{k}</span>
+              <span className="text-sm text-neutral-500">=</span>
+              <span className="flex-1 text-sm text-neutral-600">{String(v)}</span>
               <button
-                className="text-slate-400 hover:text-rose-600"
+                className="text-neutral-400 hover:text-danger-500"
                 onClick={() => removeConfigEntry(k)}
                 type="button"
               >
@@ -185,19 +185,19 @@ export function ProviderConfigForm({
         </div>
         <div className="mt-2 flex gap-2">
           <input
-            className="h-10 flex-1 rounded border border-slate-200 px-3 text-sm"
+            className="h-10 flex-1 rounded border border-neutral-200 px-3 text-sm"
             placeholder="Key (e.g. api_key)"
             value={configKey}
             onChange={(e) => setConfigKey(e.target.value)}
           />
           <input
-            className="h-10 flex-1 rounded border border-slate-200 px-3 text-sm"
+            className="h-10 flex-1 rounded border border-neutral-200 px-3 text-sm"
             placeholder="Value"
             value={configValue}
             onChange={(e) => setConfigValue(e.target.value)}
           />
           <button
-            className="inline-flex h-10 items-center rounded border border-slate-200 px-3 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+            className="inline-flex h-10 items-center rounded border border-neutral-200 px-3 text-sm font-semibold text-neutral-700 hover:bg-neutral-50"
             onClick={addConfigEntry}
             type="button"
           >
@@ -208,7 +208,7 @@ export function ProviderConfigForm({
 
       <div className="mt-5">
         <button
-          className="inline-flex h-10 items-center gap-1.5 rounded bg-brand-green px-4 text-sm font-bold text-white hover:bg-brand-deep disabled:opacity-60"
+          className="inline-flex h-10 items-center gap-1.5 rounded bg-brand-600 px-4 text-sm font-bold text-white hover:bg-brand-700 disabled:opacity-60"
           disabled={saving || !form.name}
           onClick={handleSubmit}
           type="button"

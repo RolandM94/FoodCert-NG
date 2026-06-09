@@ -44,47 +44,47 @@ export default function Page() {
   return (
     <PortalShell role="food_handler" title="Payments" description="View assessment payments, receipts, retry status, and refund requests.">
       <div className="grid gap-5">
-        {error ? <div className="flex items-start gap-2 rounded-lg bg-rose-50 p-3 text-sm font-semibold text-rose-800"><AlertCircle size={16} />{error}</div> : null}
+        {error ? <div className="flex items-start gap-2 rounded-lg bg-danger-50 p-3 text-sm font-semibold text-danger-700"><AlertCircle size={16} />{error}</div> : null}
 
         <section className="grid gap-3 md:grid-cols-3">
-          <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-            <CreditCard className="text-brand-deep" size={18} />
-            <p className="mt-2 text-xs font-bold uppercase text-slate-500">Transactions</p>
-            <p className="text-2xl font-bold text-slate-950">{rows.length}</p>
+          <div className="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm">
+            <CreditCard className="text-brand-700" size={18} />
+            <p className="mt-2 text-xs font-bold uppercase text-neutral-500">Transactions</p>
+            <p className="text-2xl font-bold text-neutral-900">{rows.length}</p>
           </div>
-          <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-            <ReceiptText className="text-brand-deep" size={18} />
-            <p className="mt-2 text-xs font-bold uppercase text-slate-500">Successful</p>
-            <p className="text-2xl font-bold text-slate-950">{paid.length}</p>
+          <div className="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm">
+            <ReceiptText className="text-brand-700" size={18} />
+            <p className="mt-2 text-xs font-bold uppercase text-neutral-500">Successful</p>
+            <p className="text-2xl font-bold text-neutral-900">{paid.length}</p>
           </div>
-          <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-            <p className="text-xs font-bold uppercase text-slate-500">Total paid</p>
-            <p className="mt-2 text-2xl font-bold text-slate-950">{money(totalPaid)}</p>
+          <div className="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm">
+            <p className="text-xs font-bold uppercase text-neutral-500">Total paid</p>
+            <p className="mt-2 text-2xl font-bold text-neutral-900">{money(totalPaid)}</p>
           </div>
         </section>
 
-        <section className="rounded-lg border border-slate-200 bg-white shadow-sm">
-          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 p-4">
-            <h2 className="text-sm font-bold text-slate-950">Payment history</h2>
-            <button className="inline-flex h-9 items-center gap-2 rounded border border-slate-200 px-3 text-xs font-bold text-slate-700" onClick={() => void loadData()} type="button"><RefreshCw size={14} /> Refresh</button>
+        <section className="rounded-lg border border-neutral-200 bg-white shadow-sm">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-neutral-200 p-4">
+            <h2 className="text-sm font-bold text-neutral-900">Payment history</h2>
+            <button className="inline-flex h-9 items-center gap-2 rounded border border-neutral-200 px-3 text-xs font-bold text-neutral-700" onClick={() => void loadData()} type="button"><RefreshCw size={14} /> Refresh</button>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm">
-              <thead className="bg-slate-50 text-xs font-bold uppercase text-slate-500">
+              <thead className="bg-neutral-50 text-xs font-bold uppercase text-neutral-500">
                 <tr><th className="p-3">Reference</th><th className="p-3">Purpose</th><th className="p-3">Amount</th><th className="p-3">Status</th><th className="p-3">Paid</th><th className="p-3">Action</th></tr>
               </thead>
-              <tbody className="divide-y divide-slate-200">
+              <tbody className="divide-y divide-neutral-200">
                 {rows.map((row) => (
                   <tr key={row.id}>
-                    <td className="p-3 font-bold text-slate-950">{row.internal_reference}</td>
-                    <td className="p-3 capitalize text-slate-700">{row.related_entity_type.replaceAll("_", " ")}</td>
-                    <td className="p-3 text-slate-700">{money(row.amount)}</td>
+                    <td className="p-3 font-bold text-neutral-900">{row.internal_reference}</td>
+                    <td className="p-3 capitalize text-neutral-700">{row.related_entity_type.replaceAll("_", " ")}</td>
+                    <td className="p-3 text-neutral-700">{money(row.amount)}</td>
                     <td className="p-3"><StatusBadge status={row.status} /></td>
-                    <td className="p-3 text-slate-600">{dateLabel(row.paid_at)}</td>
-                    <td className="p-3"><Link className="rounded border border-slate-200 px-3 py-1.5 text-xs font-bold text-slate-700" href={`/food-handler/payments/${row.id}`}>Open</Link></td>
+                    <td className="p-3 text-neutral-600">{dateLabel(row.paid_at)}</td>
+                    <td className="p-3"><Link className="rounded border border-neutral-200 px-3 py-1.5 text-xs font-bold text-neutral-700" href={`/food-handler/payments/${row.id}`}>Open</Link></td>
                   </tr>
                 ))}
-                {!rows.length ? <tr><td className="p-3 text-slate-500" colSpan={6}>{loading ? "Loading payments..." : "No payment records found."}</td></tr> : null}
+                {!rows.length ? <tr><td className="p-3 text-neutral-500" colSpan={6}>{loading ? "Loading payments..." : "No payment records found."}</td></tr> : null}
               </tbody>
             </table>
           </div>
