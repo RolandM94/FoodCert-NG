@@ -5,6 +5,7 @@ import {
   Banknote,
   BarChart3,
   Bell,
+  BookOpen,
   Building2,
   CalendarDays,
   FileStack,
@@ -64,6 +65,7 @@ export const PORTAL_NAV: Record<UserRole, PortalNavItem[]> = {
     { label: "Dashboard", href: "/employer/dashboard", icon: Activity },
     { label: "Business Profile", href: "/employer/business-profile", icon: Building2 },
     { label: "Stakeholder Management", href: "/employer/stakeholder-management", icon: UsersRound },
+    { label: "Directory & Registry", href: "/employer/directory", icon: BookOpen },
     { label: "Food Handlers", href: "/employer/food-handlers", icon: UsersRound },
     { label: "Compliance", href: "/employer/compliance", icon: ClipboardCheck },
     { label: "Vaccinations", href: "/employer/vaccinations", icon: Syringe },
@@ -80,6 +82,7 @@ export const PORTAL_NAV: Record<UserRole, PortalNavItem[]> = {
     { label: "Dashboard", href: "/facility/dashboard", icon: Activity },
     { label: "Profile", href: "/facility/profile", icon: Building2 },
     { label: "Stakeholder Management", href: "/facility/stakeholder-management", icon: UsersRound },
+    { label: "Directory & Registry", href: "/facility/directory", icon: BookOpen },
     { label: "Accreditation", href: "/facility/accreditation", icon: ShieldCheck },
     { label: "Appointments", href: "/facility/appointments", icon: CalendarDays },
     { label: "Assessments", href: "/facility/assessments", icon: Stethoscope },
@@ -103,6 +106,7 @@ export const PORTAL_NAV: Record<UserRole, PortalNavItem[]> = {
   state_admin: [
     { label: "Dashboard", href: "/state/dashboard", icon: Activity },
     { label: "Stakeholder Management", href: "/state/stakeholder-management", icon: UsersRound },
+    { label: "Directory & Registry", href: "/state/directory", icon: BookOpen },
     { label: "Facilities", href: "/state/facilities", icon: Building2 },
     { label: "Forms", href: "/state/forms", icon: FileStack },
     { label: "Accreditation", href: "/state/facilities/accreditation", icon: ShieldCheck },
@@ -123,6 +127,7 @@ export const PORTAL_NAV: Record<UserRole, PortalNavItem[]> = {
   federal_admin: [
     { label: "Dashboard", href: "/federal/dashboard", icon: Activity },
     { label: "Stakeholder Management", href: "/federal/stakeholder-management", icon: UsersRound },
+    { label: "Directory & Registry", href: "/federal/directory", icon: BookOpen },
     { label: "States", href: "/federal/states", icon: MapPin },
     { label: "Certificates", href: "/federal/certificates", icon: BadgeCheck },
     { label: "Facilities", href: "/federal/facilities", icon: Building2 },
@@ -139,6 +144,7 @@ export const PORTAL_NAV: Record<UserRole, PortalNavItem[]> = {
   ],
   inspector: [
     { label: "Dashboard", href: "/inspector/dashboard", icon: Activity },
+    { label: "Directory & Registry", href: "/inspector/directory", icon: BookOpen },
     { label: "Scan", href: "/inspector/scan", icon: QrCode },
     { label: "Businesses", href: "/inspector/businesses", icon: Building2 },
     { label: "Inspections", href: "/inspector/inspections", icon: ClipboardCheck },
@@ -147,6 +153,7 @@ export const PORTAL_NAV: Record<UserRole, PortalNavItem[]> = {
   super_admin: [
     { label: "Dashboard", href: "/federal/dashboard", icon: Activity },
     { label: "Stakeholder Management", href: "/admin/stakeholder-management", icon: UsersRound },
+    { label: "Directory & Registry", href: "/admin/directory", icon: BookOpen },
     { label: "States", href: "/federal/states", icon: MapPin },
     { label: "Certificates", href: "/federal/certificates", icon: BadgeCheck },
     { label: "Facilities", href: "/federal/facilities", icon: Building2 },
