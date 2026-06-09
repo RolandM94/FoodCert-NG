@@ -1,11 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import {
   Building2, MapPin, Phone, Mail, Search, UsersRound, BadgeCheck, Globe,
-  GitBranch, ClipboardCheck, Activity,
+  GitBranch, ClipboardCheck, Activity, ChevronRight, X, Store,
 } from "lucide-react";
 import { PortalShell } from "@/components/layout/portal-shell";
 import { StatusBadge } from "@/components/status/status-badge";
@@ -84,7 +84,7 @@ function FoodHandlersTab() {
 }
 
 // ── Employers Tab ──
-function EmployersTab() {
+function EmployersTab({ onSelect }: { onSelect: (e: DirectoryEmployer) => void }) {
   const [search, setSearch] = useState("");
   const { data: list, isLoading } = useQuery({
     queryKey: ["directory-employers", search],
@@ -110,12 +110,13 @@ function EmployersTab() {
               <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-neutral-500">State</th>
               <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-neutral-500">Compliance</th>
               <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-neutral-500">Status</th>
+              <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wide text-neutral-500">Actions</th>
             </tr></thead>
             <tbody className="divide-y divide-neutral-100">
-              {isLoading ? <tr><td className="px-4 py-8 text-center text-neutral-500" colSpan={7}>Loading...</td></tr>
-              : items.length === 0 ? <tr><td className="px-4 py-8 text-center text-neutral-500" colSpan={7}>No employers found.</td></tr>
+              {isLoading ? <tr><td className="px-4 py-8 text-center text-neutral-500" colSpan={8}>Loading...</td></tr>
+              : items.length === 0 ? <tr><td className="px-4 py-8 text-center text-neutral-500" colSpan={8}>No employers found.</td></tr>
               : items.map((e: DirectoryEmployer) => (
-                <tr key={e.id} className="hover:bg-neutral-50">
+                <tr key={e.id} className="hover:bg-neutral-50 cursor-pointer" onClick={() => onSelect(e)}>
                   <td className="px-4 py-3 font-semibold text-neutral-900">{e.business_name}</td>
                   <td className="px-4 py-3 text-neutral-600 text-xs">{e.establishment_category?.replace(/_/g, " ")}</td>
                   <td className="px-4 py-3 text-neutral-700">{e.branch_count}</td>
@@ -123,12 +124,235 @@ function EmployersTab() {
                   <td className="px-4 py-3 text-neutral-600">{e.state_name || "—"}</td>
                   <td className="px-4 py-3"><StatusBadge status={e.compliance_status} /></td>
                   <td className="px-4 py-3"><StatusBadge status={e.is_active ? "active" : "inactive"} /></td>
+                  <td className="px-4 py-3 text-right">
+                    <span className="inline-flex items-center gap-1 text-xs font-medium text-brand-600">
+                      View <ChevronRight size={14} />
+                    </span>
+                  </td>
                 </tr>
               ))}</tbody>
           </table>
         </div>
       </section>
     </div>
+  );
+}
+
+// ── Employer Detail Drawer ──
+type DetailTab = "profile" | "branches" | "food-handlers" | "certificates" | "inspections" | "notices" | "compliance";
+
+const DETAIL_TABS: DetailTab[] = ["profile", "branches", "food-handlers", "certificates", "inspections", "notices", "compliance"];
+const DETAIL_LABELS: Record<DetailTab, string> = {
+  profile: "Profile", branches: "Branches / Outlets", "food-handlers": "Food Handlers",
+  certificates: "Certificates", inspections: "Inspections", notices: "Notices", compliance: "Compliance",
+};
+
+function EmployerDetailDrawer({
+  employer,
+  onClose,
+}: {
+  employer: DirectoryEmployer;
+  onClose: () => void;
+}) {
+  const [detailTab, setDetailTab] = useState<DetailTab>("profile");
+
+  const { data: branches, isLoading: loadingBranches } = useQuery({
+    queryKey: ["directory-branches", employer.id],
+    queryFn: () => fetchDirectoryBranches({ employer: employer.id }),
+    enabled: detailTab === "branches",
+  });
+  const branchItems = Array.isArray(branches) ? branches : [];
+
+  const { data: foodHandlers, isLoading: loadingFH } = useQuery({
+    queryKey: ["directory-food-handlers", employer.id],
+    queryFn: () => fetchDirectoryFoodHandlers({ employer: employer.id }),
+    enabled: detailTab === "food-handlers",
+  });
+  const fhItems = Array.isArray(foodHandlers) ? foodHandlers : [];
+
+  return (
+    <>
+      <div className="fixed inset-0 z-40 bg-black/40" onClick={onClose} />
+      <div className="fixed inset-y-0 right-0 z-50 w-full max-w-3xl overflow-y-auto border-l border-neutral-200 bg-white shadow-2xl">
+        {/* Header */}
+        <div className="flex items-center justify-between border-b border-neutral-200 px-6 py-4 sticky top-0 bg-white z-10">
+          <div>
+            <h2 className="text-lg font-semibold text-neutral-900">{employer.business_name}</h2>
+            <p className="text-xs text-neutral-500">
+              {employer.establishment_category?.replace(/_/g, " ")} &middot; {employer.state_name || "No state"} &middot; {employer.branch_count} branches &middot; {employer.food_handler_count} handlers
+            </p>
+          </div>
+          <button className="rounded-lg p-1.5 hover:bg-neutral-100" onClick={onClose} aria-label="Close" type="button">
+            <X size={18} className="text-neutral-500" />
+          </button>
+        </div>
+
+        {/* Sub-tabs */}
+        <nav className="flex gap-0 overflow-x-auto border-b border-neutral-200 bg-neutral-50 px-6">
+          {DETAIL_TABS.map((key) => (
+            <button
+              key={key}
+              className={`shrink-0 border-b-2 px-4 py-3 text-sm font-medium ${
+                detailTab === key ? "border-brand-600 text-brand-700" : "border-transparent text-neutral-500 hover:text-neutral-800"
+              }`}
+              onClick={() => setDetailTab(key)}
+              type="button"
+            >
+              {DETAIL_LABELS[key]}
+            </button>
+          ))}
+        </nav>
+
+        {/* Tab content */}
+        <div className="p-6">
+          {detailTab === "profile" && (
+            <div className="space-y-4">
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div>
+                  <h4 className="text-xs font-bold uppercase text-neutral-500">Business Name</h4>
+                  <p className="mt-1 text-sm font-semibold text-neutral-900">{employer.business_name}</p>
+                </div>
+                <div>
+                  <h4 className="text-xs font-bold uppercase text-neutral-500">Registration Number</h4>
+                  <p className="mt-1 text-sm text-neutral-700">{employer.business_registration_number || "—"}</p>
+                </div>
+                <div>
+                  <h4 className="text-xs font-bold uppercase text-neutral-500">Category</h4>
+                  <p className="mt-1 text-sm text-neutral-700">{employer.establishment_category?.replace(/_/g, " ") || "—"}</p>
+                </div>
+                <div>
+                  <h4 className="text-xs font-bold uppercase text-neutral-500">Contact Person</h4>
+                  <p className="mt-1 text-sm text-neutral-700">{employer.contact_person_name || "—"}</p>
+                </div>
+                <div>
+                  <h4 className="text-xs font-bold uppercase text-neutral-500">Phone</h4>
+                  <div className="mt-1 flex items-center gap-1 text-sm text-neutral-700"><Phone size={12} className="text-neutral-400" />{employer.contact_person_phone || "—"}</div>
+                </div>
+                <div>
+                  <h4 className="text-xs font-bold uppercase text-neutral-500">Email</h4>
+                  <div className="mt-1 flex items-center gap-1 text-sm text-neutral-700"><Mail size={12} className="text-neutral-400" />{employer.contact_person_email || "—"}</div>
+                </div>
+                <div className="sm:col-span-2">
+                  <h4 className="text-xs font-bold uppercase text-neutral-500">Address</h4>
+                  <p className="mt-1 text-sm text-neutral-700">{employer.address || "—"}</p>
+                </div>
+                <div>
+                  <h4 className="text-xs font-bold uppercase text-neutral-500">Compliance</h4>
+                  <p className="mt-1"><StatusBadge status={employer.compliance_status} /></p>
+                </div>
+                <div>
+                  <h4 className="text-xs font-bold uppercase text-neutral-500">Subscription</h4>
+                  <p className="mt-1"><StatusBadge status={employer.subscription_status} /></p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {detailTab === "branches" && (
+            <div className="space-y-4">
+              {loadingBranches ? (
+                <p className="text-sm text-neutral-500">Loading branches...</p>
+              ) : branchItems.length === 0 ? (
+                <div className="flex flex-col items-center justify-center gap-2 py-8 text-center">
+                  <Store size={28} className="text-neutral-300" />
+                  <p className="text-sm font-semibold text-neutral-500">No branches or outlets have been added for this employer.</p>
+                </div>
+              ) : (
+                <section className="overflow-hidden rounded-xl border border-neutral-200 bg-white">
+                  <table className="min-w-full divide-y divide-neutral-200 text-sm">
+                    <thead className="bg-neutral-50"><tr>
+                      <th className="px-4 py-3 text-left text-xs font-medium uppercase text-neutral-500">Branch Name</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium uppercase text-neutral-500">Type</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium uppercase text-neutral-500">State</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium uppercase text-neutral-500">LGA</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium uppercase text-neutral-500">Handlers</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium uppercase text-neutral-500">Status</th>
+                    </tr></thead>
+                    <tbody className="divide-y divide-neutral-100">
+                      {branchItems.map((b: DirectoryBranch) => (
+                        <tr key={b.id} className="hover:bg-neutral-50">
+                          <td className="px-4 py-3 font-semibold text-neutral-900">{b.name}</td>
+                          <td className="px-4 py-3 text-xs text-neutral-500 uppercase">{b.unit_type?.replace(/_/g, " ")}</td>
+                          <td className="px-4 py-3 text-neutral-600">{b.state_name || "—"}</td>
+                          <td className="px-4 py-3 text-neutral-600">{b.lga_name || "—"}</td>
+                          <td className="px-4 py-3 text-neutral-700">{b.food_handler_count}</td>
+                          <td className="px-4 py-3"><StatusBadge status={b.status} /></td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </section>
+              )}
+            </div>
+          )}
+
+          {detailTab === "food-handlers" && (
+            <div className="space-y-4">
+              {loadingFH ? (
+                <p className="text-sm text-neutral-500">Loading food handlers...</p>
+              ) : fhItems.length === 0 ? (
+                <div className="flex flex-col items-center justify-center gap-2 py-8 text-center">
+                  <UsersRound size={28} className="text-neutral-300" />
+                  <p className="text-sm font-semibold text-neutral-500">No food handlers found for this employer.</p>
+                </div>
+              ) : (
+                <section className="overflow-hidden rounded-xl border border-neutral-200 bg-white">
+                  <table className="min-w-full divide-y divide-neutral-200 text-sm">
+                    <thead className="bg-neutral-50"><tr>
+                      <th className="px-4 py-3 text-left text-xs font-medium uppercase text-neutral-500">Name</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium uppercase text-neutral-500">ID</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium uppercase text-neutral-500">Branch</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium uppercase text-neutral-500">State</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium uppercase text-neutral-500">Status</th>
+                    </tr></thead>
+                    <tbody className="divide-y divide-neutral-100">
+                      {fhItems.map((fh: DirectoryFoodHandler) => (
+                        <tr key={fh.id} className="hover:bg-neutral-50">
+                          <td className="px-4 py-3 font-semibold text-neutral-900">{fh.full_name}</td>
+                          <td className="px-4 py-3 text-xs font-mono text-neutral-500">{fh.system_identifier}</td>
+                          <td className="px-4 py-3 text-neutral-600">{fh.branch_name || "—"}</td>
+                          <td className="px-4 py-3 text-neutral-600">{fh.state_name || "—"}</td>
+                          <td className="px-4 py-3"><StatusBadge status={fh.current_status} /></td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </section>
+              )}
+            </div>
+          )}
+
+          {detailTab === "certificates" && (
+            <div className="flex flex-col items-center justify-center gap-2 py-12 text-center">
+              <BadgeCheck size={28} className="text-neutral-300" />
+              <p className="text-sm font-semibold text-neutral-500">Certificates</p>
+              <p className="text-xs text-neutral-400">Certificate records for this employer will be available soon.</p>
+            </div>
+          )}
+          {detailTab === "inspections" && (
+            <div className="flex flex-col items-center justify-center gap-2 py-12 text-center">
+              <ClipboardCheck size={28} className="text-neutral-300" />
+              <p className="text-sm font-semibold text-neutral-500">Inspections</p>
+              <p className="text-xs text-neutral-400">Inspection records for this employer will be available soon.</p>
+            </div>
+          )}
+          {detailTab === "notices" && (
+            <div className="flex flex-col items-center justify-center gap-2 py-12 text-center">
+              <Activity size={28} className="text-neutral-300" />
+              <p className="text-sm font-semibold text-neutral-500">Notices</p>
+              <p className="text-xs text-neutral-400">Enforcement notices will be available soon.</p>
+            </div>
+          )}
+          {detailTab === "compliance" && (
+            <div className="flex flex-col items-center justify-center gap-2 py-12 text-center">
+              <ClipboardCheck size={28} className="text-neutral-300" />
+              <p className="text-sm font-semibold text-neutral-500">Compliance Summary</p>
+              <p className="text-xs text-neutral-400">Compliance reports will be available soon.</p>
+            </div>
+          )}
+        </div>
+      </div>
+    </>
   );
 }
 
@@ -277,6 +501,7 @@ export function DirectoryLayout({ role }: { role: UserRole }) {
   const searchParams = useSearchParams();
   const tabParam = (searchParams.get("tab") ?? "overview") as TabKey;
   const tabs = TABS[role] ?? TABS.state_admin;
+  const [selectedEmployer, setSelectedEmployer] = useState<DirectoryEmployer | null>(null);
 
   function setTab(tab: TabKey) {
     const prefix = role === "super_admin" ? "admin" : role.replace("_admin", "").replace("_staff", "");
@@ -304,13 +529,7 @@ export function DirectoryLayout({ role }: { role: UserRole }) {
       {tabParam === "overview" && <OverviewTab />}
       {tabParam === "food-handlers" && <FoodHandlersTab />}
       {tabParam === "employers" && (
-        <div className="space-y-6">
-          <EmployersTab />
-          <div className="border-t border-neutral-200 pt-4">
-            <h3 className="text-sm font-bold text-neutral-900 mb-3">Branches / Outlets</h3>
-            <BranchesTab />
-          </div>
-        </div>
+        <EmployersTab onSelect={setSelectedEmployer} />
       )}
       {tabParam === "certificates" && (
         <div className="flex flex-col items-center justify-center gap-3 py-16 text-center">
@@ -326,6 +545,10 @@ export function DirectoryLayout({ role }: { role: UserRole }) {
           <p className="text-sm font-semibold text-neutral-500">Exports</p>
           <p className="text-xs text-neutral-400">Export functionality will be available in the next update.</p>
         </div>
+      )}
+
+      {selectedEmployer && (
+        <EmployerDetailDrawer employer={selectedEmployer} onClose={() => setSelectedEmployer(null)} />
       )}
     </PortalShell>
   );
