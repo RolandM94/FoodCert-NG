@@ -17,8 +17,10 @@ from apps.assessments.models import MedicalAssessment
 from apps.audit.models import AuditAction
 from apps.audit.services import log_action
 from apps.common.throttles import PublicVerificationRateThrottle, SuspiciousReportRateThrottle
-from apps.certificates.models import Certificate, CertificateRequest, CertificateTemplate, CertificateTemplateScope, CertificateVerificationLog, SuspiciousCertificateReport, VerificationActorType, VerificationResult
+from apps.certificates.models import AccreditationCertificate, Certificate, CertificateRequest, CertificateTemplate, CertificateTemplateScope, CertificateVerificationLog, SuspiciousCertificateReport, VerificationActorType, VerificationResult
 from apps.certificates.serializers import (
+    AccreditationCertificatePublicVerificationSerializer,
+    AccreditationCertificateSerializer,
     CertificatePublicVerificationSerializer,
     CertificateRequestSerializer,
     CertificateSerializer,
@@ -216,6 +218,56 @@ class CertificateViewSet(viewsets.ReadOnlyModelViewSet):
         return Response(FoodHandlerCertificateSerializer(certificate).data)
 
 
+class AccreditationCertificateViewSet(viewsets.ReadOnlyModelViewSet):
+    serializer_class = AccreditationCertificateSerializer
+    permission_classes = [IsAuthenticated, IsActiveUser]
+
+    def get_queryset(self):
+        queryset = AccreditationCertificate.objects.select_related(
+            "employer",
+            "facility",
+            "issuing_state",
+            "issued_by_state_user",
+        ).order_by("-issue_date", "-created_at")
+        if getattr(self, "swagger_fake_view", False):
+            return queryset
+        certificate_type = self.request.query_params.get("certificate_type")
+        if certificate_type:
+            queryset = queryset.filter(certificate_type=certificate_type)
+        employer = self.request.query_params.get("employer")
+        if employer:
+            queryset = queryset.filter(employer_id=employer)
+        facility = self.request.query_params.get("facility")
+        if facility:
+            queryset = queryset.filter(facility_id=facility)
+        user = self.request.user
+        if user.role in {UserRole.SUPER_ADMIN, UserRole.FEDERAL_ADMIN}:
+            return queryset
+        if user.role in {UserRole.STATE_ADMIN, UserRole.INSPECTOR}:
+            return queryset.filter(issuing_state=user.state)
+        if user.role == UserRole.EMPLOYER:
+            if hasattr(user, "employer"):
+                return queryset.filter(employer=user.employer)
+            if user.organization_id:
+                return queryset.filter(employer__organization=user.organization)
+            return queryset.none()
+        if user.organization_id:
+            return queryset.filter(facility__organization=user.organization)
+        return queryset.none()
+
+    @extend_schema(responses=AccreditationCertificateSerializer)
+    @action(detail=True, methods=["get"], url_path="download")
+    def download(self, request, pk=None):
+        certificate = self.get_object()
+        certificate.pdf_url = CertificateService.write_accreditation_pdf(certificate=certificate)
+        certificate.save(update_fields=["pdf_url", "updated_at"])
+        media_prefix = "http://localhost:8000/media/"
+        relative_path = certificate.pdf_url.replace(media_prefix, "")
+        file_path = str(settings.MEDIA_ROOT / relative_path)
+        log_action(action=AuditAction.CERTIFICATE_EVENT, actor=request.user, target=certificate, metadata={"event": "accreditation_certificate_download"})
+        return FileResponse(open(file_path, "rb"), as_attachment=True, filename=f"{certificate.certificate_number}.pdf")
+
+
 class CertificateTemplateViewSet(viewsets.ModelViewSet):
     serializer_class = CertificateTemplateSerializer
     permission_classes = [IsAuthenticated, IsActiveUser]
@@ -346,6 +398,13 @@ def _public_verify_certificate_response(request, certificate_number):
     result = VerificationResult.NOT_FOUND
     if certificate:
         result = CertificateService.verification_result_for(certificate)
+    accreditation_certificate = None
+    if not certificate:
+        accreditation_certificate = AccreditationCertificate.objects.filter(
+            Q(certificate_number=certificate_number) | Q(verification_token=certificate_number)
+        ).select_related("employer", "facility", "issuing_state").first()
+        if accreditation_certificate:
+            result = CertificateService.accreditation_verification_result_for(accreditation_certificate)
     CertificateVerificationLog.objects.create(
         certificate=certificate,
         certificate_number_submitted=certificate_number,
@@ -362,8 +421,12 @@ def _public_verify_certificate_response(request, certificate_number):
         request=request,
         metadata={"certificate_number": certificate_number, "result": result},
     )
-    if not certificate:
+    if not certificate and not accreditation_certificate:
         return Response({"certificate_validity": VerificationResult.NOT_FOUND, "certificate_number": certificate_number}, status=404)
+    if accreditation_certificate:
+        payload = AccreditationCertificatePublicVerificationSerializer(accreditation_certificate).data
+        payload["certificate_validity"] = result
+        return Response(payload)
     payload = CertificatePublicVerificationSerializer(certificate).data
     payload["certificate_validity"] = result
     return Response(payload)

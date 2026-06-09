@@ -3,7 +3,7 @@ from typing import Optional
 from rest_framework import serializers
 
 from apps.assessments.models import MedicalAssessment
-from apps.certificates.models import Certificate, CertificateRequest, CertificateTemplate, CertificateTemplateScope, CertificateVerificationLog, SuspiciousCertificateReport
+from apps.certificates.models import AccreditationCertificate, Certificate, CertificateRequest, CertificateTemplate, CertificateTemplateScope, CertificateVerificationLog, SuspiciousCertificateReport
 
 
 class CertificateTemplateSerializer(serializers.ModelSerializer):
@@ -158,6 +158,66 @@ class CertificateSerializer(serializers.ModelSerializer):
         read_only_fields = fields
 
 
+class AccreditationCertificateSerializer(serializers.ModelSerializer):
+    owner_type = serializers.CharField(read_only=True)
+    owner_name = serializers.CharField(read_only=True)
+    issuing_state_name = serializers.CharField(source="issuing_state.name", read_only=True)
+    issued_by_state_user_name = serializers.CharField(source="issued_by_state_user.get_full_name", read_only=True)
+    effective_status = serializers.CharField(read_only=True)
+
+    class Meta:
+        model = AccreditationCertificate
+        fields = (
+            "id",
+            "certificate_number",
+            "certificate_type",
+            "public_id",
+            "verification_token",
+            "owner_type",
+            "owner_name",
+            "employer",
+            "facility",
+            "facility_application",
+            "issuing_state",
+            "issuing_state_name",
+            "issued_by_state_user",
+            "issued_by_state_user_name",
+            "issue_date",
+            "expiry_date",
+            "status",
+            "effective_status",
+            "qr_code_url",
+            "verification_url",
+            "pdf_url",
+            "digital_signature_hash",
+            "suspended_by",
+            "suspended_at",
+            "suspension_reason",
+            "revoked_by",
+            "revoked_at",
+            "revocation_reason",
+            "created_at",
+            "updated_at",
+        )
+        read_only_fields = fields
+
+
+class UnifiedCertificateRegistrySerializer(serializers.Serializer):
+    id = serializers.CharField()
+    record_type = serializers.CharField()
+    owner_type = serializers.CharField()
+    owner_id = serializers.CharField(allow_blank=True)
+    owner_name = serializers.CharField(allow_blank=True)
+    certificate_number = serializers.CharField(allow_blank=True)
+    status = serializers.CharField()
+    issue_date = serializers.DateField(allow_null=True)
+    expiry_date = serializers.DateField(allow_null=True)
+    issuing_state_name = serializers.CharField(allow_blank=True)
+    action_status = serializers.CharField(allow_blank=True)
+    source_id = serializers.CharField(allow_blank=True)
+    metadata = serializers.DictField()
+
+
 class EmployerCertificateSerializer(serializers.ModelSerializer):
     food_handler_name = serializers.CharField(source="food_handler.full_name", read_only=True)
     passport_photo = serializers.ImageField(source="food_handler.passport_photo", read_only=True)
@@ -277,6 +337,30 @@ class CertificatePublicVerificationSerializer(serializers.ModelSerializer):
     def get_last_verified_at(self, obj) -> Optional[str]:
         latest = obj.verification_logs.order_by("-verified_at").first()
         return latest.verified_at if latest else None
+
+
+class AccreditationCertificatePublicVerificationSerializer(serializers.ModelSerializer):
+    certificate_validity = serializers.CharField(source="effective_status", read_only=True)
+    owner_name = serializers.CharField(read_only=True)
+    owner_type = serializers.CharField(read_only=True)
+    issuing_state_ministry = serializers.SerializerMethodField()
+    accreditation_type = serializers.CharField(source="get_certificate_type_display", read_only=True)
+
+    class Meta:
+        model = AccreditationCertificate
+        fields = (
+            "certificate_validity",
+            "certificate_number",
+            "accreditation_type",
+            "owner_type",
+            "owner_name",
+            "issuing_state_ministry",
+            "issue_date",
+            "expiry_date",
+        )
+
+    def get_issuing_state_ministry(self, obj) -> str:
+        return f"{obj.issuing_state.name} State Ministry of Health"
 
 
 class CertificateVerificationLogSerializer(serializers.ModelSerializer):

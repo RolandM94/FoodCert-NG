@@ -23,6 +23,11 @@ class CertificateStatus(models.TextChoices):
     REJECTED = "rejected", "Rejected"
 
 
+class AccreditationCertificateType(models.TextChoices):
+    EMPLOYER = "employer_accreditation", "Employer Accreditation"
+    FACILITY = "facility_accreditation", "Facility Accreditation"
+
+
 class VerificationResult(models.TextChoices):
     VALID = "valid", "Valid"
     EXPIRED = "expired", "Expired"
@@ -184,6 +189,109 @@ class Certificate(BaseModel):
 
     def __str__(self) -> str:
         return self.certificate_number
+
+    @property
+    def is_expired(self) -> bool:
+        return self.expiry_date < timezone.localdate()
+
+    @property
+    def effective_status(self) -> str:
+        if self.status == CertificateStatus.ACTIVE and self.is_expired:
+            return CertificateStatus.EXPIRED
+        return self.status
+
+
+class AccreditationCertificate(BaseModel):
+    certificate_number = models.CharField(max_length=80, unique=True, db_index=True)
+    certificate_type = models.CharField(max_length=40, choices=AccreditationCertificateType.choices, db_index=True)
+    public_id = models.UUIDField(unique=True, db_index=True, null=True, blank=True)
+    verification_token = models.CharField(max_length=96, unique=True, db_index=True, null=True, blank=True)
+    employer = models.ForeignKey(
+        "employers.Employer",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="accreditation_certificates",
+    )
+    facility = models.ForeignKey(
+        "facilities.MedicalFacility",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="accreditation_certificates",
+    )
+    facility_application = models.ForeignKey(
+        "facilities.FacilityAccreditationApplication",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="accreditation_certificates",
+    )
+    issuing_state = models.ForeignKey("locations.State", on_delete=models.PROTECT, related_name="accreditation_certificates")
+    issued_by_state_user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="issued_accreditation_certificates",
+    )
+    issue_date = models.DateField()
+    expiry_date = models.DateField()
+    status = models.CharField(max_length=32, choices=CertificateStatus.choices, default=CertificateStatus.ACTIVE, db_index=True)
+    qr_code_url = models.URLField(blank=True)
+    verification_url = models.URLField()
+    pdf_url = models.URLField(blank=True)
+    digital_signature_hash = models.CharField(max_length=128)
+    suspended_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="suspended_accreditation_certificates",
+    )
+    suspended_at = models.DateTimeField(null=True, blank=True)
+    suspension_reason = models.TextField(blank=True)
+    revoked_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="revoked_accreditation_certificates",
+    )
+    revoked_at = models.DateTimeField(null=True, blank=True)
+    revocation_reason = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ["-issue_date", "-created_at"]
+        indexes = [
+            models.Index(fields=["certificate_number"]),
+            models.Index(fields=["certificate_type"]),
+            models.Index(fields=["verification_token"]),
+            models.Index(fields=["employer"]),
+            models.Index(fields=["facility"]),
+            models.Index(fields=["issuing_state"]),
+            models.Index(fields=["status"]),
+            models.Index(fields=["expiry_date"]),
+        ]
+
+    def __str__(self) -> str:
+        return self.certificate_number
+
+    @property
+    def owner_name(self) -> str:
+        if self.employer_id:
+            return self.employer.business_name
+        if self.facility_id:
+            return self.facility.facility_name
+        return ""
+
+    @property
+    def owner_type(self) -> str:
+        if self.employer_id:
+            return "employer"
+        if self.facility_id:
+            return "facility"
+        return ""
 
     @property
     def is_expired(self) -> bool:

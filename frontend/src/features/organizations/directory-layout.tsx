@@ -4,30 +4,29 @@ import { useState, useCallback } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import {
-  Building2, MapPin, Phone, Mail, Search, UsersRound, BadgeCheck, Globe,
-  GitBranch, ClipboardCheck, Activity, ChevronRight, X, Store,
+  Building2, Phone, Mail, Search, UsersRound, BadgeCheck,
+  ClipboardCheck, Activity, ChevronRight, X, Store,
 } from "lucide-react";
 import { PortalShell } from "@/components/layout/portal-shell";
 import { StatusBadge } from "@/components/status/status-badge";
 import {
   fetchDirectoryFoodHandlers, fetchDirectoryEmployers, fetchDirectoryBranches,
-  fetchGlobalSearch,
 } from "@/lib/api/directory";
 import type { UserRole } from "@/types/auth";
 import type { DirectoryFoodHandler, DirectoryEmployer, DirectoryBranch } from "@/lib/api/directory";
 
-type TabKey = "overview" | "food-handlers" | "employers" | "certificates" | "global-search" | "exports";
+type TabKey = "overview" | "food-handlers" | "employers" | "exports";
 
 const TABS: Record<UserRole, Record<TabKey, string>> = {
-  state_admin: { overview: "Overview", "food-handlers": "Food Handlers", employers: "Employers", certificates: "Certificates", "global-search": "Global Search", exports: "Exports" },
-  employer: { overview: "Overview", "food-handlers": "Food Handlers", employers: "Employers", certificates: "Certificates", "global-search": "Global Search", exports: "Exports" },
-  facility_admin: { overview: "Overview", "food-handlers": "Food Handlers", employers: "Employers", certificates: "Certificates", "global-search": "Global Search", exports: "Exports" },
-  federal_admin: { overview: "Overview", "food-handlers": "Food Handlers", employers: "Employers", certificates: "Certificates", "global-search": "Global Search", exports: "Exports" },
-  super_admin: { overview: "Overview", "food-handlers": "Food Handlers", employers: "Employers", certificates: "Certificates", "global-search": "Global Search", exports: "Exports" },
-  inspector: { overview: "Overview", "food-handlers": "Food Handlers", employers: "Employers", certificates: "Certificates", "global-search": "Global Search", exports: "Exports" },
-  doctor: { overview: "Overview", "food-handlers": "Food Handlers", employers: "Employers", certificates: "Certificates", "global-search": "Global Search", exports: "Exports" },
-  lab_staff: { overview: "Overview", "food-handlers": "Food Handlers", employers: "Employers", certificates: "Certificates", "global-search": "Global Search", exports: "Exports" },
-  food_handler: { overview: "Overview", "food-handlers": "Food Handlers", employers: "Employers", certificates: "Certificates", "global-search": "Global Search", exports: "Exports" },
+  state_admin: { overview: "Overview", "food-handlers": "Food Handlers", employers: "Employers", exports: "Exports" },
+  employer: { overview: "Overview", "food-handlers": "Food Handlers", employers: "Employers", exports: "Exports" },
+  facility_admin: { overview: "Overview", "food-handlers": "Food Handlers", employers: "Employers", exports: "Exports" },
+  federal_admin: { overview: "Overview", "food-handlers": "Food Handlers", employers: "Employers", exports: "Exports" },
+  super_admin: { overview: "Overview", "food-handlers": "Food Handlers", employers: "Employers", exports: "Exports" },
+  inspector: { overview: "Overview", "food-handlers": "Food Handlers", employers: "Employers", exports: "Exports" },
+  doctor: { overview: "Overview", "food-handlers": "Food Handlers", employers: "Employers", exports: "Exports" },
+  lab_staff: { overview: "Overview", "food-handlers": "Food Handlers", employers: "Employers", exports: "Exports" },
+  food_handler: { overview: "Overview", "food-handlers": "Food Handlers", employers: "Employers", exports: "Exports" },
 };
 
 function formatDate(v?: string) { if (!v) return "—"; return new Date(v).toLocaleDateString("en-NG", { dateStyle: "medium" }); }
@@ -405,91 +404,19 @@ function BranchesTab() {
   );
 }
 
-// ── Global Search Tab ──
-function GlobalSearchTab() {
-  const [q, setQ] = useState("");
-  const { data, isLoading, isFetched } = useQuery({
-    queryKey: ["global-search", q],
-    queryFn: () => fetchGlobalSearch(q),
-    enabled: q.length >= 2,
-  });
-
-  return (
-    <div className="space-y-4">
-      <div className="relative">
-        <Globe className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400" size={18} />
-        <input className="h-12 w-full rounded-lg border border-neutral-200 bg-white pl-10 pr-4 text-base outline-none focus:border-brand-600 focus:ring-2 focus:ring-brand-100" placeholder="Search by name, certificate number, employer, branch, or ID..." type="search" value={q} onChange={(e) => setQ(e.target.value)} />
-      </div>
-      {isLoading ? <p className="text-sm text-neutral-500">Searching...</p> : isFetched && data?.results ? (
-        <div className="space-y-4">
-          {data.results.food_handlers && data.results.food_handlers.length > 0 && (
-            <div className="rounded-xl border border-neutral-200 bg-white p-4 shadow-sm">
-              <h3 className="text-sm font-bold text-neutral-900 flex items-center gap-2"><UsersRound size={14} className="text-brand-600" />Food Handlers</h3>
-              <div className="mt-2 space-y-1">
-                {data.results.food_handlers.map((fh) => (
-                  <div key={fh.id} className="flex justify-between text-sm text-neutral-700 py-1 border-b border-neutral-50 last:border-0">
-                    <span className="font-medium">{fh.full_name}</span>
-                    <span className="text-xs text-neutral-500">{fh.system_identifier} {fh.employer__business_name && `· ${fh.employer__business_name}`}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-          {data.results.employers && data.results.employers.length > 0 && (
-            <div className="rounded-xl border border-neutral-200 bg-white p-4 shadow-sm">
-              <h3 className="text-sm font-bold text-neutral-900 flex items-center gap-2"><Building2 size={14} className="text-brand-600" />Employers</h3>
-              <div className="mt-2 space-y-1">
-                {data.results.employers.map((e) => (
-                  <div key={e.id} className="text-sm text-neutral-700 py-1">{e.business_name} {e.state__name && <span className="text-xs text-neutral-500">· {e.state__name}</span>}</div>
-                ))}
-              </div>
-            </div>
-          )}
-          {data.results.certificates && data.results.certificates.length > 0 && (
-            <div className="rounded-xl border border-neutral-200 bg-white p-4 shadow-sm">
-              <h3 className="text-sm font-bold text-neutral-900 flex items-center gap-2"><BadgeCheck size={14} className="text-brand-600" />Certificates</h3>
-              <div className="mt-2 space-y-1">
-                {data.results.certificates.map((c) => (
-                  <div key={c.id} className="text-sm text-neutral-700 py-1 font-mono">{c.certificate_number} <StatusBadge status={c.status} /></div>
-                ))}
-              </div>
-            </div>
-          )}
-          {(!data.results.food_handlers?.length && !data.results.employers?.length && !data.results.certificates?.length) && (
-            <p className="text-sm text-neutral-500">No results found.</p>
-          )}
-        </div>
-      ) : q.length < 2 ? (
-        <p className="text-sm text-neutral-500">Enter at least 2 characters to search.</p>
-      ) : null}
-    </div>
-  );
-}
-
-
 // ── Overview Tab ──
 function OverviewTab() {
   return (
-    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+    <div className="grid gap-4 sm:grid-cols-2">
       <button className="rounded-xl border border-neutral-200 bg-white p-5 shadow-sm text-left hover:border-brand-200 hover:shadow transition-shadow" onClick={() => document.querySelector<HTMLButtonElement>('[data-tab="food-handlers"]')?.click()}>
         <UsersRound className="text-brand-600" size={20} />
         <h3 className="mt-3 text-sm font-bold text-neutral-900">Food Handlers</h3>
-        <p className="mt-1 text-xs text-neutral-500">Search and browse food handler profiles, certificates, and compliance.</p>
+        <p className="mt-1 text-xs text-neutral-500">Search and browse food handler profiles and compliance records.</p>
       </button>
       <button className="rounded-xl border border-neutral-200 bg-white p-5 shadow-sm text-left hover:border-brand-200 hover:shadow transition-shadow" onClick={() => document.querySelector<HTMLButtonElement>('[data-tab="employers"]')?.click()}>
         <Building2 className="text-brand-600" size={20} />
         <h3 className="mt-3 text-sm font-bold text-neutral-900">Employers</h3>
         <p className="mt-1 text-xs text-neutral-500">Browse food businesses, branches, compliance summaries.</p>
-      </button>
-      <button className="rounded-xl border border-neutral-200 bg-white p-5 shadow-sm text-left hover:border-brand-200 hover:shadow transition-shadow" onClick={() => document.querySelector<HTMLButtonElement>('[data-tab="certificates"]')?.click()}>
-        <BadgeCheck className="text-brand-600" size={20} />
-        <h3 className="mt-3 text-sm font-bold text-neutral-900">Certificates</h3>
-        <p className="mt-1 text-xs text-neutral-500">Search certificate registry by number, status, or holder.</p>
-      </button>
-      <button className="rounded-xl border border-neutral-200 bg-white p-5 shadow-sm text-left hover:border-brand-200 hover:shadow transition-shadow" onClick={() => document.querySelector<HTMLButtonElement>('[data-tab="global-search"]')?.click()}>
-        <Globe className="text-brand-600" size={20} />
-        <h3 className="mt-3 text-sm font-bold text-neutral-900">Global Search</h3>
-        <p className="mt-1 text-xs text-neutral-500">Search across food handlers, employers, and certificates.</p>
       </button>
     </div>
   );
@@ -499,8 +426,9 @@ function OverviewTab() {
 export function DirectoryLayout({ role }: { role: UserRole }) {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const tabParam = (searchParams.get("tab") ?? "overview") as TabKey;
   const tabs = TABS[role] ?? TABS.state_admin;
+  const requestedTab = searchParams.get("tab") ?? "overview";
+  const tabParam = requestedTab in tabs ? (requestedTab as TabKey) : "overview";
   const [selectedEmployer, setSelectedEmployer] = useState<DirectoryEmployer | null>(null);
 
   function setTab(tab: TabKey) {
@@ -509,7 +437,7 @@ export function DirectoryLayout({ role }: { role: UserRole }) {
   }
 
   return (
-    <PortalShell role={role} title="Directory & Registry" description="Search and browse food handlers, employers, branches, certificates, and compliance records.">
+    <PortalShell role={role} title="Directory & Registry" description="Search and browse food handlers, employers, branches, and compliance records.">
       <nav className="mb-6 flex gap-0 overflow-x-auto border-b border-neutral-200">
         {(Object.entries(tabs) as [TabKey, string][]).map(([key, label]) => (
           <button
@@ -531,14 +459,6 @@ export function DirectoryLayout({ role }: { role: UserRole }) {
       {tabParam === "employers" && (
         <EmployersTab onSelect={setSelectedEmployer} />
       )}
-      {tabParam === "certificates" && (
-        <div className="flex flex-col items-center justify-center gap-3 py-16 text-center">
-          <BadgeCheck size={32} className="text-neutral-300" />
-          <p className="text-sm font-semibold text-neutral-500">Certificate Registry Search</p>
-          <p className="text-xs text-neutral-400">Certificate search will be available in the next update.</p>
-        </div>
-      )}
-      {tabParam === "global-search" && <GlobalSearchTab />}
       {tabParam === "exports" && (
         <div className="flex flex-col items-center justify-center gap-3 py-16 text-center">
           <Activity size={32} className="text-neutral-300" />

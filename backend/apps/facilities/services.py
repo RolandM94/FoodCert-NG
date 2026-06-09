@@ -121,6 +121,9 @@ class FacilityAccreditationService:
             ]
         )
         log_action(action=AuditAction.WORKFLOW_TRANSITION, actor=reviewer, target=application, metadata={"event": "facility_approved"})
+        from apps.certificates.services import CertificateService
+
+        CertificateService.issue_facility_accreditation_certificate(application=application, actor=reviewer)
         return application
 
     @classmethod

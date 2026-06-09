@@ -2,6 +2,7 @@ from django.urls import path
 from rest_framework.routers import DefaultRouter
 
 from apps.certificates.views import (
+    AccreditationCertificateViewSet,
     CertificateRequestViewSet,
     CertificateTemplateViewSet,
     CertificateViewSet,
@@ -16,6 +17,7 @@ from apps.certificates.views import (
 router = DefaultRouter()
 router.register("certificate-requests", CertificateRequestViewSet, basename="certificate-requests")
 router.register("certificates", CertificateViewSet, basename="certificates")
+router.register("accreditation-certificates", AccreditationCertificateViewSet, basename="accreditation-certificates")
 router.register("certificate-templates", CertificateTemplateViewSet, basename="certificate-templates")
 
 urlpatterns = [

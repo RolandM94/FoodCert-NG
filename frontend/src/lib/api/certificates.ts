@@ -24,6 +24,20 @@ export type CertificateTemplate = {
 
 export type CertificateTemplatePayload = Partial<Omit<CertificateTemplate, "id" | "state_name" | "created_by" | "created_by_name" | "created_at" | "updated_at">>;
 
+export type AccreditationCertificate = {
+  id: string;
+  certificate_number: string;
+  certificate_type: "employer_accreditation" | "facility_accreditation";
+  owner_type: string;
+  owner_name: string;
+  issue_date: string;
+  expiry_date: string;
+  status: string;
+  effective_status: string;
+  verification_url: string;
+  pdf_url: string;
+};
+
 export async function requestCertificate(assessmentId: string, request_notes = ""): Promise<CertificateRequest> {
   const response = await apiClient.post<ApiEnvelope<CertificateRequest>>(
     `/assessments/${assessmentId}/request-certificate/`,
@@ -88,6 +102,11 @@ export async function listCertificates(params?: Record<string, string>): Promise
   return unwrap(response.data);
 }
 
+export async function listAccreditationCertificates(params?: Record<string, string>): Promise<AccreditationCertificate[]> {
+  const response = await apiClient.get<ApiEnvelope<AccreditationCertificate[]>>("/accreditation-certificates/", { params });
+  return unwrap(response.data);
+}
+
 export async function listCertificateTemplates(params?: Record<string, string>): Promise<CertificateTemplate[]> {
   const response = await apiClient.get<ApiEnvelope<CertificateTemplate[]>>("/certificate-templates/", { params });
   return unwrap(response.data);
@@ -120,6 +139,18 @@ export async function startCertificateRenewal(id: string): Promise<Certificate> 
 
 export async function downloadCertificatePdf(id: string, certificateNumber: string): Promise<void> {
   const response = await apiClient.get(`/certificates/${id}/download/`, { responseType: "blob" });
+  const url = window.URL.createObjectURL(response.data as Blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `${certificateNumber}.pdf`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.URL.revokeObjectURL(url);
+}
+
+export async function downloadAccreditationCertificatePdf(id: string, certificateNumber: string): Promise<void> {
+  const response = await apiClient.get(`/accreditation-certificates/${id}/download/`, { responseType: "blob" });
   const url = window.URL.createObjectURL(response.data as Blob);
   const link = document.createElement("a");
   link.href = url;

@@ -1,193 +1,179 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { BadgeCheck, Download } from "lucide-react";
+import { BadgeCheck, Download, FileCheck2 } from "lucide-react";
+import { useSearchParams } from "next/navigation";
 import { useState } from "react";
-import { CertificateAuditTimeline, CertificateLifecycleModal, CertificateRegistryTable } from "@/components/certificates/certificate-widgets";
 import { PortalShell } from "@/components/layout/portal-shell";
-import { StatusCell } from "@/components/ui/data-table";
-import { downloadCertificatePdf } from "@/lib/api/certificates";
+import { DataTable, StatusCell } from "@/components/ui/data-table";
+import { downloadAccreditationCertificatePdf, downloadCertificatePdf } from "@/lib/api/certificates";
 import {
-  fetchStateCertificates,
-  downloadStateCertificateExport,
-  fetchStateCertificateAudit,
-  reinstateStateCertificate,
-  replaceStateCertificate,
-  revokeStateCertificate,
-  suspendStateCertificate,
-  type StateCertificateRegistryItem,
+  approveStateCertificateValidationRequest,
+  approveStateFacilityApplication,
+  fetchStateUnifiedCertificateRegistry,
+  rejectStateCertificateValidationRequest,
+  rejectStateFacilityApplication,
+  requestStateCertificateValidationClarification,
+  type UnifiedCertificateRegistryItem,
+  type UnifiedCertificateRegistryTab,
 } from "@/lib/api/state";
 
-const STATUS_OPTIONS = [
-  ["", "All statuses"],
-  ["active", "Active"],
-  ["expired", "Expired"],
-  ["suspended", "Suspended"],
-  ["revoked", "Revoked"],
-  ["replaced", "Replaced"],
+const TABS: Array<{ key: UnifiedCertificateRegistryTab; label: string }> = [
+  { key: "pending_review", label: "Pending Review" },
+  { key: "food_handler_certificates", label: "Food Handler Certificates" },
+  { key: "employer_accreditation_certificates", label: "Employer Accreditation Certificates" },
+  { key: "facility_accreditation_certificates", label: "Facility Accreditation Certificates" },
 ];
 
-const EXPIRY_OPTIONS = [
-  ["", "Any expiry"],
-  ["7", "Expiring in 7 days"],
-  ["30", "Expiring in 30 days"],
-  ["60", "Expiring in 60 days"],
-  ["expired", "Expired"],
-];
+type PendingAction = "approve" | "reject" | "request-clarification";
 
-type ActionName = "suspend" | "reinstate" | "revoke" | "replace";
-
-function dateLabel(value?: string) {
-  if (!value) return "Not set";
+function dateLabel(value?: string | null) {
+  if (!value) return "Not issued";
   return new Date(value).toLocaleDateString("en-NG", { dateStyle: "medium" });
 }
 
-function canManage(row: StateCertificateRegistryItem) {
-  return ["active", "suspended"].includes(row.status);
+function recordLabel(recordType: string) {
+  return recordType.replaceAll("_", " ");
 }
 
 export default function Page() {
+  const params = useSearchParams();
   const queryClient = useQueryClient();
+  const [tab, setTab] = useState<UnifiedCertificateRegistryTab>((params.get("tab") as UnifiedCertificateRegistryTab) || "pending_review");
   const [search, setSearch] = useState("");
-  const [status, setStatus] = useState("");
-  const [expiryWindow, setExpiryWindow] = useState("");
-  const [actionTarget, setActionTarget] = useState<{ certificate: StateCertificateRegistryItem; action: ActionName } | null>(null);
-  const [auditTarget, setAuditTarget] = useState<StateCertificateRegistryItem | null>(null);
-  const [reason, setReason] = useState("");
-  const [exporting, setExporting] = useState(false);
+  const [actionTarget, setActionTarget] = useState<{ row: UnifiedCertificateRegistryItem; action: PendingAction } | null>(null);
+  const [notes, setNotes] = useState("");
 
-  const certificatesQuery = useQuery({
-    queryKey: ["state-certificates", search, status, expiryWindow],
-    queryFn: () => fetchStateCertificates({
-      search: search || undefined,
-      status: status || undefined,
-      expiry_window: expiryWindow || undefined,
-    }),
+  const registryQuery = useQuery({
+    queryKey: ["state-unified-certificate-registry", tab, search],
+    queryFn: () => fetchStateUnifiedCertificateRegistry({ tab, search: search || undefined }),
   });
 
-  const lifecycleMutation = useMutation({
-    mutationFn: ({ certificate, action, lifecycleReason }: { certificate: StateCertificateRegistryItem; action: ActionName; lifecycleReason: string }) =>
-      action === "suspend" ? suspendStateCertificate(certificate.id, lifecycleReason)
-        : action === "reinstate" ? reinstateStateCertificate(certificate.id, lifecycleReason)
-          : action === "replace" ? replaceStateCertificate(certificate.id, lifecycleReason)
-            : revokeStateCertificate(certificate.id, lifecycleReason),
+  const actionMutation = useMutation({
+    mutationFn: async ({ row, action, reviewNotes }: { row: UnifiedCertificateRegistryItem; action: PendingAction; reviewNotes: string }) => {
+      if (row.record_type === "food_handler_certificate_request") {
+        if (action === "approve") return approveStateCertificateValidationRequest(row.source_id, reviewNotes);
+        if (action === "reject") return rejectStateCertificateValidationRequest(row.source_id, reviewNotes);
+        return requestStateCertificateValidationClarification(row.source_id, reviewNotes);
+      }
+      if (row.record_type === "facility_accreditation_application") {
+        if (action === "approve") return approveStateFacilityApplication(row.source_id, reviewNotes);
+        return rejectStateFacilityApplication(row.source_id, reviewNotes);
+      }
+      throw new Error("No workflow action is available for this record.");
+    },
     onSuccess: () => {
       setActionTarget(null);
-      setReason("");
-      queryClient.invalidateQueries({ queryKey: ["state-certificates"] });
+      setNotes("");
+      queryClient.invalidateQueries({ queryKey: ["state-unified-certificate-registry"] });
     },
   });
 
-  const auditQuery = useQuery({
-    queryKey: ["state-certificate-audit", auditTarget?.id],
-    queryFn: () => fetchStateCertificateAudit(auditTarget!.id),
-    enabled: !!auditTarget,
-  });
-
-  const certificates = certificatesQuery.data || [];
+  const rows = registryQuery.data || [];
 
   return (
-    <PortalShell role="state_admin" title="Certificates" description="Search and manage issued, revoked, suspended, and expired certificates.">
+    <PortalShell role="state_admin" title="Certificate Registry" description="Review pending certificate work and manage issued food handler, employer, and facility accreditation certificates.">
       <div className="grid gap-5">
         <section className="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm">
-          <div className="grid gap-3 md:grid-cols-[1fr_220px_220px]">
-            <label className="grid gap-1 text-xs font-bold uppercase tracking-wide text-neutral-500">
-              Search
-              <input className="h-10 rounded border border-neutral-200 bg-neutral-50 px-3 text-sm normal-case tracking-normal text-neutral-700" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Certificate, handler, employer, facility" />
-            </label>
-            <label className="grid gap-1 text-xs font-bold uppercase tracking-wide text-neutral-500">
-              Status
-              <select className="h-10 rounded border border-neutral-200 bg-white px-3 text-sm normal-case tracking-normal text-neutral-700" value={status} onChange={(event) => setStatus(event.target.value)}>
-                {STATUS_OPTIONS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-              </select>
-            </label>
-            <label className="grid gap-1 text-xs font-bold uppercase tracking-wide text-neutral-500">
-              Expiry
-              <select className="h-10 rounded border border-neutral-200 bg-white px-3 text-sm normal-case tracking-normal text-neutral-700" value={expiryWindow} onChange={(event) => setExpiryWindow(event.target.value)}>
-                {EXPIRY_OPTIONS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-              </select>
-            </label>
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+            <div className="flex flex-wrap gap-2">
+              {TABS.map((item) => (
+                <button
+                  className={`rounded px-3 py-2 text-sm font-bold ${tab === item.key ? "bg-brand-600 text-white" : "border border-neutral-200 text-neutral-700 hover:bg-neutral-50"}`}
+                  key={item.key}
+                  onClick={() => setTab(item.key)}
+                  type="button"
+                >
+                  {item.label}
+                </button>
+              ))}
+            </div>
+            <input
+              className="h-10 w-full rounded border border-neutral-200 bg-neutral-50 px-3 text-sm lg:w-80"
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Search owner, certificate, status"
+              value={search}
+            />
           </div>
-          <button
-            className="mt-3 inline-flex h-10 items-center gap-2 rounded border border-neutral-200 bg-white px-3 text-sm font-bold text-neutral-700 hover:bg-neutral-50 disabled:opacity-50"
-            disabled={exporting}
-            onClick={async () => {
-              setExporting(true);
-              try {
-                await downloadStateCertificateExport();
-              } finally {
-                setExporting(false);
-              }
-            }}
-            type="button"
-          >
-            <Download size={16} />
-            Export registry
-          </button>
         </section>
 
         <section className="grid gap-3">
           <div className="flex items-center gap-2">
-            <BadgeCheck className="text-brand-700" size={18} />
-            <h2 className="text-base font-bold text-neutral-900">Certificate Registry</h2>
+            {tab === "pending_review" ? <FileCheck2 className="text-brand-700" size={18} /> : <BadgeCheck className="text-brand-700" size={18} />}
+            <h2 className="text-base font-bold text-neutral-900">{TABS.find((item) => item.key === tab)?.label}</h2>
           </div>
-          {certificatesQuery.isError ? <p className="rounded bg-danger-50 p-3 text-sm font-semibold text-danger-700">Could not load certificates.</p> : null}
-          <CertificateRegistryTable<StateCertificateRegistryItem>
+          {registryQuery.isError ? <p className="rounded bg-danger-50 p-3 text-sm font-semibold text-danger-700">Could not load certificate registry.</p> : null}
+          <DataTable<UnifiedCertificateRegistryItem>
             columns={[
-              { key: "certificate", header: "Certificate", render: (row) => <div><p className="font-bold text-neutral-900">{row.certificate_number}</p><p className="text-xs text-neutral-500">{row.issuing_state_name}</p></div> },
-              { key: "handler", header: "Food handler", render: (row) => <div><p className="font-semibold text-neutral-800">{row.food_handler_name || "Unknown"}</p><p className="text-xs text-neutral-500">{row.food_handler_category?.replaceAll("_", " ") || "No category"}</p></div> },
-              { key: "employer", header: "Employer", render: (row) => row.employer_name || "Not linked" },
-              { key: "facility", header: "Facility", render: (row) => row.facility_name || "Unknown" },
-              { key: "expiry", header: "Issue / Expiry", render: (row) => `${dateLabel(row.issue_date)} - ${dateLabel(row.expiry_date)}` },
-              { key: "status", header: "Status", render: (row) => <StatusCell status={row.effective_status || row.status} /> },
+              { key: "owner", header: "Owner", render: (row) => <div><p className="font-bold text-neutral-900">{row.owner_name || "Unknown"}</p><p className="text-xs capitalize text-neutral-500">{row.owner_type.replaceAll("_", " ")}</p></div> },
+              { key: "record", header: "Record", render: (row) => <span className="capitalize">{recordLabel(row.record_type)}</span> },
+              { key: "certificate", header: "Certificate", render: (row) => row.certificate_number || "Not issued" },
+              { key: "state", header: "State", render: (row) => row.issuing_state_name || "Not set" },
+              { key: "dates", header: "Issue / Expiry", render: (row) => `${dateLabel(row.issue_date)} - ${dateLabel(row.expiry_date)}` },
+              { key: "status", header: "Status", render: (row) => <StatusCell status={row.status} /> },
               {
                 key: "actions",
                 header: "Actions",
                 render: (row) => (
                   <div className="flex flex-wrap gap-2">
-                    <button className="inline-flex h-8 items-center gap-1 rounded border border-neutral-200 px-3 text-xs font-bold text-neutral-700 hover:bg-neutral-50" onClick={() => void downloadCertificatePdf(row.id, row.certificate_number)} type="button"><Download size={13} /> PDF</button>
-                    {canManage(row) && row.status === "active" ? <button className="h-8 rounded border border-neutral-200 px-3 text-xs font-bold text-neutral-700 hover:bg-neutral-50" onClick={() => setActionTarget({ certificate: row, action: "suspend" })} type="button">Suspend</button> : null}
-                    {canManage(row) && row.status === "suspended" ? <button className="h-8 rounded border border-brand-200 px-3 text-xs font-bold text-brand-700 hover:bg-brand-50" onClick={() => setActionTarget({ certificate: row, action: "reinstate" })} type="button">Reinstate</button> : null}
-                    {canManage(row) && row.status !== "revoked" ? <button className="h-8 rounded border border-warning-100 px-3 text-xs font-bold text-warning-700 hover:bg-warning-50" onClick={() => setActionTarget({ certificate: row, action: "replace" })} type="button">Replace</button> : null}
-                    {canManage(row) ? <button className="h-8 rounded border border-danger-100 px-3 text-xs font-bold text-danger-700 hover:bg-danger-50" onClick={() => setActionTarget({ certificate: row, action: "revoke" })} type="button">Revoke</button> : null}
-                    <button className="h-8 rounded border border-neutral-200 px-3 text-xs font-bold text-neutral-700 hover:bg-neutral-50" onClick={() => setAuditTarget(row)} type="button">Audit</button>
+                    {tab === "pending_review" && ["food_handler_certificate_request", "facility_accreditation_application"].includes(row.record_type) ? (
+                      <>
+                        <button className="h-8 rounded border border-brand-200 px-3 text-xs font-bold text-brand-700" onClick={() => setActionTarget({ row, action: "approve" })} type="button">Approve</button>
+                        <button className="h-8 rounded border border-danger-100 px-3 text-xs font-bold text-danger-700" onClick={() => setActionTarget({ row, action: "reject" })} type="button">Reject</button>
+                        {row.record_type === "food_handler_certificate_request" ? (
+                          <button className="h-8 rounded border border-neutral-200 px-3 text-xs font-bold text-neutral-700" onClick={() => setActionTarget({ row, action: "request-clarification" })} type="button">Clarify</button>
+                        ) : null}
+                      </>
+                    ) : null}
+                    {tab !== "pending_review" && row.certificate_number ? (
+                      <button
+                        className="inline-flex h-8 items-center gap-1 rounded border border-neutral-200 px-3 text-xs font-bold text-neutral-700 hover:bg-neutral-50"
+                        onClick={() => {
+                          if (row.record_type === "food_handler_certificate") {
+                            void downloadCertificatePdf(row.source_id, row.certificate_number);
+                          } else {
+                            void downloadAccreditationCertificatePdf(row.source_id, row.certificate_number);
+                          }
+                        }}
+                        type="button"
+                      >
+                        <Download size={13} /> PDF
+                      </button>
+                    ) : null}
                   </div>
                 ),
               },
             ]}
-            rows={certificates}
-            empty={certificatesQuery.isLoading ? "Loading certificates..." : "No certificates match the current filters."}
+            rows={rows}
+            empty={registryQuery.isLoading ? "Loading certificate registry..." : "No records match this tab or search."}
           />
         </section>
       </div>
 
       {actionTarget ? (
-        <CertificateLifecycleModal
-          certificateNumber={actionTarget.certificate.certificate_number}
-          isError={lifecycleMutation.isError}
-          isPending={lifecycleMutation.isPending}
-          onCancel={() => setActionTarget(null)}
-          onSubmit={() => lifecycleMutation.mutate({ certificate: actionTarget.certificate, action: actionTarget.action, lifecycleReason: reason })}
-          reason={reason}
-          setReason={setReason}
-          title={`${actionTarget.action} certificate`}
-        />
-      ) : null}
-
-      {auditTarget ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-neutral-900/50 p-4">
-          <div className="w-full max-w-2xl rounded-lg border border-neutral-200 bg-white shadow-xl">
+          <div className="w-full max-w-md rounded-lg border border-neutral-200 bg-white shadow-xl">
             <div className="border-b border-neutral-100 px-6 py-4">
-              <h2 className="text-lg font-bold text-neutral-900">Certificate audit</h2>
-              <p className="mt-1 text-sm text-neutral-500">{auditTarget.certificate_number}</p>
+              <h2 className="text-lg font-bold capitalize text-neutral-900">{actionTarget.action.replace("-", " ")} review</h2>
+              <p className="mt-1 text-sm text-neutral-500">{actionTarget.row.owner_name}</p>
             </div>
-            <div className="max-h-[60vh] overflow-auto p-6">
-              {!auditQuery.isLoading ? <CertificateAuditTimeline items={auditQuery.data || []} /> : null}
-              {auditQuery.isLoading ? <p className="text-sm text-neutral-500">Loading audit events...</p> : null}
-            </div>
-            <div className="border-t border-neutral-100 px-6 py-4 text-right">
-              <button className="h-10 rounded border border-neutral-200 px-4 text-sm font-semibold text-neutral-600 hover:bg-neutral-50" onClick={() => setAuditTarget(null)} type="button">Close</button>
-            </div>
+            <form
+              className="grid gap-4 p-6"
+              onSubmit={(event) => {
+                event.preventDefault();
+                actionMutation.mutate({ row: actionTarget.row, action: actionTarget.action, reviewNotes: notes });
+              }}
+            >
+              <label className="grid gap-1 text-sm font-semibold text-neutral-700">
+                Review notes
+                <textarea className="rounded border border-neutral-200 bg-neutral-50 px-3 py-2 text-sm" rows={3} value={notes} onChange={(event) => setNotes(event.target.value)} />
+              </label>
+              {actionMutation.isError ? <p className="rounded bg-danger-50 px-3 py-2 text-sm font-semibold text-danger-700">Could not complete this action.</p> : null}
+              <div className="flex justify-end gap-3">
+                <button className="h-10 rounded border border-neutral-200 px-4 text-sm font-semibold text-neutral-600 hover:bg-neutral-50" onClick={() => setActionTarget(null)} type="button">Cancel</button>
+                <button className="h-10 rounded bg-brand-600 px-4 text-sm font-bold capitalize text-white hover:bg-brand-700 disabled:opacity-60" disabled={actionMutation.isPending} type="submit">{actionTarget.action.replace("-", " ")}</button>
+              </div>
+            </form>
           </div>
         </div>
       ) : null}

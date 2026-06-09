@@ -2,9 +2,10 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Save, AlertCircle, Building2 } from "lucide-react";
+import { Save, AlertCircle, Building2, Download } from "lucide-react";
 import { PortalShell } from "@/components/layout/portal-shell";
 import { apiClient, unwrap } from "@/lib/api/client";
+import { downloadAccreditationCertificatePdf, listAccreditationCertificates, type AccreditationCertificate } from "@/lib/api/certificates";
 
 type EmployerProfile = {
   id: string;
@@ -49,6 +50,7 @@ const CATEGORIES = [
 export default function Page() {
   const router = useRouter();
   const [profile, setProfile] = useState<EmployerProfile | null>(null);
+  const [accreditationCertificates, setAccreditationCertificates] = useState<AccreditationCertificate[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -74,7 +76,9 @@ export default function Page() {
           ward: data.ward,
           number_of_food_handlers: data.number_of_food_handlers,
         });
+        return listAccreditationCertificates({ certificate_type: "employer_accreditation" });
       })
+      .then((certificates) => setAccreditationCertificates(certificates))
       .catch(() => setError("Failed to load profile. Are you registered as an employer?"))
       .finally(() => setLoading(false));
   }, [router]);
@@ -113,6 +117,35 @@ export default function Page() {
   return (
     <PortalShell role="employer" title="Business Profile" description="Manage your business details, contact information, and establishment category.">
       <form className="grid gap-5" onSubmit={handleSave}>
+        <div className="rounded-lg border border-neutral-200 bg-white p-5 shadow-sm">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h2 className="text-sm font-bold text-neutral-900">Employer Accreditation Certificate</h2>
+              <p className="mt-1 text-xs text-neutral-500">Your business accreditation document is linked directly to this employer profile.</p>
+            </div>
+            {accreditationCertificates[0]?.certificate_number ? (
+              <button
+                className="inline-flex h-10 items-center justify-center gap-2 rounded border border-neutral-200 px-3 text-sm font-bold text-neutral-700 hover:bg-neutral-50"
+                onClick={() => void downloadAccreditationCertificatePdf(accreditationCertificates[0].id, accreditationCertificates[0].certificate_number)}
+                type="button"
+              >
+                <Download size={16} />
+                Download PDF
+              </button>
+            ) : null}
+          </div>
+          {accreditationCertificates[0] ? (
+            <div className="mt-4 grid gap-3 text-sm sm:grid-cols-4">
+              <div><span className="text-xs font-bold uppercase text-neutral-500">Certificate</span><p className="font-semibold text-neutral-900">{accreditationCertificates[0].certificate_number}</p></div>
+              <div><span className="text-xs font-bold uppercase text-neutral-500">Status</span><p className="font-semibold capitalize text-neutral-900">{accreditationCertificates[0].effective_status.replaceAll("_", " ")}</p></div>
+              <div><span className="text-xs font-bold uppercase text-neutral-500">Issued</span><p className="font-semibold text-neutral-900">{new Date(accreditationCertificates[0].issue_date).toLocaleDateString("en-NG", { dateStyle: "medium" })}</p></div>
+              <div><span className="text-xs font-bold uppercase text-neutral-500">Expires</span><p className="font-semibold text-neutral-900">{new Date(accreditationCertificates[0].expiry_date).toLocaleDateString("en-NG", { dateStyle: "medium" })}</p></div>
+            </div>
+          ) : (
+            <p className="mt-4 rounded bg-neutral-50 p-3 text-sm text-neutral-600">No employer accreditation certificate has been issued yet.</p>
+          )}
+        </div>
+
         <div className="rounded-lg border border-neutral-200 bg-white p-5 shadow-sm">
           <div className="flex items-center gap-3 mb-5">
             <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-brand-50 text-brand-700">

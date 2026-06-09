@@ -1,9 +1,10 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { AlertCircle, FileText, RefreshCw, Save, Send, Upload } from "lucide-react";
+import { AlertCircle, Download, FileText, RefreshCw, Save, Send, Upload } from "lucide-react";
 import { PortalShell } from "@/components/layout/portal-shell";
 import { StatusBadge } from "@/components/status/status-badge";
+import { downloadAccreditationCertificatePdf, listAccreditationCertificates, type AccreditationCertificate } from "@/lib/api/certificates";
 import {
   createFacilityAccreditation,
   getCurrentMedicalFacility,
@@ -75,6 +76,7 @@ function latestApplication(applications: FacilityAccreditationApplication[]) {
 export default function Page() {
   const [facility, setFacility] = useState<MedicalFacility | null>(null);
   const [applications, setApplications] = useState<FacilityAccreditationApplication[]>([]);
+  const [accreditationCertificates, setAccreditationCertificates] = useState<AccreditationCertificate[]>([]);
   const [documents, setDocuments] = useState<FacilityDocument[]>([]);
   const [checklist, setChecklist] = useState<ChecklistForm>(emptyChecklist);
   const [documentType, setDocumentType] = useState("facility_license");
@@ -92,13 +94,15 @@ export default function Page() {
     setError("");
     try {
       const profile = await getCurrentMedicalFacility();
-      const [apps, docs] = await Promise.all([
+      const [apps, docs, certificates] = await Promise.all([
         listFacilityAccreditations(),
         listFacilityDocuments({ facility: profile.id }),
+        listAccreditationCertificates({ certificate_type: "facility_accreditation" }),
       ]);
       setFacility(profile);
       setApplications(apps);
       setDocuments(docs);
+      setAccreditationCertificates(certificates);
       setChecklist(buildChecklist(latestApplication(apps)));
     } catch {
       setError("Could not load accreditation workflow.");
@@ -222,6 +226,35 @@ export default function Page() {
             </div>
           </section>
         ) : null}
+
+        <section className="rounded-lg border border-neutral-200 bg-white p-5 shadow-sm">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h2 className="text-sm font-bold text-neutral-900">Facility Accreditation Certificate</h2>
+              <p className="mt-1 text-xs text-neutral-500">Your accreditation document is linked directly to this medical facility.</p>
+            </div>
+            {accreditationCertificates[0]?.certificate_number ? (
+              <button
+                className="inline-flex h-10 items-center justify-center gap-2 rounded border border-neutral-200 px-3 text-sm font-bold text-neutral-700 hover:bg-neutral-50"
+                onClick={() => void downloadAccreditationCertificatePdf(accreditationCertificates[0].id, accreditationCertificates[0].certificate_number)}
+                type="button"
+              >
+                <Download size={16} />
+                Download PDF
+              </button>
+            ) : null}
+          </div>
+          {accreditationCertificates[0] ? (
+            <div className="mt-4 grid gap-3 text-sm sm:grid-cols-4">
+              <div><span className="text-xs font-bold uppercase text-neutral-500">Certificate</span><p className="font-semibold text-neutral-900">{accreditationCertificates[0].certificate_number}</p></div>
+              <div><span className="text-xs font-bold uppercase text-neutral-500">Status</span><p className="font-semibold capitalize text-neutral-900">{accreditationCertificates[0].effective_status.replaceAll("_", " ")}</p></div>
+              <div><span className="text-xs font-bold uppercase text-neutral-500">Issued</span><p className="font-semibold text-neutral-900">{formatDate(accreditationCertificates[0].issue_date)}</p></div>
+              <div><span className="text-xs font-bold uppercase text-neutral-500">Expires</span><p className="font-semibold text-neutral-900">{formatDate(accreditationCertificates[0].expiry_date)}</p></div>
+            </div>
+          ) : (
+            <p className="mt-4 rounded bg-neutral-50 p-3 text-sm text-neutral-600">No facility accreditation certificate has been issued yet.</p>
+          )}
+        </section>
 
         <section className="rounded-lg border border-neutral-200 bg-white p-5 shadow-sm">
           <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">

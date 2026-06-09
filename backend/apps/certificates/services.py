@@ -23,6 +23,8 @@ from apps.assessments.services import AssessmentService
 from apps.audit.models import AuditAction
 from apps.audit.services import log_action
 from apps.certificates.models import (
+    AccreditationCertificate,
+    AccreditationCertificateType,
     Certificate,
     CertificateRequest,
     CertificateRequestStatus,
@@ -31,6 +33,8 @@ from apps.certificates.models import (
     CertificateTemplateScope,
     VerificationResult,
 )
+from apps.employers.models import ComplianceStatus
+from apps.facilities.models import AccreditationStatus
 from apps.food_handlers.models import FoodHandlerStatus
 from apps.illness.models import ClearanceStatus, IllnessReport
 from apps.policy.models import StatePolicyConfig
@@ -364,8 +368,20 @@ class CertificateService:
     def verification_token(cls):
         while True:
             token = secrets.token_urlsafe(32)
-            if not Certificate.objects.filter(verification_token=token).exists():
+            if not Certificate.objects.filter(verification_token=token).exists() and not AccreditationCertificate.objects.filter(verification_token=token).exists():
                 return token
+
+    @classmethod
+    def accreditation_certificate_number(cls, state_code, certificate_type):
+        today = timezone.localdate()
+        type_part = "EMP" if certificate_type == AccreditationCertificateType.EMPLOYER else "FAC"
+        prefix = f"FCNG-{state_code}-{today:%Y}-{type_part}"
+        sequence = AccreditationCertificate.objects.filter(certificate_number__startswith=f"{prefix}-").count() + 1
+        while True:
+            number = f"{prefix}-{sequence:06d}-{secrets.token_hex(1).upper()}"
+            if not AccreditationCertificate.objects.filter(certificate_number=number).exists():
+                return number
+            sequence += 1
 
     @classmethod
     def signature_hash(
@@ -389,6 +405,32 @@ class CertificateService:
                 str(facility_id or ""),
                 str(issuing_state_id or ""),
                 str(doctor_id or ""),
+                str(issue_date),
+                str(expiry_date),
+                str(verification_token or ""),
+                settings.SECRET_KEY,
+            ]
+        )
+        return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+    @classmethod
+    def accreditation_signature_hash(
+        cls,
+        *,
+        certificate_number,
+        certificate_type,
+        owner_id,
+        issue_date,
+        expiry_date,
+        issuing_state_id=None,
+        verification_token="",
+    ):
+        payload = ":".join(
+            [
+                str(certificate_number),
+                str(certificate_type),
+                str(owner_id),
+                str(issuing_state_id or ""),
                 str(issue_date),
                 str(expiry_date),
                 str(verification_token or ""),
@@ -597,6 +639,212 @@ class CertificateService:
         pdf.save()
         output_path.write_bytes(buffer.getvalue())
         return _absolute_media_url(relative_path)
+
+    @classmethod
+    def write_accreditation_pdf(cls, *, certificate):
+        relative_path = f"certificates/pdf/{certificate.certificate_number}.pdf"
+        output_path = Path(settings.MEDIA_ROOT) / relative_path
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        buffer = BytesIO()
+        pdf = canvas.Canvas(buffer, pagesize=A4)
+        width, height = A4
+        pdf.setTitle(certificate.certificate_number)
+        deep_green = colors.HexColor("#0f5132")
+        pale_green = colors.HexColor("#edf7ef")
+        ink = colors.HexColor("#17201b")
+        muted = colors.HexColor("#52645a")
+
+        pdf.setFillColor(colors.white)
+        pdf.rect(0, 0, width, height, stroke=0, fill=1)
+        pdf.setStrokeColor(deep_green)
+        pdf.setLineWidth(3)
+        pdf.rect(22, 22, width - 44, height - 44, stroke=1, fill=0)
+        pdf.setLineWidth(0.9)
+        pdf.rect(32, 32, width - 64, height - 64, stroke=1, fill=0)
+
+        coat_of_arms = Path(__file__).resolve().parent / "assets" / "nigeria-coat-of-arms.png"
+        if coat_of_arms.exists():
+            pdf.drawImage(ImageReader(str(coat_of_arms)), width / 2 - 36, height - 128, width=72, height=62, preserveAspectRatio=True, mask="auto")
+
+        pdf.setFillColor(ink)
+        pdf.setFont("Helvetica-Bold", 13)
+        pdf.drawCentredString(width / 2, height - 148, "FEDERAL REPUBLIC OF NIGERIA")
+        pdf.setFont("Helvetica-Bold", 10)
+        pdf.drawCentredString(width / 2, height - 164, f"{certificate.issuing_state.name.upper()} STATE MINISTRY OF HEALTH")
+        pdf.setStrokeColor(deep_green)
+        pdf.line(104, height - 178, width - 104, height - 178)
+
+        title = "Employer Accreditation Certificate" if certificate.certificate_type == AccreditationCertificateType.EMPLOYER else "Medical Facility Accreditation Certificate"
+        pdf.setFillColor(deep_green)
+        pdf.setFont("Times-BoldItalic", 23)
+        pdf.drawCentredString(width / 2, height - 218, title)
+        pdf.setFillColor(ink)
+        pdf.setFont("Times-Roman", 12)
+        pdf.drawCentredString(width / 2, height - 266, "This is to certify that")
+        pdf.setFillColor(deep_green)
+        pdf.setFont("Times-Bold", 22)
+        pdf.drawCentredString(width / 2, height - 300, certificate.owner_name.upper()[:54])
+        pdf.setStrokeColor(deep_green)
+        pdf.line(116, height - 311, width - 116, height - 311)
+        pdf.setFillColor(ink)
+        pdf.setFont("Times-Roman", 11)
+        pdf.drawCentredString(width / 2, height - 340, "has met the applicable FoodCert NG accreditation requirements")
+        pdf.drawCentredString(width / 2, height - 357, "and is recognised for the validity period stated below.")
+
+        pdf.setFillColor(pale_green)
+        pdf.roundRect(72, height - 508, width - 144, 102, 4, stroke=0, fill=1)
+        details = [
+            ("Certificate No.", certificate.certificate_number),
+            ("Certificate Type", certificate.get_certificate_type_display()),
+            ("Owner Type", certificate.owner_type.title()),
+            ("Issuing State", certificate.issuing_state.name),
+            ("Issue Date", certificate.issue_date.strftime("%d %b %Y")),
+            ("Expiry Date", certificate.expiry_date.strftime("%d %b %Y")),
+        ]
+        for index, (label, value) in enumerate(details):
+            column = index % 2
+            row = index // 2
+            x = 88 + column * 225
+            y = height - 430 - row * 26
+            pdf.setFillColor(muted)
+            pdf.setFont("Helvetica-Bold", 7)
+            pdf.drawString(x, y, label.upper())
+            pdf.setFillColor(ink)
+            pdf.setFont("Helvetica-Bold", 9)
+            pdf.drawString(x, y - 12, str(value or "Not provided")[:42])
+
+        qr_path = _media_path_from_url(certificate.qr_code_url)
+        if qr_path and qr_path.exists():
+            pdf.drawImage(ImageReader(str(qr_path)), 72, 91, width=86, height=86, preserveAspectRatio=True, mask="auto")
+        pdf.setFillColor(muted)
+        pdf.setFont("Helvetica-Bold", 7.5)
+        pdf.drawCentredString(115, 82, "SCAN TO VERIFY")
+
+        pdf.setStrokeColor(ink)
+        pdf.line(width - 286, 148, width - 74, 148)
+        pdf.setFillColor(ink)
+        pdf.setFont("Helvetica-Bold", 9)
+        pdf.drawCentredString(width - 180, 134, f"{certificate.issuing_state.name} State Ministry of Health"[:42])
+        pdf.setFont("Helvetica", 8)
+        pdf.drawCentredString(width - 180, 122, "Authorized Issuing Authority")
+
+        pdf.setFont("Helvetica", 7.2)
+        pdf.setFillColor(muted)
+        pdf.drawString(72, 56, "Verify authenticity using the QR code or public verification URL. Alteration renders this certificate invalid.")
+        pdf.drawRightString(width - 72, 40, f"Serial: {certificate.certificate_number}")
+        pdf.showPage()
+        pdf.save()
+        output_path.write_bytes(buffer.getvalue())
+        return _absolute_media_url(relative_path)
+
+    @classmethod
+    @transaction.atomic
+    def issue_facility_accreditation_certificate(cls, *, application, actor=None):
+        facility = application.facility
+        if application.application_status != AccreditationStatus.APPROVED or facility.accreditation_status != AccreditationStatus.APPROVED:
+            raise ValidationError("Facility accreditation must be approved before certificate issuance.")
+        issue_date = facility.accreditation_start_date or timezone.localdate()
+        expiry_date = facility.accreditation_expiry_date or facility.default_expiry_date(issue_date)
+        certificate = AccreditationCertificate.objects.filter(
+            certificate_type=AccreditationCertificateType.FACILITY,
+            facility=facility,
+            status=CertificateStatus.ACTIVE,
+        ).order_by("-issue_date", "-created_at").first()
+        if certificate:
+            return certificate
+        return cls._issue_accreditation_certificate(
+            certificate_type=AccreditationCertificateType.FACILITY,
+            owner=facility,
+            issuing_state=facility.state,
+            issue_date=issue_date,
+            expiry_date=expiry_date,
+            actor=actor,
+            facility_application=application,
+        )
+
+    @classmethod
+    @transaction.atomic
+    def issue_employer_accreditation_certificate(cls, *, employer, actor=None):
+        if employer.compliance_status != ComplianceStatus.COMPLIANT:
+            raise ValidationError("Employer must be compliant before accreditation certificate issuance.")
+        certificate = AccreditationCertificate.objects.filter(
+            certificate_type=AccreditationCertificateType.EMPLOYER,
+            employer=employer,
+            status=CertificateStatus.ACTIVE,
+            expiry_date__gte=timezone.localdate(),
+        ).order_by("-issue_date", "-created_at").first()
+        if certificate:
+            return certificate
+        issue_date = timezone.localdate()
+        expiry_date = issue_date + timezone.timedelta(days=365)
+        return cls._issue_accreditation_certificate(
+            certificate_type=AccreditationCertificateType.EMPLOYER,
+            owner=employer,
+            issuing_state=employer.state,
+            issue_date=issue_date,
+            expiry_date=expiry_date,
+            actor=actor,
+        )
+
+    @classmethod
+    def _issue_accreditation_certificate(cls, *, certificate_type, owner, issuing_state, issue_date, expiry_date, actor=None, facility_application=None):
+        number = cls.accreditation_certificate_number(issuing_state.code, certificate_type)
+        token = cls.verification_token()
+        verification_url = cls.build_verification_url(token)
+        owner_id = owner.id
+        signature = cls.accreditation_signature_hash(
+            certificate_number=number,
+            certificate_type=certificate_type,
+            owner_id=owner_id,
+            issue_date=issue_date,
+            expiry_date=expiry_date,
+            issuing_state_id=issuing_state.id,
+            verification_token=token,
+        )
+        certificate = AccreditationCertificate.objects.create(
+            certificate_number=number,
+            certificate_type=certificate_type,
+            public_id=uuid4(),
+            verification_token=token,
+            employer=owner if certificate_type == AccreditationCertificateType.EMPLOYER else None,
+            facility=owner if certificate_type == AccreditationCertificateType.FACILITY else None,
+            facility_application=facility_application,
+            issuing_state=issuing_state,
+            issued_by_state_user=actor if getattr(actor, "role", None) in {UserRole.STATE_ADMIN, UserRole.SUPER_ADMIN} else None,
+            issue_date=issue_date,
+            expiry_date=expiry_date,
+            verification_url=verification_url,
+            digital_signature_hash=signature,
+        )
+        certificate.qr_code_url = cls.write_qr_code(certificate_number=number, verification_url=verification_url)
+        certificate.pdf_url = cls.write_accreditation_pdf(certificate=certificate)
+        certificate.save(update_fields=["qr_code_url", "pdf_url", "updated_at"])
+        log_action(action=AuditAction.CERTIFICATE_EVENT, actor=actor, target=certificate, metadata={"event": "accreditation_certificate_issued"})
+        return certificate
+
+    @classmethod
+    def accreditation_verification_result_for(cls, certificate):
+        owner_id = certificate.employer_id or certificate.facility_id
+        expected_hash = cls.accreditation_signature_hash(
+            certificate_number=certificate.certificate_number,
+            certificate_type=certificate.certificate_type,
+            owner_id=owner_id,
+            issue_date=certificate.issue_date,
+            expiry_date=certificate.expiry_date,
+            issuing_state_id=certificate.issuing_state_id,
+            verification_token=certificate.verification_token,
+        )
+        if expected_hash != certificate.digital_signature_hash:
+            return VerificationResult.INVALID
+        if certificate.status == CertificateStatus.REVOKED:
+            return VerificationResult.REVOKED
+        if certificate.status == CertificateStatus.SUSPENDED:
+            return VerificationResult.SUSPENDED
+        if certificate.status != CertificateStatus.ACTIVE:
+            return VerificationResult.INVALID
+        if certificate.is_expired:
+            return VerificationResult.EXPIRED
+        return VerificationResult.VALID
 
     @classmethod
     @transaction.atomic

@@ -7,7 +7,9 @@ from apps.accounts.services import InviteService
 from apps.assessments.models import FitnessDecision, MedicalAssessment
 from apps.audit.models import AuditAction, AuditLog
 from apps.audit.services import log_action
-from apps.certificates.models import Certificate, CertificateRequest, CertificateRequestStatus, CertificateStatus, CertificateVerificationLog, SuspiciousCertificateReport, VerificationResult
+from apps.certificates.models import AccreditationCertificate, AccreditationCertificateType, Certificate, CertificateRequest, CertificateRequestStatus, CertificateStatus, CertificateVerificationLog, SuspiciousCertificateReport, VerificationResult
+from apps.certificates.services import CertificateService
+from apps.employers.models import ComplianceStatus
 from apps.facilities.models import AccreditationStatus, FacilityAccreditationApplication, FacilityType, MedicalFacility, OwnershipType
 from apps.food_handlers.models import FoodHandlerCategory, FoodHandlerProfile, Gender
 from apps.illness.models import IllnessReport
@@ -793,6 +795,16 @@ class StateCertificateRegistryEndpointTests(APITestCase):
             address="1 Registry Road",
             state=self.lagos,
         )
+        self.pending_employer = Employer.objects.create(
+            business_name="Pending Foods",
+            establishment_category=EstablishmentCategory.RESTAURANT_CAFE,
+            contact_person_name="Pending",
+            contact_person_phone="08030000009",
+            contact_person_email="pending@example.com",
+            address="9 Pending Road",
+            state=self.lagos,
+            compliance_status=ComplianceStatus.UNDER_REVIEW,
+        )
         self.facility = MedicalFacility.objects.create(
             organization=self.facility_org,
             facility_name="Registry Diagnostics",
@@ -862,6 +874,10 @@ class StateCertificateRegistryEndpointTests(APITestCase):
             verification_url="http://localhost:3000/verify/FCN-LA-REG001",
             digital_signature_hash="hash",
         )
+        self.application = FacilityAccreditationApplication.objects.create(
+            facility=self.facility,
+            application_status=AccreditationStatus.SUBMITTED,
+        )
 
     def test_state_certificate_registry_is_state_scoped(self):
         self.client.force_authenticate(self.state_admin)
@@ -887,6 +903,36 @@ class StateCertificateRegistryEndpointTests(APITestCase):
 
         self.assertEqual(len(payload(by_number)), 1)
         self.assertEqual(len(payload(by_handler)), 1)
+
+    def test_unified_registry_returns_pending_review_rows(self):
+        self.client.force_authenticate(self.state_admin)
+
+        response = self.client.get("/api/state/certificates/registry/?tab=pending_review")
+
+        self.assertEqual(response.status_code, 200)
+        record_types = {row["record_type"] for row in payload(response)}
+        self.assertIn("facility_accreditation_application", record_types)
+        self.assertIn("employer_accreditation_review", record_types)
+
+    def test_unified_registry_returns_food_handler_and_accreditation_rows(self):
+        self.employer.compliance_status = ComplianceStatus.COMPLIANT
+        self.employer.save(update_fields=["compliance_status"])
+        self.application.application_status = AccreditationStatus.APPROVED
+        self.application.save(update_fields=["application_status"])
+        self.facility.accreditation_status = AccreditationStatus.APPROVED
+        self.facility.save(update_fields=["accreditation_status"])
+        facility_certificate = CertificateService.issue_facility_accreditation_certificate(application=self.application, actor=self.state_admin)
+
+        self.client.force_authenticate(self.state_admin)
+        food_handler = self.client.get("/api/state/certificates/registry/?tab=food_handler_certificates")
+        employers = self.client.get("/api/state/certificates/registry/?tab=employer_accreditation_certificates")
+        facilities = self.client.get("/api/state/certificates/registry/?tab=facility_accreditation_certificates")
+
+        self.assertEqual(food_handler.status_code, 200)
+        self.assertTrue(any(row["certificate_number"] == "FCN-LA-REG001" for row in payload(food_handler)))
+        self.assertTrue(any(row["owner_name"] == "Registry Foods" for row in payload(employers)))
+        self.assertTrue(any(row["certificate_number"] == facility_certificate.certificate_number for row in payload(facilities)))
+        self.assertTrue(AccreditationCertificate.objects.filter(certificate_type=AccreditationCertificateType.EMPLOYER, employer=self.employer).exists())
 
     def test_suspend_requires_reason_and_updates_certificate(self):
         self.client.force_authenticate(self.state_admin)

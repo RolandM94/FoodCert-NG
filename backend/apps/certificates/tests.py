@@ -6,10 +6,10 @@ from rest_framework.test import APITestCase
 from apps.accounts.models import UserRole
 from apps.assessments.models import AssessmentStatus, FitnessDecision, MedicalAssessment
 from apps.audit.models import AuditLog
-from apps.certificates.models import Certificate, CertificateRequest, CertificateRequestStatus, CertificateStatus, CertificateTemplate, CertificateTemplateScope, SuspiciousCertificateReport, VerificationResult
+from apps.certificates.models import AccreditationCertificate, AccreditationCertificateType, Certificate, CertificateRequest, CertificateRequestStatus, CertificateStatus, CertificateTemplate, CertificateTemplateScope, SuspiciousCertificateReport, VerificationResult
 from apps.certificates.services import CertificateLifecycleJobService, CertificateService
-from apps.employers.models import Employer, EstablishmentCategory
-from apps.facilities.models import AccreditationStatus, FacilityType, MedicalFacility, OwnershipType
+from apps.employers.models import ComplianceStatus, Employer, EstablishmentCategory
+from apps.facilities.models import AccreditationStatus, FacilityAccreditationApplication, FacilityType, MedicalFacility, OwnershipType
 from apps.food_handlers.models import FoodHandlerCategory, FoodHandlerProfile, Gender
 from apps.illness.models import ClearanceStatus, IllnessReport
 from apps.inspections.models import Inspection, InspectionCertificateScan
@@ -188,6 +188,31 @@ class CertificateIssuanceTests(APITestCase):
         self.assertEqual(verify_response.status_code, 200)
         self.assertEqual(data(verify_response)["certificate_validity"], VerificationResult.VALID)
         self.assertEqual(data(verify_response)["certificate_number"], certificate.certificate_number)
+
+    def test_accreditation_certificates_are_owner_linked_and_publicly_verifiable(self):
+        application = FacilityAccreditationApplication.objects.create(
+            facility=self.facility,
+            application_status=AccreditationStatus.APPROVED,
+            reviewer=self.state_admin,
+        )
+        facility_certificate = CertificateService.issue_facility_accreditation_certificate(application=application, actor=self.state_admin)
+        self.employer.compliance_status = ComplianceStatus.COMPLIANT
+        self.employer.save(update_fields=["compliance_status"])
+        employer_certificate = CertificateService.issue_employer_accreditation_certificate(employer=self.employer, actor=self.state_admin)
+
+        self.assertEqual(facility_certificate.facility, self.facility)
+        self.assertEqual(facility_certificate.certificate_type, AccreditationCertificateType.FACILITY)
+        self.assertEqual(employer_certificate.employer, self.employer)
+        self.assertEqual(employer_certificate.certificate_type, AccreditationCertificateType.EMPLOYER)
+        self.assertTrue(media_path(facility_certificate.pdf_url).exists())
+        self.assertTrue(media_path(employer_certificate.pdf_url).exists())
+
+        self.client.force_authenticate(user=None)
+        verify_response = self.client.get(f"/api/public/certificates/verify/{facility_certificate.verification_token}/")
+
+        self.assertEqual(verify_response.status_code, 200)
+        self.assertEqual(data(verify_response)["certificate_validity"], VerificationResult.VALID)
+        self.assertEqual(data(verify_response)["owner_name"], self.facility.facility_name)
 
     def test_end_to_end_expired_suspended_reinstated_and_revoked_verification_states(self):
         certificate = self._approve_through_state_queue()

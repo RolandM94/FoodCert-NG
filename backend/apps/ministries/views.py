@@ -17,7 +17,7 @@ from apps.accounts.permissions import IsActiveUser
 from apps.accounts.services import InviteService
 from apps.audit.models import AuditAction, AuditLog
 from apps.audit.services import log_action
-from apps.certificates.models import Certificate, CertificateRequest, CertificateRequestStatus, CertificateStatus, CertificateVerificationLog, SuspiciousCertificateReport, VerificationResult
+from apps.certificates.models import AccreditationCertificate, AccreditationCertificateType, Certificate, CertificateRequest, CertificateRequestStatus, CertificateStatus, CertificateVerificationLog, SuspiciousCertificateReport, VerificationResult
 from apps.certificates.services import CertificateService
 from apps.facilities.models import AccreditationStatus, FacilityAccreditationApplication, MedicalFacility
 from apps.facilities.serializers import FacilityAccreditationApplicationSerializer, MedicalFacilitySerializer
@@ -58,7 +58,7 @@ from apps.organizations.models import OrganizationUnit
 from apps.organizations.services import create_unit, deactivate_unit, update_unit
 from apps.payments.models import ActiveStatus, AssessmentFee, PaymentTransaction, RefundRequest
 from apps.payments.serializers import AssessmentFeeSerializer, RefundRequestSerializer
-from apps.employers.models import Employer
+from apps.employers.models import ComplianceStatus, Employer
 from apps.food_handlers.models import FoodHandlerProfile
 from apps.illness.models import IllnessReport
 from apps.inspections.models import Inspection, InspectionStatus
@@ -1174,6 +1174,200 @@ class StateCertificateExportView(StateCertificateRegistryMixin, APIView):
             ])
         log_action(action=AuditAction.CERTIFICATE_EVENT, actor=request.user, metadata={"event": "state_certificate_export"})
         return response
+
+
+def _certificate_registry_row(certificate):
+    return {
+        "id": str(certificate.id),
+        "record_type": "food_handler_certificate",
+        "owner_type": "food_handler",
+        "owner_id": str(certificate.food_handler_id),
+        "owner_name": certificate.food_handler.full_name,
+        "certificate_number": certificate.certificate_number,
+        "status": certificate.effective_status,
+        "issue_date": certificate.issue_date,
+        "expiry_date": certificate.expiry_date,
+        "issuing_state_name": certificate.issuing_state.name,
+        "action_status": "",
+        "source_id": str(certificate.id),
+        "metadata": {
+            "employer_name": certificate.employer.business_name if certificate.employer_id else "",
+            "facility_name": certificate.facility.facility_name if certificate.facility_id else "",
+            "verification_url": certificate.verification_url,
+        },
+    }
+
+
+def _accreditation_registry_row(certificate):
+    return {
+        "id": str(certificate.id),
+        "record_type": certificate.certificate_type,
+        "owner_type": certificate.owner_type,
+        "owner_id": str(certificate.employer_id or certificate.facility_id or ""),
+        "owner_name": certificate.owner_name,
+        "certificate_number": certificate.certificate_number,
+        "status": certificate.effective_status,
+        "issue_date": certificate.issue_date,
+        "expiry_date": certificate.expiry_date,
+        "issuing_state_name": certificate.issuing_state.name,
+        "action_status": "",
+        "source_id": str(certificate.id),
+        "metadata": {"verification_url": certificate.verification_url, "certificate_type": certificate.certificate_type},
+    }
+
+
+def _certificate_request_registry_row(request):
+    assessment = request.assessment
+    try:
+        certificate_number = assessment.certificate.certificate_number
+    except Certificate.DoesNotExist:
+        certificate_number = ""
+    return {
+        "id": str(request.id),
+        "record_type": "food_handler_certificate_request",
+        "owner_type": "food_handler",
+        "owner_id": str(assessment.food_handler_id),
+        "owner_name": assessment.food_handler.full_name,
+        "certificate_number": certificate_number,
+        "status": request.status,
+        "issue_date": None,
+        "expiry_date": None,
+        "issuing_state_name": assessment.facility.state.name,
+        "action_status": request.status,
+        "source_id": str(request.id),
+        "metadata": {"facility_name": assessment.facility.facility_name, "assessment_id": str(assessment.id)},
+    }
+
+
+def _facility_application_registry_row(application):
+    return {
+        "id": str(application.id),
+        "record_type": "facility_accreditation_application",
+        "owner_type": "facility",
+        "owner_id": str(application.facility_id),
+        "owner_name": application.facility.facility_name,
+        "certificate_number": "",
+        "status": application.application_status,
+        "issue_date": None,
+        "expiry_date": application.facility.accreditation_expiry_date,
+        "issuing_state_name": application.facility.state.name,
+        "action_status": application.application_status,
+        "source_id": str(application.id),
+        "metadata": {"facility_type": application.facility.facility_type, "lga_name": application.facility.lga.name if application.facility.lga_id else ""},
+    }
+
+
+def _employer_review_registry_row(employer):
+    return {
+        "id": str(employer.id),
+        "record_type": "employer_accreditation_review",
+        "owner_type": "employer",
+        "owner_id": str(employer.id),
+        "owner_name": employer.business_name,
+        "certificate_number": "",
+        "status": employer.compliance_status,
+        "issue_date": None,
+        "expiry_date": None,
+        "issuing_state_name": employer.state.name,
+        "action_status": employer.compliance_status,
+        "source_id": str(employer.id),
+        "metadata": {"registration_number": employer.business_registration_number, "lga_name": employer.lga.name if employer.lga_id else ""},
+    }
+
+
+class UnifiedCertificateRegistryMixin:
+    permission_classes = [IsAuthenticated, IsActiveUser]
+
+    def base_state_id(self):
+        return None
+
+    def search_filter(self, rows):
+        search = self.request.query_params.get("search", "").strip().lower()
+        if not search:
+            return rows
+        return [
+            row for row in rows
+            if search in " ".join([row["owner_name"], row["certificate_number"], row["status"], row["record_type"]]).lower()
+        ]
+
+    def food_handler_certificates(self):
+        queryset = Certificate.objects.select_related("food_handler", "employer", "facility", "issuing_state").order_by("-issue_date", "-created_at")
+        state_id = self.base_state_id()
+        if state_id:
+            queryset = queryset.filter(issuing_state_id=state_id)
+        return [_certificate_registry_row(certificate) for certificate in queryset[:500]]
+
+    def accreditation_certificates(self, certificate_type=None):
+        queryset = AccreditationCertificate.objects.select_related("employer", "facility", "issuing_state").order_by("-issue_date", "-created_at")
+        state_id = self.base_state_id()
+        if state_id:
+            queryset = queryset.filter(issuing_state_id=state_id)
+        if certificate_type:
+            queryset = queryset.filter(certificate_type=certificate_type)
+        return [_accreditation_registry_row(certificate) for certificate in queryset[:500]]
+
+    def pending_review(self):
+        state_id = self.base_state_id()
+        certificate_requests = CertificateRequest.objects.select_related("assessment", "assessment__food_handler", "assessment__facility", "assessment__facility__state").filter(
+            status__in=[CertificateRequestStatus.PENDING_VALIDATION, CertificateRequestStatus.CORRECTION_REQUESTED],
+        )
+        facility_applications = FacilityAccreditationApplication.objects.select_related("facility", "facility__state", "facility__lga").filter(
+            application_status__in=[AccreditationStatus.SUBMITTED, AccreditationStatus.UNDER_REVIEW],
+        )
+        employers = Employer.objects.select_related("state", "lga").filter(compliance_status=ComplianceStatus.UNDER_REVIEW)
+        if state_id:
+            certificate_requests = certificate_requests.filter(assessment__facility__state_id=state_id)
+            facility_applications = facility_applications.filter(facility__state_id=state_id)
+            employers = employers.filter(state_id=state_id)
+        rows = [_certificate_request_registry_row(item) for item in certificate_requests[:200]]
+        rows += [_facility_application_registry_row(item) for item in facility_applications[:200]]
+        rows += [_employer_review_registry_row(item) for item in employers[:200]]
+        return rows
+
+    def ensure_employer_accreditation_documents(self):
+        queryset = Employer.objects.select_related("state").filter(compliance_status=ComplianceStatus.COMPLIANT)
+        state_id = self.base_state_id()
+        if state_id:
+            queryset = queryset.filter(state_id=state_id)
+        for employer in queryset[:200]:
+            CertificateService.issue_employer_accreditation_certificate(employer=employer, actor=self.request.user)
+
+    def registry_rows(self):
+        tab = self.request.query_params.get("tab", "pending_review")
+        if tab == "pending_review":
+            rows = self.pending_review()
+        elif tab == "food_handler_certificates":
+            rows = self.food_handler_certificates()
+        elif tab == "employer_accreditation_certificates":
+            self.ensure_employer_accreditation_documents()
+            rows = self.accreditation_certificates(AccreditationCertificateType.EMPLOYER)
+        elif tab == "facility_accreditation_certificates":
+            rows = self.accreditation_certificates(AccreditationCertificateType.FACILITY)
+        else:
+            rows = self.pending_review() + self.food_handler_certificates() + self.accreditation_certificates()
+        return self.search_filter(rows)[:500]
+
+
+class StateUnifiedCertificateRegistryView(UnifiedCertificateRegistryMixin, APIView):
+    permission_classes = [IsAuthenticated, IsActiveUser, IsStateMinistryUser]
+
+    def base_state_id(self):
+        if not self.request.user.state_id:
+            raise PermissionDenied("Your account is not assigned to a state.")
+        return self.request.user.state_id
+
+    def get(self, request):
+        return Response(self.registry_rows())
+
+
+class FederalUnifiedCertificateRegistryView(UnifiedCertificateRegistryMixin, APIView):
+    permission_classes = [IsAuthenticated, IsActiveUser, IsFederalMinistryUser]
+
+    def base_state_id(self):
+        return self.request.query_params.get("state")
+
+    def get(self, request):
+        return Response(self.registry_rows())
 
 
 class StateMonitoringMixin:

@@ -18,6 +18,15 @@ from apps.payments.models import PaymentReconciliationRecord, PaymentStatus, Pay
 from apps.subscriptions.models import EmployerInvoice, EmployerSubscription, InvoiceStatus, SubscriptionStatus
 
 
+def _amount_label(value):
+    if value is None:
+        return "0"
+    text = str(value)
+    if "." in text:
+        text = text.rstrip("0").rstrip(".")
+    return text or "0"
+
+
 class MinistryDashboardService:
     @classmethod
     def state_dashboard(cls, user, **filters):
@@ -82,15 +91,15 @@ class StateReportService:
                 "settlement_count": settlements.count(),
                 "paid_settlement_count": paid.count(),
                 "pending_settlement_count": pending.count(),
-                "gross_amount": str(totals["gross_amount"] or 0),
-                "facility_amount": str(totals["facility_amount"] or 0),
-                "state_amount": str(totals["state_amount"] or 0),
-                "platform_amount": str(totals["platform_amount"] or 0),
+                "gross_amount": _amount_label(totals["gross_amount"]),
+                "facility_amount": _amount_label(totals["facility_amount"]),
+                "state_amount": _amount_label(totals["state_amount"]),
+                "platform_amount": _amount_label(totals["platform_amount"]),
                 "payment_count": payments.count(),
                 "successful_payment_count": payments.filter(status=PaymentStatus.SUCCESS).count(),
-                "payment_amount": str(payment_totals["total_amount"] or 0),
+                "payment_amount": _amount_label(payment_totals["total_amount"]),
                 "refund_count": refunds.count(),
-                "refund_amount": str(refund_totals["total_amount"] or 0),
+                "refund_amount": _amount_label(refund_totals["total_amount"]),
                 "open_refund_count": refunds.exclude(status__in=[RefundStatus.REFUNDED, RefundStatus.REJECTED, RefundStatus.CANCELLED]).count(),
                 "reconciliation_issue_count": reconciliation.exclude(status__in=[ReconciliationStatus.MATCHED, ReconciliationStatus.MANUALLY_RESOLVED]).count(),
             },
@@ -102,8 +111,8 @@ class StateReportService:
                 "facility_revenue": [
                     {
                         "facility__facility_name": row["facility__facility_name"],
-                        "gross_amount": str(row["gross_amount"] or 0),
-                        "state_amount": str(row["state_amount"] or 0),
+                        "gross_amount": _amount_label(row["gross_amount"]),
+                        "state_amount": _amount_label(row["state_amount"]),
                         "total": row["total"],
                     }
                     for row in settlements.values("facility__facility_name")

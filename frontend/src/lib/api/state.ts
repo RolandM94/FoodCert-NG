@@ -360,6 +360,37 @@ export type StateCertificateRegistryItem = {
   updated_at: string;
 };
 
+export type UnifiedCertificateRegistryTab =
+  | "pending_review"
+  | "food_handler_certificates"
+  | "employer_accreditation_certificates"
+  | "facility_accreditation_certificates"
+  | "all";
+
+export type UnifiedCertificateRegistryItem = {
+  id: string;
+  record_type: string;
+  owner_type: "food_handler" | "employer" | "facility";
+  owner_id: string;
+  owner_name: string;
+  certificate_number: string;
+  status: string;
+  issue_date?: string | null;
+  expiry_date?: string | null;
+  issuing_state_name: string;
+  action_status: string;
+  source_id: string;
+  metadata: Record<string, string>;
+};
+
+export async function fetchStateUnifiedCertificateRegistry(params?: {
+  tab?: UnifiedCertificateRegistryTab;
+  search?: string;
+}): Promise<UnifiedCertificateRegistryItem[]> {
+  const response = await apiClient.get<ApiEnvelope<UnifiedCertificateRegistryItem[]>>("/state/certificates/registry/", { params });
+  return unwrap(response.data);
+}
+
 export type StateCertificateFilters = {
   search?: string;
   status?: string;

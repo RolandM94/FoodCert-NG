@@ -1,4 +1,5 @@
 import { apiClient, unwrap, type ApiEnvelope } from "@/lib/api/client";
+import type { UnifiedCertificateRegistryItem, UnifiedCertificateRegistryTab } from "@/lib/api/state";
 import type { DashboardPayload } from "@/types/reports";
 
 export async function getFederalMinistryDashboard(): Promise<DashboardPayload> {
@@ -210,6 +211,15 @@ export type FederalStateOverrideItem = {
 
 export async function fetchFederalCertificates(params?: Record<string, string>): Promise<FederalCertificateRegistryItem[]> {
   const response = await apiClient.get<ApiEnvelope<FederalCertificateRegistryItem[]>>("/federal/certificates/", { params });
+  return unwrap(response.data);
+}
+
+export async function fetchFederalUnifiedCertificateRegistry(params?: {
+  tab?: UnifiedCertificateRegistryTab;
+  state?: string;
+  search?: string;
+}): Promise<UnifiedCertificateRegistryItem[]> {
+  const response = await apiClient.get<ApiEnvelope<UnifiedCertificateRegistryItem[]>>("/federal/certificates/registry/", { params });
   return unwrap(response.data);
 }
 
