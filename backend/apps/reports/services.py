@@ -1591,10 +1591,10 @@ class DashboardService:
                         "href": "/state/certificate-requests",
                     },
                     {
-                        "name": "Illness exclusions",
+                        "name": "Illness & RTW exceptions",
                         "status": "active",
                         "count": active_illness_exclusions.count(),
-                        "href": "/state/illness-reports",
+                        "href": "/state/illness-reports?filter=active_exclusions",
                     },
                     {
                         "name": "Enforcement notices",

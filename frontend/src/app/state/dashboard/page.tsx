@@ -75,7 +75,7 @@ export default function Page() {
   const facilityRows = (sections?.recent_facility_applications || []) as FacilityRow[];
 
   return (
-    <PortalShell role="state_admin" title="State dashboard" description="Monitor FoodCert NG compliance, facilities, certificates, inspections, and illness events in your state.">
+    <PortalShell role="state_admin" title="State dashboard" description="Monitor FoodCert NG compliance, facilities, certificates, inspections, and illness exception signals in your state.">
       <div className="grid gap-6">
         <section className="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm">
           <div className="grid gap-3 md:grid-cols-5">
@@ -121,7 +121,8 @@ export default function Page() {
               <DashboardCard label="Approved facilities" value={cards.approved_facilities} icon={ShieldCheck} />
               <DashboardCard label="Pending accreditation" value={cards.pending_facility_applications} icon={Building2} detail="Facility applications awaiting state review" />
               <DashboardCard label="Pending certificate validation" value={cards.pending_certificate_validations} icon={FileCheck2} detail="Fit assessments awaiting certificate approval" />
-              <DashboardCard label="Active illness exclusions" value={cards.active_illness_exclusions} icon={HeartPulse} />
+              <DashboardCard label="Active illness exclusions" value={cards.active_illness_exclusions} icon={HeartPulse} detail="Oversight signal, not a clinical work queue" />
+              <DashboardCard label="RTW pending" value={cards.return_to_work_pending} icon={HeartPulse} detail="Return-to-work cases awaiting clearance outcome" />
               <DashboardCard label="Enforcement notices" value={cards.enforcement_notices} icon={AlertTriangle} />
               <DashboardCard label="Inspections" value={cards.inspections_conducted} icon={ClipboardCheck} />
               <DashboardCard label="Expired certificates" value={cards.expired_certificates} icon={AlertTriangle} />

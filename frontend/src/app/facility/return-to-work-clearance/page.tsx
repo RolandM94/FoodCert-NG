@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
 
 export default function Page() {
-  redirect("/food-handler/illness");
+  redirect("/facility/assessments?queue=return-to-work");
 }

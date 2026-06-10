@@ -7,7 +7,25 @@ export type EnforcementAction =
   | "sanction_recommended"
   | "escalated_to_state";
 
-export type InspectionStatus = "draft" | "in_progress" | "submitted" | "employer_response_submitted" | "closed";
+export type InspectionStatus =
+  | "draft"
+  | "assigned"
+  | "accepted"
+  | "scheduled"
+  | "in_progress"
+  | "submitted"
+  | "under_review"
+  | "returned_for_correction"
+  | "notice_issued"
+  | "corrective_action_pending"
+  | "corrective_action_submitted"
+  | "follow_up_required"
+  | "follow_up_scheduled"
+  | "resolved"
+  | "employer_response_submitted"
+  | "escalated"
+  | "closed"
+  | "cancelled";
 
 export type InspectionResponseType = "acknowledge" | "corrective_action" | "evidence" | "comment";
 

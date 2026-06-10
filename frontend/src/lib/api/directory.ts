@@ -21,6 +21,10 @@ export type DirectoryFoodHandler = {
   lga_name?: string;
   food_handler_category: string;
   current_status: string;
+  active_illness_status?: string;
+  return_to_work_status?: string;
+  exclusion_start_date?: string;
+  earliest_return_date?: string;
   home_address?: string;
   emergency_contact?: string;
   work_location?: string;

@@ -26,6 +26,10 @@ class FoodHandlerDirectorySerializer(serializers.ModelSerializer):
     state_name = serializers.CharField(source="state.name", read_only=True)
     lga_name = serializers.CharField(source="lga.name", read_only=True)
     masked_nin = serializers.SerializerMethodField()
+    active_illness_status = serializers.SerializerMethodField()
+    return_to_work_status = serializers.SerializerMethodField()
+    exclusion_start_date = serializers.SerializerMethodField()
+    earliest_return_date = serializers.SerializerMethodField()
 
     class Meta:
         model = FoodHandlerProfile
@@ -34,12 +38,33 @@ class FoodHandlerDirectorySerializer(serializers.ModelSerializer):
             "phone", "email", "gender", "date_of_birth", "passport_photo",
             "employer_id", "employer_name", "business_branch_id", "branch_name",
             "state_id", "state_name", "lga_id", "lga_name",
-            "food_handler_category", "current_status", "created_at", "updated_at",
+            "food_handler_category", "current_status", "active_illness_status",
+            "return_to_work_status", "exclusion_start_date", "earliest_return_date",
+            "created_at", "updated_at",
         )
         read_only_fields = fields
 
     def get_masked_nin(self, obj):
         return mask_nin(obj.nin)
+
+    def latest_active_illness(self, obj):
+        return obj.illness_reports.exclude(clearance_status__in=["cleared", "rejected"]).order_by("-created_at").first()
+
+    def get_active_illness_status(self, obj):
+        report = self.latest_active_illness(obj)
+        return report.clearance_status if report else ""
+
+    def get_return_to_work_status(self, obj):
+        report = self.latest_active_illness(obj)
+        return report.clearance_status if report else "not_required"
+
+    def get_exclusion_start_date(self, obj):
+        report = self.latest_active_illness(obj)
+        return report.exclusion_start_date if report else None
+
+    def get_earliest_return_date(self, obj):
+        report = self.latest_active_illness(obj)
+        return report.earliest_return_date if report else None
 
 
 class FoodHandlerDirectoryDetailSerializer(FoodHandlerDirectorySerializer):

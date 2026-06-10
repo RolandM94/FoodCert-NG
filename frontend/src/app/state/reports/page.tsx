@@ -57,7 +57,11 @@ export default function Page() {
             <select className="h-10 rounded border border-neutral-200 bg-white px-3 text-sm" value={reportType} onChange={(event) => setReportType(event.target.value)}>
               <option value="state_monthly">State monthly</option>
               <option value="inspection_outcomes">Inspection outcomes</option>
-              <option value="illness_trends">Illness trends</option>
+              <option value="illness_trends">Illness exclusion report</option>
+              <option value="return_to_work_report">Return-to-work clearance report</option>
+              <option value="employer_exclusion_compliance">Employer exclusion compliance report</option>
+              <option value="rtw_overdue">RTW overdue report</option>
+              <option value="exclusion_violation">Exclusion violation report</option>
               <option value="vaccination_coverage">Vaccination coverage</option>
             </select>
             <input className="h-10 rounded border border-neutral-200 bg-neutral-50 px-3 text-sm" type="date" value={periodStart} onChange={(event) => setPeriodStart(event.target.value)} />

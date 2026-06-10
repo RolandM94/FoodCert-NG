@@ -56,6 +56,34 @@ class IllnessReportSerializer(serializers.ModelSerializer):
         )
 
 
+class IllnessOperationalSerializer(serializers.ModelSerializer):
+    food_handler_name = serializers.CharField(source="food_handler.full_name", read_only=True)
+    employer_name = serializers.CharField(source="employer.business_name", read_only=True)
+    reviewed_by_doctor_name = serializers.CharField(source="reviewed_by_doctor.get_full_name", read_only=True)
+
+    class Meta:
+        model = IllnessReport
+        fields = (
+            "id",
+            "food_handler",
+            "food_handler_name",
+            "employer",
+            "employer_name",
+            "suspected_condition",
+            "exclusion_start_date",
+            "earliest_return_date",
+            "clearance_required",
+            "clearance_status",
+            "reviewed_by_doctor_name",
+            "reviewed_at",
+            "cleared_at",
+            "return_to_work_certificate_number",
+            "created_at",
+            "updated_at",
+        )
+        read_only_fields = fields
+
+
 class CreateIllnessReportSerializer(serializers.ModelSerializer):
     food_handler = serializers.PrimaryKeyRelatedField(queryset=FoodHandlerProfile.objects.all())
 

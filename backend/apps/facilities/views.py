@@ -397,6 +397,10 @@ class MedicalFacilityViewSet(viewsets.ModelViewSet):
             queryset = queryset.filter(lab_status=params["lab_status"])
         if params.get("decision_status"):
             queryset = queryset.filter(final_decision=params["decision_status"])
+        if params.get("assessment_type"):
+            queryset = queryset.filter(assessment_type=params["assessment_type"])
+        if params.get("queue") == "return-to-work":
+            queryset = queryset.filter(assessment_type="return_to_work")
         if params.get("employer"):
             queryset = queryset.filter(employer_id=params["employer"])
         if params.get("branch"):

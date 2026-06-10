@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
 
 export default function Page() {
-  redirect("/food-handler/illness");
+  redirect("/state/reports?category=illness_exclusion");
 }

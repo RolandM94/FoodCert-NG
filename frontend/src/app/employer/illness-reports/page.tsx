@@ -1,10 +1,10 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { HeartPulse, AlertCircle, CheckCircle2, X } from "lucide-react";
 import { PortalShell } from "@/components/layout/portal-shell";
-import { FitnessStatusBadge } from "@/components/ui/fitness-status-badge";
+import { IllnessExclusionStatusBadge, ReturnToWorkStatusBadge } from "@/components/ui/illness-status-badges";
 import { apiClient, unwrap } from "@/lib/api/client";
 
 type IllnessRow = {
@@ -13,16 +13,14 @@ type IllnessRow = {
   food_handler_name: string;
   branch_name?: string;
   suspected_condition: string;
-  symptoms: Record<string, boolean>;
-  symptom_start_date?: string;
   exclusion_start_date?: string;
   earliest_return_date?: string;
   clearance_status: string;
-  notes: string;
   created_at: string;
 };
 
 type HandlerOpt = { id: string; full_name: string; branch_name?: string };
+type FilterKey = "all" | "active_exclusions" | "return_to_work_pending" | "cleared";
 
 const SYMPTOMS = [
   "jaundice", "diarrhoea", "vomiting", "fever",
@@ -41,6 +39,7 @@ const CONDITIONS = [
 
 export default function Page() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [employerId, setEmployerId] = useState<string | null>(null);
   const [reports, setReports] = useState<IllnessRow[]>([]);
   const [handlers, setHandlers] = useState<HandlerOpt[]>([]);
@@ -49,6 +48,7 @@ export default function Page() {
   const [success, setSuccess] = useState("");
   const [showForm, setShowForm] = useState(false);
   const [sending, setSending] = useState(false);
+  const [filter, setFilter] = useState<FilterKey>((searchParams.get("filter") as FilterKey) || "all");
 
   // Form state
   const [fhId, setFhId] = useState("");
@@ -111,8 +111,37 @@ export default function Page() {
     setNotes("");
   }
 
+  function dateLabel(value?: string | null) {
+    if (!value) return "Not set";
+    return new Date(value).toLocaleDateString("en-NG", { dateStyle: "medium" });
+  }
+
+  function isActive(report: IllnessRow) {
+    return !["cleared", "rejected"].includes(report.clearance_status);
+  }
+
+  const filteredReports = reports.filter((report) => {
+    if (filter === "active_exclusions") return isActive(report);
+    if (filter === "return_to_work_pending") return ["pending", "under_review", "clearance_required"].includes(report.clearance_status);
+    if (filter === "cleared") return report.clearance_status === "cleared";
+    return true;
+  });
+
+  const metrics = {
+    active: reports.filter(isActive).length,
+    pending: reports.filter((report) => ["pending", "under_review", "clearance_required"].includes(report.clearance_status)).length,
+    cleared: reports.filter((report) => report.clearance_status === "cleared").length,
+  };
+
+  const filterOptions: Array<{ key: FilterKey; label: string; count: number }> = [
+    { key: "all", label: "All reports", count: reports.length },
+    { key: "active_exclusions", label: "Active exclusions", count: metrics.active },
+    { key: "return_to_work_pending", label: "RTW pending", count: metrics.pending },
+    { key: "cleared", label: "Cleared to return", count: metrics.cleared },
+  ];
+
   return (
-    <PortalShell role="employer" title="Illness Reports" description="Report illness among food handlers and monitor exclusion and return-to-work status.">
+    <PortalShell role="employer" title="Illness Reports" description="Report illness among food handlers and manage operational exclusion and return-to-work status.">
       <div className="flex items-center justify-between mb-5">
         <span className="text-sm text-neutral-500">{reports.length} report{reports.length !== 1 ? "s" : ""}</span>
         {!showForm && (
@@ -125,6 +154,39 @@ export default function Page() {
 
       {error && <div className="mb-4 flex items-start gap-2 rounded-lg bg-danger-50 p-3 text-sm font-semibold text-danger-700"><AlertCircle size={16} className="mt-0.5" /><span>{error}</span></div>}
       {success && <div className="mb-4 flex items-start gap-2 rounded-lg bg-brand-50 p-3 text-sm font-semibold text-brand-800"><CheckCircle2 size={16} className="mt-0.5" /><span>{success}</span></div>}
+
+      <section className="mb-5 grid gap-3 sm:grid-cols-3">
+        <div className="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm">
+          <p className="text-xs font-bold uppercase text-neutral-500">Active exclusions</p>
+          <p className="mt-2 text-2xl font-bold text-neutral-900">{metrics.active}</p>
+        </div>
+        <div className="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm">
+          <p className="text-xs font-bold uppercase text-neutral-500">Return-to-work pending</p>
+          <p className="mt-2 text-2xl font-bold text-neutral-900">{metrics.pending}</p>
+        </div>
+        <div className="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm">
+          <p className="text-xs font-bold uppercase text-neutral-500">Cleared to return</p>
+          <p className="mt-2 text-2xl font-bold text-neutral-900">{metrics.cleared}</p>
+        </div>
+      </section>
+
+      <div className="mb-5 flex flex-wrap gap-2">
+        {filterOptions.map((option) => (
+          <button
+            key={option.key}
+            className={`inline-flex h-9 items-center gap-2 rounded-full border px-3 text-xs font-bold ${
+              filter === option.key
+                ? "border-brand-600 bg-brand-50 text-brand-700"
+                : "border-neutral-200 bg-white text-neutral-600 hover:border-brand-200"
+            }`}
+            onClick={() => setFilter(option.key)}
+            type="button"
+          >
+            {option.label}
+            <span className="rounded-full bg-white px-1.5 py-0.5 text-[10px] text-neutral-500">{option.count}</span>
+          </button>
+        ))}
+      </div>
 
       {/* Form */}
       {showForm && (
@@ -189,19 +251,28 @@ export default function Page() {
           <p className="mt-1 text-xs text-neutral-400">When a food handler shows symptoms, report it here to trigger exclusion and medical review.</p>
         </div>
       )}
-      {reports.length > 0 && (
+      {reports.length > 0 && filteredReports.length === 0 && (
+        <div className="rounded-lg border border-neutral-200 bg-white p-8 text-center text-sm font-semibold text-neutral-500">
+          No illness reports match this view.
+        </div>
+      )}
+      {filteredReports.length > 0 && (
         <div className="overflow-x-auto rounded-lg border border-neutral-200 bg-white shadow-sm">
-          <table className="w-full text-sm">
-            <thead><tr className="border-b border-neutral-100 bg-neutral-50 text-left"><th className="px-4 py-2 text-xs font-bold uppercase text-neutral-500">Handler</th><th className="px-4 py-2 text-xs font-bold uppercase text-neutral-500 hidden sm:table-cell">Condition</th><th className="px-4 py-2 text-xs font-bold uppercase text-neutral-500 hidden md:table-cell">Symptoms</th><th className="px-4 py-2 text-xs font-bold uppercase text-neutral-500">Excluded</th><th className="px-4 py-2 text-xs font-bold uppercase text-neutral-500">Clearance</th><th className="px-4 py-2 text-xs font-bold uppercase text-neutral-500 hidden lg:table-cell">RTW Date</th></tr></thead>
+          <table className="w-full min-w-[960px] text-sm">
+            <thead><tr className="border-b border-neutral-100 bg-neutral-50 text-left"><th className="px-4 py-2 text-xs font-bold uppercase text-neutral-500">Food handler</th><th className="px-4 py-2 text-xs font-bold uppercase text-neutral-500">Branch</th><th className="px-4 py-2 text-xs font-bold uppercase text-neutral-500">Symptom category</th><th className="px-4 py-2 text-xs font-bold uppercase text-neutral-500">Reported</th><th className="px-4 py-2 text-xs font-bold uppercase text-neutral-500">Exclusion status</th><th className="px-4 py-2 text-xs font-bold uppercase text-neutral-500">Return-to-work</th><th className="px-4 py-2 text-xs font-bold uppercase text-neutral-500">Clearance due</th><th className="px-4 py-2 text-xs font-bold uppercase text-neutral-500">Instruction</th></tr></thead>
             <tbody className="divide-y divide-neutral-50">
-              {reports.map((r) => (
+              {filteredReports.map((r) => (
                 <tr key={r.id} className="hover:bg-neutral-50/50">
-                  <td className="px-4 py-2"><span className="text-xs text-neutral-700 font-medium">{r.food_handler_name}</span>{r.branch_name && <span className="text-[10px] text-neutral-400 block">{r.branch_name}</span>}</td>
-                  <td className="px-4 py-2 hidden sm:table-cell"><span className="text-xs text-neutral-600 capitalize">{r.suspected_condition?.replace(/_/g, " ")}</span></td>
-                  <td className="px-4 py-2 hidden md:table-cell"><span className="text-xs text-neutral-500">{Object.entries(r.symptoms || {}).filter(([, v]) => v).map(([k]) => k.replace(/_/g, " ")).join(", ") || "—"}</span></td>
-                  <td className="px-4 py-2"><span className="text-xs text-neutral-600">{r.exclusion_start_date ? new Date(r.exclusion_start_date).toLocaleDateString() : "—"}</span></td>
-                  <td className="px-4 py-2"><FitnessStatusBadge status={r.clearance_status || "pending"} /></td>
-                  <td className="px-4 py-2 hidden lg:table-cell"><span className="text-xs text-neutral-500">{r.earliest_return_date ? new Date(r.earliest_return_date).toLocaleDateString() : "—"}</span></td>
+                  <td className="px-4 py-2"><span className="text-xs text-neutral-700 font-medium">{r.food_handler_name}</span></td>
+                  <td className="px-4 py-2"><span className="text-xs text-neutral-500">{r.branch_name || "No branch"}</span></td>
+                  <td className="px-4 py-2"><span className="text-xs text-neutral-600 capitalize">{r.suspected_condition?.replace(/_/g, " ")}</span></td>
+                  <td className="px-4 py-2"><span className="text-xs text-neutral-500">{dateLabel(r.created_at)}</span></td>
+                  <td className="px-4 py-2"><IllnessExclusionStatusBadge status={isActive(r) ? r.clearance_status : "cleared"} /></td>
+                  <td className="px-4 py-2"><ReturnToWorkStatusBadge status={r.clearance_status} earliestReturnDate={r.earliest_return_date} /></td>
+                  <td className="px-4 py-2"><span className="text-xs text-neutral-500">{dateLabel(r.earliest_return_date)}</span></td>
+                  <td className="px-4 py-2 text-xs font-semibold text-neutral-600">
+                    {r.clearance_status === "cleared" ? "May return to food handling duties." : "Do not assign to food handling duties."}
+                  </td>
                 </tr>
               ))}
             </tbody>

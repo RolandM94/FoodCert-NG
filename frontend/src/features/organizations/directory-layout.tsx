@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import { PortalShell } from "@/components/layout/portal-shell";
 import { StatusBadge } from "@/components/status/status-badge";
+import { IllnessExclusionStatusBadge, ReturnToWorkStatusBadge } from "@/components/ui/illness-status-badges";
 import {
   fetchDirectoryFoodHandlers, fetchDirectoryEmployers, fetchDirectoryBranches,
 } from "@/lib/api/directory";
@@ -34,18 +35,51 @@ function formatDate(v?: string) { if (!v) return "—"; return new Date(v).toLoc
 // ── Food Handlers Tab ──
 function FoodHandlersTab() {
   const [search, setSearch] = useState("");
+  const [fitnessStatus, setFitnessStatus] = useState("");
+  const [exclusionStatus, setExclusionStatus] = useState("");
+  const [rtwStatus, setRtwStatus] = useState("");
   const { data: list, isLoading } = useQuery({
-    queryKey: ["directory-food-handlers", search],
-    queryFn: () => fetchDirectoryFoodHandlers(search ? { q: search } : {}),
+    queryKey: ["directory-food-handlers", search, fitnessStatus, exclusionStatus, rtwStatus],
+    queryFn: () => fetchDirectoryFoodHandlers({
+      ...(search ? { q: search } : {}),
+      ...(fitnessStatus ? { operational_fitness_status: fitnessStatus } : {}),
+      ...(exclusionStatus ? { illness_exclusion_status: exclusionStatus } : {}),
+      ...(rtwStatus ? { return_to_work_status: rtwStatus } : {}),
+    }),
   });
 
   const items = Array.isArray(list) ? list : [];
 
   return (
     <div className="space-y-4">
-      <div className="relative max-w-sm">
-        <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400" size={16} />
-        <input className="h-10 w-full rounded-lg border border-neutral-200 bg-white pl-9 pr-3 text-sm outline-none focus:border-brand-600 focus:ring-2 focus:ring-brand-100" placeholder="Search by name or ID..." type="search" value={search} onChange={(e) => setSearch(e.target.value)} />
+      <div className="grid gap-3 lg:grid-cols-[minmax(220px,1fr)_180px_190px_190px]">
+        <div className="relative">
+          <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400" size={16} />
+          <input className="h-10 w-full rounded-lg border border-neutral-200 bg-white pl-9 pr-3 text-sm outline-none focus:border-brand-600 focus:ring-2 focus:ring-brand-100" placeholder="Search by name or ID..." type="search" value={search} onChange={(e) => setSearch(e.target.value)} />
+        </div>
+        <select className="h-10 rounded-lg border border-neutral-200 bg-white px-3 text-sm text-neutral-700" value={fitnessStatus} onChange={(e) => setFitnessStatus(e.target.value)}>
+          <option value="">All fitness statuses</option>
+          <option value="fit">Fit</option>
+          <option value="temporarily_excluded">Temporarily excluded</option>
+          <option value="temporarily_not_fit">Temporarily not fit</option>
+          <option value="excluded">Excluded</option>
+          <option value="certification_pending">Certification pending</option>
+        </select>
+        <select className="h-10 rounded-lg border border-neutral-200 bg-white px-3 text-sm text-neutral-700" value={exclusionStatus} onChange={(e) => setExclusionStatus(e.target.value)}>
+          <option value="">All exclusion statuses</option>
+          <option value="none">No active exclusion</option>
+          <option value="pending">Active exclusion</option>
+          <option value="under_review">Under review</option>
+          <option value="clearance_required">Clearance required</option>
+        </select>
+        <select className="h-10 rounded-lg border border-neutral-200 bg-white px-3 text-sm text-neutral-700" value={rtwStatus} onChange={(e) => setRtwStatus(e.target.value)}>
+          <option value="">All RTW statuses</option>
+          <option value="not_required">Not required</option>
+          <option value="pending">Pending</option>
+          <option value="under_review">Under review</option>
+          <option value="clearance_required">Clearance required</option>
+          <option value="cleared">Cleared</option>
+        </select>
       </div>
       <section className="overflow-hidden rounded-xl border border-neutral-200 bg-white shadow-sm">
         <div className="overflow-x-auto">
@@ -58,11 +92,13 @@ function FoodHandlersTab() {
               <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-neutral-500">Branch</th>
               <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-neutral-500">State</th>
               <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-neutral-500">Status</th>
+              <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-neutral-500">Exclusion</th>
+              <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-neutral-500">Return-to-work</th>
               <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-neutral-500">Registered</th>
             </tr></thead>
             <tbody className="divide-y divide-neutral-100">
-              {isLoading ? <tr><td className="px-4 py-8 text-center text-neutral-500" colSpan={8}>Loading...</td></tr>
-              : items.length === 0 ? <tr><td className="px-4 py-8 text-center text-neutral-500" colSpan={8}>No food handlers found.</td></tr>
+              {isLoading ? <tr><td className="px-4 py-8 text-center text-neutral-500" colSpan={10}>Loading...</td></tr>
+              : items.length === 0 ? <tr><td className="px-4 py-8 text-center text-neutral-500" colSpan={10}>No food handlers found.</td></tr>
               : items.map((fh: DirectoryFoodHandler) => (
                 <tr key={fh.id} className="hover:bg-neutral-50">
                   <td className="px-4 py-3 font-semibold text-neutral-900">{fh.full_name}</td>
@@ -72,6 +108,10 @@ function FoodHandlersTab() {
                   <td className="px-4 py-3 text-neutral-600">{fh.branch_name || "—"}</td>
                   <td className="px-4 py-3 text-neutral-600">{fh.state_name || "—"}</td>
                   <td className="px-4 py-3"><StatusBadge status={fh.current_status} /></td>
+                  <td className="px-4 py-3"><IllnessExclusionStatusBadge status={fh.active_illness_status || "none"} /></td>
+                  <td className="px-4 py-3">
+                    <ReturnToWorkStatusBadge status={fh.return_to_work_status} earliestReturnDate={fh.earliest_return_date} />
+                  </td>
                   <td className="px-4 py-3 text-sm text-neutral-500">{formatDate(fh.created_at)}</td>
                 </tr>
               ))}</tbody>

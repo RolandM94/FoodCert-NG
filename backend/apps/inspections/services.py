@@ -532,13 +532,28 @@ class InspectionDashboardService:
         employer = inspection.employer
         branch = inspection.branch
         from apps.certificates.models import CertificateStatus as CertStatus
+        from apps.food_handlers.models import FoodHandlerProfile, FoodHandlerStatus
+        from apps.illness.models import ClearanceStatus, IllnessReport
 
-        food_handlers = employer.food_handler_profiles.all()
+        food_handlers = FoodHandlerProfile.objects.filter(employer=employer)
         if branch:
-            food_handlers = food_handlers.filter(organization_unit=branch)
+            food_handlers = food_handlers.filter(business_branch=branch)
 
         total_fh = food_handlers.count()
         certificates = Certificate.objects.filter(food_handler__in=food_handlers)
+        not_fit_statuses = [
+            FoodHandlerStatus.TEMPORARILY_NOT_FIT,
+            FoodHandlerStatus.TEMPORARILY_EXCLUDED,
+            FoodHandlerStatus.EXCLUDED,
+        ]
+        return_to_work_pending = IllnessReport.objects.filter(
+            food_handler__in=food_handlers,
+            clearance_status__in=[
+                ClearanceStatus.PENDING,
+                ClearanceStatus.UNDER_REVIEW,
+                ClearanceStatus.CLEARANCE_REQUIRED,
+            ],
+        ).count()
         cert_counts = {
             "total_food_handlers": total_fh,
             "active_certificates": certificates.filter(status=CertStatus.ACTIVE).count(),
@@ -546,9 +561,9 @@ class InspectionDashboardService:
             "suspended_certificates": certificates.filter(status=CertStatus.SUSPENDED).count(),
             "revoked_certificates": certificates.filter(status=CertStatus.REVOKED).count(),
             "uncertified_food_handlers": total_fh - certificates.count(),
-            "temporarily_not_fit": food_handlers.filter(is_fit=False).count(),
-            "return_to_work_pending": food_handlers.filter(is_fit=False, return_to_work_cleared_at__isnull=True).count(),
-            "vaccination_due": food_handlers.filter(vaccination_due_date__lte=timezone.now().date()).count(),
+            "temporarily_not_fit": food_handlers.filter(current_status__in=not_fit_statuses).count(),
+            "return_to_work_pending": return_to_work_pending,
+            "vaccination_due": 0,
         }
 
         critical_findings = InspectionFinding.objects.filter(
@@ -581,23 +596,59 @@ class InspectionDashboardService:
     def food_handlers_for_inspection(cls, inspection):
         employer = inspection.employer
         branch = inspection.branch
-        from apps.food_handlers.models import FoodHandlerProfile
+        from apps.food_handlers.models import FoodHandlerProfile, FoodHandlerStatus
+        from apps.illness.models import ClearanceStatus, IllnessReport
 
-        food_handlers = FoodHandlerProfile.objects.filter(employer=employer).select_related("user")
+        food_handlers = FoodHandlerProfile.objects.filter(employer=employer).select_related("user", "business_branch")
         if branch:
-            food_handlers = food_handlers.filter(organization_unit=branch)
+            food_handlers = food_handlers.filter(business_branch=branch)
 
-        return [
-            {
+        rows = []
+        active_exclusion_statuses = {
+            ClearanceStatus.PENDING,
+            ClearanceStatus.UNDER_REVIEW,
+            ClearanceStatus.CLEARANCE_REQUIRED,
+        }
+        excluded_profile_statuses = {
+            FoodHandlerStatus.TEMPORARILY_EXCLUDED,
+            FoodHandlerStatus.EXCLUDED,
+        }
+
+        for fh in food_handlers:
+            certificate = fh.certificates.order_by("-issue_date", "-created_at").first()
+            illness = IllnessReport.objects.filter(food_handler=fh).order_by("-created_at").first()
+            name = fh.full_name
+            if fh.user:
+                name = fh.user.get_full_name() or fh.user.email or fh.full_name
+            active_illness_status = "none"
+            if fh.current_status in excluded_profile_statuses:
+                active_illness_status = "excluded"
+            elif illness and illness.clearance_status in active_exclusion_statuses:
+                active_illness_status = "excluded"
+
+            rows.append({
                 "id": str(fh.id),
-                "name": fh.user.get_full_name() or fh.user.email if fh.user else fh.id.hex[:8],
-                "photo_url": fh.photo.url if fh.photo else None,
-                "certificate_status": fh.certificate_status if hasattr(fh, "certificate_status") else None,
-                "fitness_status": "fit" if fh.is_fit else "not_fit",
-                "certificate_number": fh.certificate.certificate_number if hasattr(fh, "certificate") and fh.certificate else None,
+                "name": name or fh.id.hex[:8],
+                "system_identifier": fh.system_identifier,
+                "branch_name": fh.business_branch.name if fh.business_branch else None,
+                "photo_url": fh.passport_photo.url if fh.passport_photo else None,
+                "certificate_status": certificate.effective_status if certificate else "not_issued",
+                "fitness_status": fh.current_status,
+                "certificate_id": str(certificate.id) if certificate else None,
+                "certificate_number": certificate.certificate_number if certificate else None,
+                "certificate_expiry_date": certificate.expiry_date.isoformat() if certificate else None,
+                "active_illness_status": active_illness_status,
+                "return_to_work_status": illness.clearance_status if illness else "not_applicable",
+                "exclusion_start_date": illness.exclusion_start_date.isoformat() if illness else None,
+                "earliest_return_date": illness.earliest_return_date.isoformat() if illness else None,
+                "operational_instruction": (
+                    "Remove from food handling duties and record a critical finding."
+                    if active_illness_status == "excluded"
+                    else "No RTW restriction recorded."
+                ),
             }
-            for fh in food_handlers
-        ]
+            )
+        return rows
 
     @classmethod
     def state_enforcement_dashboard(cls, user, lga_id=None, date_from=None, date_to=None):

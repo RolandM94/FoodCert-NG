@@ -172,10 +172,19 @@ export async function fetchComplianceSummary(inspectionId: string): Promise<Comp
 export type FoodHandlerBrief = {
   id: string;
   name: string;
+  system_identifier?: string;
+  branch_name?: string | null;
   photo_url: string | null;
   certificate_status: string | null;
   fitness_status: string;
+  certificate_id?: string | null;
   certificate_number: string | null;
+  certificate_expiry_date?: string | null;
+  active_illness_status?: string;
+  return_to_work_status?: string;
+  exclusion_start_date?: string | null;
+  earliest_return_date?: string | null;
+  operational_instruction?: string;
 };
 
 export async function fetchFoodHandlers(inspectionId: string): Promise<FoodHandlerBrief[]> {

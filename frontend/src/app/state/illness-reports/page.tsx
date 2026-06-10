@@ -1,10 +1,12 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { Download, HeartPulse } from "lucide-react";
+import { AlertTriangle, Download, HeartPulse } from "lucide-react";
+import { useSearchParams } from "next/navigation";
 import { useState } from "react";
 import { PortalShell } from "@/components/layout/portal-shell";
-import { DataTable, StatusCell } from "@/components/ui/data-table";
+import { DataTable } from "@/components/ui/data-table";
+import { IllnessExclusionStatusBadge, ReturnToWorkStatusBadge } from "@/components/ui/illness-status-badges";
 import { fetchStateIllnessReports, type StateIllnessMonitoringItem } from "@/lib/api/state";
 import { downloadCsv } from "@/lib/export/csv";
 
@@ -14,19 +16,42 @@ function dateLabel(value?: string | null) {
 }
 
 export default function Page() {
+  const searchParams = useSearchParams();
   const [clearanceStatus, setClearanceStatus] = useState("");
-  const [activeOnly, setActiveOnly] = useState(true);
+  const [exceptionFilter, setExceptionFilter] = useState(searchParams.get("filter") || "active_exclusions");
+  const activeOnly = exceptionFilter !== "all";
   const illnessQuery = useQuery({
     queryKey: ["state-illness-monitoring", clearanceStatus, activeOnly],
     queryFn: () => fetchStateIllnessReports({ clearance_status: clearanceStatus, active: activeOnly ? "true" : "" }),
   });
-  const rows = illnessQuery.data || [];
+  const sourceRows = illnessQuery.data || [];
+  const today = new Date(new Date().toDateString());
+  const rows = sourceRows.filter((row) => {
+    if (exceptionFilter === "overdue") {
+      return Boolean(row.earliest_return_date && !["cleared", "rejected"].includes(row.clearance_status) && new Date(row.earliest_return_date) < today);
+    }
+    if (exceptionFilter === "public_health") return row.clearance_required || row.clearance_status === "clearance_required";
+    return true;
+  });
 
   return (
-    <PortalShell role="state_admin" title="Illness reports" description="Monitor illness exclusions and return-to-work clearance without exposing private clinical notes.">
+    <PortalShell role="state_admin" title="Illness & RTW Exceptions" description="Review oversight signals for active exclusions, overdue clearances, and public-health exceptions without exposing clinical notes.">
       <div className="grid gap-5">
+        <section className="rounded-lg border border-warning-100 bg-warning-50 p-4 text-sm font-semibold text-warning-800">
+          <div className="flex items-start gap-2">
+            <AlertTriangle className="mt-0.5 shrink-0" size={16} />
+            <p>State users see exception and reporting signals only. Employers manage exclusions operationally, and medical facilities or doctors handle clearance decisions.</p>
+          </div>
+        </section>
+
         <section className="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm">
-          <div className="grid gap-3 md:grid-cols-[220px_auto_1fr_auto]">
+          <div className="grid gap-3 md:grid-cols-[220px_220px_1fr_auto]">
+            <select className="h-10 rounded border border-neutral-200 bg-white px-3 text-sm" value={exceptionFilter} onChange={(event) => setExceptionFilter(event.target.value)}>
+              <option value="active_exclusions">Active exclusions</option>
+              <option value="overdue">Overdue RTW clearance</option>
+              <option value="public_health">Public health clearance</option>
+              <option value="all">All report signals</option>
+            </select>
             <select className="h-10 rounded border border-neutral-200 bg-white px-3 text-sm" value={clearanceStatus} onChange={(event) => setClearanceStatus(event.target.value)}>
               <option value="">All clearance statuses</option>
               <option value="pending">Pending</option>
@@ -35,10 +60,6 @@ export default function Page() {
               <option value="cleared">Cleared</option>
               <option value="rejected">Rejected</option>
             </select>
-            <label className="inline-flex h-10 items-center gap-2 text-sm font-semibold text-neutral-700">
-              <input checked={activeOnly} onChange={(event) => setActiveOnly(event.target.checked)} type="checkbox" />
-              Active only
-            </label>
             <span />
             <button
               className="inline-flex h-10 items-center justify-center gap-2 rounded bg-brand-700 px-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-neutral-300"
@@ -66,7 +87,7 @@ export default function Page() {
           </div>
         </section>
         <section className="grid gap-3">
-          <div className="flex items-center gap-2"><HeartPulse className="text-brand-700" size={18} /><h2 className="text-base font-bold text-neutral-900">Illness & Return-to-Work Monitoring</h2></div>
+          <div className="flex items-center gap-2"><HeartPulse className="text-brand-700" size={18} /><h2 className="text-base font-bold text-neutral-900">Exception Queue</h2></div>
           <DataTable<StateIllnessMonitoringItem>
             columns={[
               { key: "handler", header: "Handler", render: (row) => <div><p className="font-bold text-neutral-900">{row.food_handler_name}</p><p className="text-xs text-neutral-500">{row.food_handler_category?.replaceAll("_", " ")}</p></div> },
@@ -75,10 +96,11 @@ export default function Page() {
               { key: "condition", header: "Public health flag", render: (row) => row.suspected_condition?.replaceAll("_", " ") || "Not specified" },
               { key: "exclusion", header: "Exclusion start", render: (row) => dateLabel(row.exclusion_start_date) },
               { key: "return", header: "Earliest return", render: (row) => dateLabel(row.earliest_return_date) },
-              { key: "status", header: "Clearance", render: (row) => <StatusCell status={row.clearance_status} /> },
+              { key: "exclusion_status", header: "Exclusion", render: (row) => <IllnessExclusionStatusBadge status={row.clearance_status} /> },
+              { key: "rtw_status", header: "Return-to-work", render: (row) => <ReturnToWorkStatusBadge status={row.clearance_status} earliestReturnDate={row.earliest_return_date} /> },
             ]}
             rows={rows}
-            empty={illnessQuery.isLoading ? "Loading illness reports..." : "No illness reports match the current filters."}
+            empty={illnessQuery.isLoading ? "Loading exception signals..." : "No illness or return-to-work exception signals match the current filters."}
           />
         </section>
       </div>

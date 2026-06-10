@@ -8,8 +8,20 @@ from apps.certificates.models import Certificate, CertificateRequest, Suspicious
 from apps.certificates.services import CertificateService
 from apps.employers.models import Employer, EstablishmentCategory
 from apps.facilities.models import AccreditationStatus, FacilityType, MedicalFacility, OwnershipType
-from apps.food_handlers.models import FoodHandlerCategory, FoodHandlerProfile, Gender
-from apps.inspections.models import EnforcementAction, Inspection, InspectionChecklistItem, InspectionResponse, InspectionResponseType, InspectionStatus, ChecklistCategory, ChecklistSeverity
+from apps.food_handlers.models import FoodHandlerCategory, FoodHandlerProfile, FoodHandlerStatus, Gender
+from apps.illness.models import ClearanceStatus, IllnessReport, SuspectedCondition
+from apps.inspections.models import (
+    ChecklistCategory,
+    ChecklistSeverity,
+    EnforcementAction,
+    FindingType,
+    Inspection,
+    InspectionChecklistItem,
+    InspectionFinding,
+    InspectionResponse,
+    InspectionResponseType,
+    InspectionStatus,
+)
 from apps.locations.models import State
 from apps.nin_verification.models import NINVerification, NINVerificationStatus
 from apps.notifications.models import Notification, NotificationCategory
@@ -202,6 +214,64 @@ class InspectionWorkflowTests(APITestCase):
         )
         self.assertEqual(flag_response.status_code, 201)
         self.assertEqual(SuspiciousCertificateReport.objects.count(), 1)
+
+    def test_inspector_food_handler_roster_exposes_operational_rtw_flags(self):
+        branch = OrganizationUnit.objects.create(
+            organization=self.employer_org,
+            name="Ikeja Branch",
+            unit_type=OrganizationUnitType.BRANCH,
+        )
+        certificate = self._certificate()
+        self.food_handler.business_branch = branch
+        self.food_handler.current_status = FoodHandlerStatus.TEMPORARILY_EXCLUDED
+        self.food_handler.save(update_fields=["business_branch", "current_status", "updated_at"])
+        IllnessReport.objects.create(
+            food_handler=self.food_handler,
+            employer=self.employer,
+            reported_by=self.employer_user,
+            suspected_condition=SuspectedCondition.GENERAL_DIARRHOEA_VOMITING,
+            exclusion_start_date=timezone.localdate(),
+            earliest_return_date=timezone.localdate() + timezone.timedelta(days=2),
+            clearance_status=ClearanceStatus.CLEARANCE_REQUIRED,
+        )
+        self.food_handler.current_status = FoodHandlerStatus.TEMPORARILY_EXCLUDED
+        self.food_handler.save(update_fields=["current_status", "updated_at"])
+        inspection = Inspection.objects.create(inspector=self.inspector, employer=self.employer, branch=branch)
+        self.client.force_authenticate(self.inspector)
+
+        roster_response = self.client.get(f"/api/inspections/{inspection.id}/food-handlers/")
+        self.assertEqual(roster_response.status_code, 200)
+        payload = data(roster_response)
+        self.assertEqual(len(payload), 1)
+        self.assertEqual(payload[0]["id"], str(self.food_handler.id))
+        self.assertEqual(payload[0]["certificate_number"], certificate.certificate_number)
+        self.assertEqual(payload[0]["fitness_status"], FoodHandlerStatus.TEMPORARILY_EXCLUDED)
+        self.assertEqual(payload[0]["active_illness_status"], "excluded")
+        self.assertEqual(payload[0]["return_to_work_status"], ClearanceStatus.CLEARANCE_REQUIRED)
+        self.assertNotIn("symptoms", payload[0])
+        self.assertNotIn("notes", payload[0])
+
+        finding_response = self.client.post(
+            f"/api/inspections/{inspection.id}/findings/",
+            {
+                "category": ChecklistCategory.FITNESS_EXCLUSION,
+                "finding_type": FindingType.CRITICAL_NON_COMPLIANCE,
+                "severity": ChecklistSeverity.CRITICAL,
+                "description": "Excluded food handler found handling food.",
+                "recommended_action": "Immediate removal from food handling duties, compliance notice, follow-up inspection, and State escalation if repeated or serious.",
+                "food_handler": str(self.food_handler.id),
+                "certificate": str(certificate.id),
+            },
+            format="json",
+        )
+        self.assertEqual(finding_response.status_code, 201)
+        self.assertTrue(
+            InspectionFinding.objects.filter(
+                inspection=inspection,
+                food_handler=self.food_handler,
+                severity=ChecklistSeverity.CRITICAL,
+            ).exists()
+        )
 
     def test_employer_can_view_own_inspection_report(self):
         Inspection.objects.create(inspector=self.inspector, employer=self.employer, status=InspectionStatus.SUBMITTED)

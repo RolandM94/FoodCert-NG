@@ -10,6 +10,7 @@ from apps.illness.models import IllnessReport
 from apps.illness.serializers import (
     CreateIllnessReportSerializer,
     IllnessClearanceSerializer,
+    IllnessOperationalSerializer,
     IllnessReportSerializer,
     ReviewIllnessReportSerializer,
 )
@@ -46,6 +47,9 @@ class IllnessReportViewSet(viewsets.ModelViewSet):
     def get_serializer_class(self):
         if self.action == "create":
             return CreateIllnessReportSerializer
+        user = getattr(self.request, "user", None)
+        if user and user.role in {UserRole.EMPLOYER, UserRole.INSPECTOR, UserRole.STATE_ADMIN}:
+            return IllnessOperationalSerializer
         return IllnessReportSerializer
 
     def create(self, request, *args, **kwargs):

@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AlertCircle, ClipboardList, Filter, RefreshCw, Stethoscope, UserRoundCheck } from "lucide-react";
 import { PortalShell } from "@/components/layout/portal-shell";
@@ -34,6 +35,8 @@ function label(value?: string) {
 }
 
 export default function Page() {
+  const searchParams = useSearchParams();
+  const initialQueue = searchParams.get("queue");
   const [facility, setFacility] = useState<MedicalFacility | null>(null);
   const [assessments, setAssessments] = useState<MedicalAssessment[]>([]);
   const [doctors, setDoctors] = useState<FacilityStaffProfile[]>([]);
@@ -41,7 +44,14 @@ export default function Page() {
   const [busyId, setBusyId] = useState("");
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
-  const [filters, setFilters] = useState({ status: "", doctor: "", lab_status: "", payment_status: "", decision_status: "" });
+  const [filters, setFilters] = useState({
+    status: "",
+    doctor: "",
+    lab_status: "",
+    payment_status: "",
+    decision_status: "",
+    assessment_type: initialQueue === "return-to-work" ? "return_to_work" : "",
+  });
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -117,6 +127,13 @@ export default function Page() {
           </select>
           <select className="h-10 rounded border border-neutral-200 bg-white px-3 text-sm" value={filters.payment_status} onChange={(event) => updateFilter("payment_status", event.target.value)}>
             <option value="">All payments</option><option value="success">Paid</option><option value="pending">Pending</option><option value="missing">Missing</option>
+          </select>
+          <select className="h-10 rounded border border-neutral-200 bg-white px-3 text-sm" value={filters.assessment_type} onChange={(event) => updateFilter("assessment_type", event.target.value)}>
+            <option value="">All assessment types</option>
+            <option value="standard">Standard</option>
+            <option value="renewal">Renewal</option>
+            <option value="return_to_work">Return-to-work</option>
+            <option value="high_risk">High-risk</option>
           </select>
           <select className="h-10 rounded border border-neutral-200 bg-white px-3 text-sm" value={filters.lab_status} onChange={(event) => updateFilter("lab_status", event.target.value)}>
             <option value="">All lab states</option><option value="pending">Pending</option><option value="submitted">Submitted</option><option value="reviewed">Reviewed</option>

@@ -845,7 +845,6 @@ class EmployerViewSet(viewsets.ModelViewSet):
                 "food_handler_name": fh.full_name,
                 "branch_name": fh.business_branch.name if fh.business_branch else None,
                 "suspected_condition": report.suspected_condition,
-                "symptoms": report.symptoms,
                 "exclusion_start_date": report.exclusion_start_date.isoformat() if report.exclusion_start_date else None,
                 "earliest_return_date": report.earliest_return_date.isoformat() if report.earliest_return_date else None,
                 "clearance_status": report.clearance_status,
@@ -865,12 +864,9 @@ class EmployerViewSet(viewsets.ModelViewSet):
             "food_handler_name": r.food_handler.full_name,
             "branch_name": r.food_handler.business_branch.name if r.food_handler.business_branch else None,
             "suspected_condition": r.suspected_condition,
-            "symptoms": r.symptoms,
-            "symptom_start_date": r.symptom_start_date.isoformat() if r.symptom_start_date else None,
             "exclusion_start_date": r.exclusion_start_date.isoformat() if r.exclusion_start_date else None,
             "earliest_return_date": r.earliest_return_date.isoformat() if r.earliest_return_date else None,
             "clearance_status": r.clearance_status,
-            "notes": r.notes,
             "created_at": r.created_at.isoformat(),
         } for r in reports])
 
@@ -889,16 +885,12 @@ class EmployerViewSet(viewsets.ModelViewSet):
             "food_handler_name": r.food_handler.full_name,
             "branch_name": r.food_handler.business_branch.name if r.food_handler.business_branch else None,
             "suspected_condition": r.suspected_condition,
-            "symptoms": r.symptoms,
-            "symptom_start_date": r.symptom_start_date.isoformat() if r.symptom_start_date else None,
-            "symptom_end_date": r.symptom_end_date.isoformat() if r.symptom_end_date else None,
             "exclusion_start_date": r.exclusion_start_date.isoformat() if r.exclusion_start_date else None,
             "earliest_return_date": r.earliest_return_date.isoformat() if r.earliest_return_date else None,
             "clearance_required": r.clearance_required,
             "clearance_status": r.clearance_status,
             "reviewed_by_doctor_name": r.reviewed_by_doctor.get_full_name() if r.reviewed_by_doctor else None,
             "return_to_work_certificate_number": r.return_to_work_certificate_number,
-            "notes": r.notes,
             "created_at": r.created_at.isoformat(),
         })
 

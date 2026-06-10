@@ -1,3 +1,4 @@
+from django.db import models
 from django_filters import rest_framework as filters
 from rest_framework import generics, response, views
 from rest_framework.permissions import IsAuthenticated
@@ -25,6 +26,9 @@ class FoodHandlerFilter(filters.FilterSet):
     employer = filters.UUIDFilter(field_name="employer_id")
     branch = filters.UUIDFilter(field_name="business_branch_id")
     category = filters.CharFilter(field_name="food_handler_category")
+    operational_fitness_status = filters.CharFilter(field_name="current_status")
+    illness_exclusion_status = filters.CharFilter(method="filter_illness_exclusion_status")
+    return_to_work_status = filters.CharFilter(method="filter_return_to_work_status")
     q = filters.CharFilter(method="filter_search")
 
     def filter_search(self, queryset, name, value):
@@ -32,6 +36,16 @@ class FoodHandlerFilter(filters.FilterSet):
             models.Q(full_name__icontains=value) |
             models.Q(system_identifier__icontains=value)
         )
+
+    def filter_illness_exclusion_status(self, queryset, name, value):
+        if value == "none":
+            return queryset.exclude(illness_reports__clearance_status__in=["pending", "under_review", "clearance_required"]).distinct()
+        return queryset.filter(illness_reports__clearance_status=value).distinct()
+
+    def filter_return_to_work_status(self, queryset, name, value):
+        if value == "not_required":
+            return queryset.exclude(illness_reports__clearance_status__in=["pending", "under_review", "clearance_required"]).distinct()
+        return queryset.filter(illness_reports__clearance_status=value).distinct()
 
     class Meta:
         model = FoodHandlerProfile
