@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -352,55 +352,6 @@ function EmployerDetailDrawer({
         </div>
       </div>
     </>
-  );
-}
-
-// ── Branches Tab ──
-function BranchesTab() {
-  const [search, setSearch] = useState("");
-  const { data: list, isLoading } = useQuery({
-    queryKey: ["directory-branches", search],
-    queryFn: () => fetchDirectoryBranches(search ? { q: search } : {}),
-  });
-
-  const items = Array.isArray(list) ? list : [];
-
-  return (
-    <div className="space-y-4">
-      <div className="relative max-w-sm">
-        <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400" size={16} />
-        <input className="h-10 w-full rounded-lg border border-neutral-200 bg-white pl-9 pr-3 text-sm" placeholder="Search by branch name..." type="search" value={search} onChange={(e) => setSearch(e.target.value)} />
-      </div>
-      <section className="overflow-hidden rounded-xl border border-neutral-200 bg-white shadow-sm">
-        <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-neutral-200 text-sm">
-            <thead className="bg-neutral-50"><tr>
-              <th className="px-4 py-3 text-left text-xs font-medium uppercase text-neutral-500">Branch Name</th>
-              <th className="px-4 py-3 text-left text-xs font-medium uppercase text-neutral-500">Employer</th>
-              <th className="px-4 py-3 text-left text-xs font-medium uppercase text-neutral-500">Type</th>
-              <th className="px-4 py-3 text-left text-xs font-medium uppercase text-neutral-500">Handlers</th>
-              <th className="px-4 py-3 text-left text-xs font-medium uppercase text-neutral-500">State</th>
-              <th className="px-4 py-3 text-left text-xs font-medium uppercase text-neutral-500">LGA</th>
-              <th className="px-4 py-3 text-left text-xs font-medium uppercase text-neutral-500">Status</th>
-            </tr></thead>
-            <tbody className="divide-y divide-neutral-100">
-              {isLoading ? <tr><td className="px-4 py-8 text-center text-neutral-500" colSpan={7}>Loading...</td></tr>
-              : items.length === 0 ? <tr><td className="px-4 py-8 text-center text-neutral-500" colSpan={7}>No branches found.</td></tr>
-              : items.map((b: DirectoryBranch) => (
-                <tr key={b.id} className="hover:bg-neutral-50">
-                  <td className="px-4 py-3 font-semibold text-neutral-900">{b.name}</td>
-                  <td className="px-4 py-3 text-neutral-700">{b.employer_name || "—"}</td>
-                  <td className="px-4 py-3 text-xs text-neutral-500 uppercase">{b.unit_type?.replace(/_/g, " ")}</td>
-                  <td className="px-4 py-3 text-neutral-700">{b.food_handler_count}</td>
-                  <td className="px-4 py-3 text-neutral-600">{b.state_name || "—"}</td>
-                  <td className="px-4 py-3 text-neutral-600">{b.lga_name || "—"}</td>
-                  <td className="px-4 py-3"><StatusBadge status={b.status} /></td>
-                </tr>
-              ))}</tbody>
-          </table>
-        </div>
-      </section>
-    </div>
   );
 }
 
