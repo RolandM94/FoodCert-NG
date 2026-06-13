@@ -1,4 +1,5 @@
 from django.contrib.auth import get_user_model
+from django.db.models import Q
 from rest_framework import serializers
 
 from apps.accounts.models import UserInvite, UserRole
@@ -8,6 +9,7 @@ from apps.certificates.models import Certificate, CertificateRequest, Certificat
 from apps.employers.models import Employer
 from apps.facilities.models import MedicalFacility
 from apps.food_handlers.models import FoodHandlerProfile
+from apps.forms.models import FormPrimaryModule, FormTemplate, FormTemplatePurpose, FormTemplateStatus
 from apps.illness.models import IllnessReport
 from apps.inspections.models import Inspection
 from apps.inspections.serializers import InspectionResponseSerializer, InspectionSerializer
@@ -323,6 +325,13 @@ class StateInspectionAssignmentSerializer(serializers.Serializer):
     inspector = serializers.PrimaryKeyRelatedField(queryset=User.objects.all())
     employer = serializers.PrimaryKeyRelatedField(queryset=Employer.objects.all())
     branch = serializers.PrimaryKeyRelatedField(queryset=OrganizationUnit.objects.all(), required=False, allow_null=True)
+    form_template = serializers.PrimaryKeyRelatedField(
+        queryset=FormTemplate.objects.filter(status=FormTemplateStatus.PUBLISHED).filter(
+            Q(purpose=FormTemplatePurpose.INSPECTION_CHECKLIST) | Q(primary_module=FormPrimaryModule.INSPECTIONS)
+        ),
+        required=False,
+        allow_null=True,
+    )
     inspection_date = serializers.DateTimeField(required=False)
     checklist_responses = serializers.JSONField(required=False)
     enforcement_action = serializers.CharField(required=False, allow_blank=True)

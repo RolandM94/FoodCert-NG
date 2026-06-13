@@ -1,5 +1,9 @@
 import { apiClient, unwrap, type ApiEnvelope } from "./client";
 
+function unwrapMaybe<T>(value: ApiEnvelope<T> | T): T {
+  return value && typeof value === "object" && "data" in value ? (value as ApiEnvelope<T>).data : value as T;
+}
+
 export type FormTemplate = {
   id: string;
   title: string;
@@ -8,7 +12,11 @@ export type FormTemplate = {
   owner_organization: string;
   owner_name?: string;
   target_respondent_type: string;
+  primary_module: string;
   module_context: string;
+  default_context_type: string;
+  language: string;
+  settings_json: Record<string, unknown>;
   status: "draft" | "published" | "archived" | "deprecated";
   current_version: number;
   created_by?: string;
@@ -23,8 +31,10 @@ export type FormTemplateVersion = {
   template: string;
   version_number: number;
   schema_json: Record<string, unknown>;
+  logic_json?: Record<string, unknown>;
   scoring_json?: Record<string, unknown>;
   conditional_logic_json?: Record<string, unknown>;
+  settings_json?: Record<string, unknown>;
   published_by?: string;
   published_by_name?: string;
   published_at?: string;
@@ -49,12 +59,29 @@ export type FormAssignment = {
   start_date?: string;
   due_date?: string;
   allow_draft: boolean;
+  allow_offline: boolean;
   allow_multiple_submissions: boolean;
   allow_late_submission: boolean;
   requires_review: boolean;
   reviewer_role: string;
   status: string;
   response_count: number;
+  total_recipients: number;
+  status_summary?: {
+    total_recipients: number;
+    not_started: number;
+    in_progress: number;
+    submitted: number;
+    reviewed: number;
+    returned: number;
+    overdue: number;
+    cancelled: number;
+    draft_responses: number;
+    sync_pending: number;
+    sync_failed: number;
+  };
+  response_rate: number;
+  completion_rate: number;
   created_at: string;
   updated_at: string;
 };
@@ -66,6 +93,7 @@ export type FormResponse = {
   template: string;
   template_title?: string;
   template_version?: string;
+  recipient?: string;
   respondent_user: string;
   respondent_name?: string;
   respondent_email?: string;
@@ -76,14 +104,99 @@ export type FormResponse = {
   score?: number;
   risk_rating: string;
   status: string;
+  sync_status: string;
+  device_id?: string;
+  offline_created_at?: string;
+  started_at?: string;
+  last_saved_at?: string;
   submitted_at?: string;
   reviewed_by?: string;
   reviewed_by_name?: string;
   reviewed_at?: string;
   review_notes: string;
   returned_reason: string;
+  template_schema?: Record<string, unknown>;
+  template_logic?: Record<string, unknown>;
+  template_settings?: Record<string, unknown>;
   created_at: string;
   updated_at: string;
+};
+
+export type FormResponseAttachment = {
+  id: string;
+  response: string;
+  question_key: string;
+  repeat_group_key?: string;
+  repeat_item_id?: string;
+  file?: string;
+  file_url?: string;
+  file_type?: string;
+  file_name: string;
+  file_size?: number;
+  mime_type?: string;
+  uploaded_by?: string;
+  uploaded_by_name?: string;
+  captured_at?: string;
+  gps_latitude?: string;
+  gps_longitude?: string;
+  metadata_json?: Record<string, unknown>;
+  sync_status: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type OfflineFormPackage = {
+  assignment: FormAssignment;
+  template: FormTemplate;
+  template_version: FormTemplateVersion | null;
+  response: FormResponse | null;
+  downloaded_at: string;
+  sync_statuses: string[];
+};
+
+export type OfflineSyncResult = {
+  status: string;
+  sync_job: {
+    id: string;
+    local_response_id: string;
+    operation_type: string;
+    status: string;
+    attempt_count: number;
+    error_message?: string;
+  };
+  response?: FormResponse;
+  errors?: Array<{ key: string; label: string; message: string }>;
+  error?: string;
+};
+
+export type FormResponseActivity = {
+  id: string;
+  response: string;
+  actor?: string;
+  actor_name?: string;
+  action: string;
+  details_json: Record<string, unknown>;
+  ip_address?: string;
+  device_id?: string;
+  created_at: string;
+};
+
+export type FormAssignmentSummary = FormAssignment & {
+  responses: FormResponse[];
+  recipients: Array<{
+    id: string;
+    assignment: string;
+    recipient_type: string;
+    recipient_id: string;
+    organization?: string;
+    organization_name?: string;
+    role_id?: string;
+    status: string;
+    notified_at?: string;
+    started_at?: string;
+    submitted_at?: string;
+    reviewed_at?: string;
+  }>;
 };
 
 // ── Templates ──
@@ -99,19 +212,36 @@ export async function fetchFormTemplate(id: string) {
 
 export async function createFormTemplate(data: {
   title: string; description?: string; purpose: string;
-  owner_organization: string; target_respondent_type?: string; module_context?: string;
+  owner_organization?: string; target_respondent_type?: string; primary_module?: string;
+  module_context?: string; default_context_type?: string; language?: string;
+  settings_json?: Record<string, unknown>;
 }) {
   const res = await apiClient.post<ApiEnvelope<FormTemplate>>("/forms/templates/", data);
   return unwrap(res.data);
 }
 
-export async function updateFormTemplate(id: string, data: Partial<{ title: string; description: string }>) {
+export async function updateFormTemplate(id: string, data: Partial<{
+  title: string; description: string; purpose: string; target_respondent_type: string;
+  primary_module: string; module_context: string; default_context_type: string;
+  language: string; settings_json: Record<string, unknown>;
+}>) {
   const res = await apiClient.patch<ApiEnvelope<FormTemplate>>(`/forms/templates/${id}/`, data);
   return unwrap(res.data);
 }
 
-export async function publishFormTemplate(id: string) {
-  const res = await apiClient.post<ApiEnvelope<FormTemplate>>(`/forms/templates/${id}/publish/`);
+export async function saveFormTemplateDraft(id: string, data: {
+  schema_json: Record<string, unknown>; logic_json?: Record<string, unknown>;
+  scoring_json?: Record<string, unknown>; settings_json?: Record<string, unknown>;
+}) {
+  const res = await apiClient.post<ApiEnvelope<FormTemplateVersion>>(`/forms/templates/${id}/save-draft/`, data);
+  return unwrap(res.data);
+}
+
+export async function publishFormTemplate(id: string, data?: {
+  schema_json?: Record<string, unknown>; logic_json?: Record<string, unknown>;
+  scoring_json?: Record<string, unknown>; settings_json?: Record<string, unknown>;
+}) {
+  const res = await apiClient.post<ApiEnvelope<FormTemplate>>(`/forms/templates/${id}/publish/`, data || {});
   return unwrap(res.data);
 }
 
@@ -146,9 +276,24 @@ export async function cancelFormAssignment(id: string) {
   return unwrap(res.data);
 }
 
+export async function fetchFormAssignmentSummary(id: string) {
+  const res = await apiClient.get<FormAssignmentSummary>(`/forms/assignments/${id}/summary/`);
+  return res.data;
+}
+
+export async function sendFormAssignmentReminder(id: string) {
+  const res = await apiClient.post<{ assignment: FormAssignment; reminded_count: number; message: string }>(`/forms/assignments/${id}/send-reminder/`);
+  return res.data;
+}
+
 // ── Responses ──
 export async function fetchFormResponses(params?: Record<string, string>) {
   const res = await apiClient.get<ApiEnvelope<FormResponse[]>>("/forms/responses/", { params });
+  return unwrap(res.data);
+}
+
+export async function fetchFormResponse(id: string) {
+  const res = await apiClient.get<ApiEnvelope<FormResponse>>(`/forms/responses/${id}/`);
   return unwrap(res.data);
 }
 
@@ -166,6 +311,11 @@ export async function submitFormResponse(id: string, data?: { response_json?: Re
   return unwrap(res.data);
 }
 
+export async function saveFormResponseDraft(id: string, data: { response_json: Record<string, unknown>; device_id?: string }) {
+  const res = await apiClient.post<ApiEnvelope<FormResponse>>(`/forms/responses/${id}/save_draft/`, data);
+  return unwrap(res.data);
+}
+
 export async function reviewFormResponse(id: string, review_notes?: string) {
   const res = await apiClient.post<ApiEnvelope<FormResponse>>(`/forms/responses/${id}/review/`, { review_notes: review_notes || "" });
   return unwrap(res.data);
@@ -174,4 +324,201 @@ export async function reviewFormResponse(id: string, review_notes?: string) {
 export async function returnFormResponse(id: string, reason?: string) {
   const res = await apiClient.post<ApiEnvelope<FormResponse>>(`/forms/responses/${id}/return_response/`, { reason: reason || "" });
   return unwrap(res.data);
+}
+
+export async function fetchFormResponseActivity(id: string) {
+  const res = await apiClient.get<FormResponseActivity[]>(`/forms/responses/${id}/activity/`);
+  return res.data;
+}
+
+export async function fetchFormResponseAttachments(id: string) {
+  const res = await apiClient.get<ApiEnvelope<FormResponseAttachment[]> | FormResponseAttachment[]>(`/forms/responses/${id}/attachments/`);
+  return unwrapMaybe(res.data);
+}
+
+export async function uploadFormResponseAttachment(id: string, data: {
+  question_key: string;
+  file: File;
+  repeat_group_key?: string;
+  repeat_item_id?: string;
+  gps_latitude?: string;
+  gps_longitude?: string;
+  metadata_json?: Record<string, unknown>;
+}) {
+  const formData = new FormData();
+  formData.append("question_key", data.question_key);
+  formData.append("file", data.file);
+  formData.append("file_name", data.file.name);
+  formData.append("file_size", String(data.file.size));
+  formData.append("mime_type", data.file.type);
+  formData.append("file_type", data.file.type.split("/")[0] || "file");
+  if (data.repeat_group_key) formData.append("repeat_group_key", data.repeat_group_key);
+  if (data.repeat_item_id) formData.append("repeat_item_id", data.repeat_item_id);
+  if (data.gps_latitude) formData.append("gps_latitude", data.gps_latitude);
+  if (data.gps_longitude) formData.append("gps_longitude", data.gps_longitude);
+  if (data.metadata_json) formData.append("metadata_json", JSON.stringify(data.metadata_json));
+  const res = await apiClient.post<ApiEnvelope<FormResponseAttachment> | FormResponseAttachment>(`/forms/responses/${id}/attachments/`, formData, {
+    headers: { "Content-Type": "multipart/form-data" },
+  });
+  return unwrapMaybe(res.data);
+}
+
+export async function fetchOfflineAssignments() {
+  const res = await apiClient.get<FormAssignment[]>("/forms/offline/assignments/");
+  return res.data;
+}
+
+export async function fetchOfflineAssignmentPackage(assignmentId: string) {
+  const res = await apiClient.get<OfflineFormPackage>(`/forms/offline/assignments/${assignmentId}/package/`);
+  return res.data;
+}
+
+export async function syncOfflineFormResponse(data: {
+  local_response_id: string;
+  operation_type: "save_draft" | "submit_response";
+  payload_json: Record<string, unknown>;
+  media_payload_ref?: string;
+}) {
+  const res = await apiClient.post<OfflineSyncResult>("/forms/offline/sync/", data);
+  return res.data;
+}
+
+export async function fetchOfflineSyncStatus(syncJobId: string) {
+  const res = await apiClient.get<OfflineSyncResult["sync_job"]>(`/forms/offline/sync/${syncJobId}/status/`);
+  return res.data;
+}
+
+export async function downloadFormResponsesExport(params: {
+  format: "csv" | "json" | "pdf";
+  assignment?: string;
+  template?: string;
+  status?: string;
+  sync_status?: string;
+  date_from?: string;
+  date_to?: string;
+}) {
+  const res = await apiClient.get<Blob>("/forms/exports/responses/", {
+    params,
+    responseType: "blob",
+  });
+  return res.data;
+}
+
+export async function downloadFormAttachmentsExport(params: {
+  assignment?: string;
+  template?: string;
+  status?: string;
+  date_from?: string;
+  date_to?: string;
+}) {
+  const res = await apiClient.get<Blob>("/forms/exports/attachments/", {
+    params,
+    responseType: "blob",
+  });
+  return res.data;
+}
+
+// ── Permissions ──
+
+export type FormsPermissions = {
+  permissions: string[];
+  role: string;
+};
+
+export async function fetchFormsPermissions(): Promise<FormsPermissions> {
+  const res = await apiClient.get<ApiEnvelope<FormsPermissions> | FormsPermissions>("/forms/permissions/");
+  return unwrapMaybe(res.data);
+}
+
+// ── Analytics ──
+
+export type FormsAnalytics = {
+  summary: {
+    total_templates: number;
+    total_assignments: number;
+    total_responses: number;
+    submitted_responses: number;
+    completion_rate: number;
+    average_score: number | null;
+  };
+  status_breakdown: Array<{ status: string; count: number }>;
+  purpose_breakdown: Array<{ purpose: string; count: number; response_count: number }>;
+  submissions_over_time: Array<{ date: string; count: number }>;
+  score_distribution: Array<{ range: string; count: number }>;
+  risk_breakdown: Array<{ risk_rating: string; count: number }>;
+  assignment_stats: Array<{
+    assignment_id: string;
+    assignment_title: string;
+    template_title: string;
+    purpose: string;
+    context_type: string;
+    recipient_count: number;
+    response_count: number;
+    submitted_count: number;
+    response_rate: number;
+    completion_rate: number;
+  }>;
+  structured_response_analytics: Array<{
+    template_id: string;
+    template_title: string;
+    question_key: string;
+    question_label: string;
+    question_type: string;
+    answered: number;
+    top_values: Array<{ value: string; count: number }>;
+    average: number | null;
+  }>;
+  inspection_analytics: {
+    inspection_count: number;
+    average_score: number | null;
+    status_breakdown: Array<{ status: string; count: number }>;
+    enforcement_breakdown: Array<{ enforcement_action: string; count: number }>;
+  };
+  organization_breakdown: Array<{ organization_id: string | null; organization_name: string; count: number }>;
+  location_breakdown: Array<{ state_id: string | null; state_name: string; count: number }>;
+  template_stats: Array<{
+    template_title: string;
+    template_id: string;
+    total: number;
+    submitted: number;
+    completion_rate: number;
+    average_score: number | null;
+  }>;
+  filters: Record<string, string | null>;
+};
+
+export async function fetchFormsAnalytics(params?: Record<string, string>): Promise<FormsAnalytics> {
+  const res = await apiClient.get<ApiEnvelope<FormsAnalytics> | FormsAnalytics>("/forms/reports/analytics/", { params });
+  return unwrapMaybe(res.data);
+}
+
+// ── Portal Assigned Forms ──
+
+export type PortalAssignedForm = FormAssignment & {
+  response: FormResponse | null;
+  response_id: string | null;
+  response_status: string;
+  response_history?: FormResponse[];
+  template_schema?: Record<string, unknown>;
+  template_logic?: Record<string, unknown>;
+  template_settings?: Record<string, unknown>;
+};
+
+export type PortalContext = "employer" | "facility" | "food-handler";
+
+export async function fetchPortalAssignedForms(portal: PortalContext, params?: Record<string, string>): Promise<PortalAssignedForm[]> {
+  const res = await apiClient.get<ApiEnvelope<PortalAssignedForm[]> | PortalAssignedForm[]>(`/${portal}/assigned-forms/`, { params });
+  return unwrapMaybe(res.data);
+}
+
+export async function fetchPortalAssignedForm(portal: PortalContext, assignmentId: string): Promise<PortalAssignedForm> {
+  const res = await apiClient.get<ApiEnvelope<PortalAssignedForm> | PortalAssignedForm>(`/${portal}/assigned-forms/${assignmentId}/`);
+  return unwrapMaybe(res.data);
+}
+
+export async function createPortalFormResponse(portal: PortalContext, assignmentId: string, responseJson?: Record<string, unknown>): Promise<FormResponse> {
+  const res = await apiClient.post<ApiEnvelope<FormResponse> | FormResponse>(`/${portal}/assigned-forms/${assignmentId}/response/`, {
+    response_json: responseJson || {},
+  });
+  return unwrapMaybe(res.data);
 }

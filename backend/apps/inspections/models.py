@@ -65,7 +65,7 @@ INSPECTION_STATUS_TRANSITIONS = {
     InspectionStatus.ACCEPTED: [InspectionStatus.SCHEDULED, InspectionStatus.IN_PROGRESS, InspectionStatus.ASSIGNED, InspectionStatus.CANCELLED],
     InspectionStatus.SCHEDULED: [InspectionStatus.IN_PROGRESS, InspectionStatus.CANCELLED],
     InspectionStatus.IN_PROGRESS: [InspectionStatus.SUBMITTED, InspectionStatus.ESCALATED, InspectionStatus.CANCELLED],
-    InspectionStatus.SUBMITTED: [InspectionStatus.UNDER_REVIEW, InspectionStatus.ESCALATED, InspectionStatus.CANCELLED],
+    InspectionStatus.SUBMITTED: [InspectionStatus.UNDER_REVIEW, InspectionStatus.CORRECTIVE_ACTION_SUBMITTED, InspectionStatus.ESCALATED, InspectionStatus.CANCELLED],
     InspectionStatus.UNDER_REVIEW: [
         InspectionStatus.RETURNED_FOR_CORRECTION,
         InspectionStatus.NOTICE_ISSUED,

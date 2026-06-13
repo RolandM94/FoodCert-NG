@@ -22,6 +22,7 @@ from apps.payments.models import (
     PaymentStatus,
     PaymentTransaction,
     PaymentWebhookEvent,
+    PlatformFeeSetting,
     ReconciliationStatus,
     RefundRequest,
     RefundStatus,
@@ -32,9 +33,30 @@ from apps.payments.providers import active_provider_config, get_payment_provider
 
 
 class PaymentService:
+    ASSESSMENT_PLATFORM_FEE_CODE = "food_handler_assessment"
+
     @classmethod
     def _reference(cls, prefix):
         return f"{prefix}-{timezone.now():%Y%m%d}-{uuid4().hex[:10].upper()}"
+
+    @classmethod
+    def current_platform_fee(cls, *, fee_code=None, currency="NGN") -> Decimal:
+        today = timezone.localdate()
+        code = fee_code or cls.ASSESSMENT_PLATFORM_FEE_CODE
+        setting = (
+            PlatformFeeSetting.objects.filter(
+                fee_code=code,
+                currency=currency,
+                status=ActiveStatus.ACTIVE,
+                effective_from__lte=today,
+            )
+            .filter(Q(effective_to__isnull=True) | Q(effective_to__gte=today))
+            .order_by("-effective_from")
+            .first()
+        )
+        if setting:
+            return setting.amount
+        return Decimal(str(getattr(settings, "FOODCERT_PLATFORM_ASSESSMENT_FEE", "0.00")))
 
     @classmethod
     def current_assessment_fee(cls, *, state, facility_type) -> AssessmentFee:
@@ -67,17 +89,19 @@ class PaymentService:
         fee = cls.current_assessment_fee(state=assessment.facility.state, facility_type=assessment.facility.facility_type)
         if not fee:
             raise ValueError("No active assessment fee is configured for this state and facility type.")
+        platform_fee = cls.current_platform_fee(currency=fee.currency)
+        amount = fee.amount + platform_fee
         return {
             "assessment_id": assessment.id,
             "fee_schedule_id": fee.id,
             "fee_name": fee.fee_name,
             "facility_name": assessment.facility.facility_name,
             "state_name": assessment.facility.state.name,
-            "amount": fee.amount,
+            "amount": amount,
             "currency": fee.currency,
             "state_fee": fee.state_fee,
             "facility_fee": fee.facility_fee,
-            "platform_fee": fee.platform_fee,
+            "platform_fee": platform_fee,
             "refund_policy_summary": "Refunds are reviewed according to state policy and payment provider rules.",
             "terms_notice": "By continuing, you confirm the assessment details and agree to FoodCert NG payment terms.",
         }
@@ -149,6 +173,8 @@ class PaymentService:
         fee = cls.current_assessment_fee(state=facility.state, facility_type=facility.facility_type)
         if not fee:
             raise ValueError("No active assessment fee is configured for this state and facility type.")
+        platform_fee = cls.current_platform_fee(currency=fee.currency)
+        amount = fee.amount + platform_fee
 
         reference = cls._reference("ASS")
         provider = get_payment_provider()
@@ -157,7 +183,7 @@ class PaymentService:
             payer_type=PayerType.FOOD_HANDLER,
             related_entity_type="food_handler_assessment",
             related_entity_id=food_handler_id,
-            amount=fee.amount,
+            amount=amount,
             currency=fee.currency,
             payment_provider=provider.provider_name,
             internal_reference=reference,
@@ -167,10 +193,10 @@ class PaymentService:
                 "assessment_fee_id": str(fee.id),
                 "state_fee": str(fee.state_fee),
                 "facility_fee": str(fee.facility_fee),
-                "platform_fee": str(fee.platform_fee),
+                "platform_fee": str(platform_fee),
             },
         )
-        initialization = provider.initialize_payment(fee.amount, payer_user.email, reference, transaction_obj.metadata)
+        initialization = provider.initialize_payment(amount, payer_user.email, reference, transaction_obj.metadata)
         transaction_obj.provider_reference = initialization.provider_reference
         transaction_obj.metadata = {**transaction_obj.metadata, "authorization_url": initialization.authorization_url}
         transaction_obj.save(update_fields=["provider_reference", "metadata", "updated_at"])
@@ -191,7 +217,7 @@ class PaymentService:
             payer_type=PayerType.FOOD_HANDLER,
             related_entity_type="medical_assessment",
             related_entity_id=assessment.id,
-            amount=fee.amount,
+            amount=quote["amount"],
             currency=fee.currency,
             payment_provider=provider.provider_name,
             internal_reference=reference,
@@ -204,10 +230,10 @@ class PaymentService:
                 "fee_name": fee.fee_name,
                 "state_fee": str(fee.state_fee),
                 "facility_fee": str(fee.facility_fee),
-                "platform_fee": str(fee.platform_fee),
+                "platform_fee": str(quote["platform_fee"]),
             },
         )
-        initialization = provider.initialize_payment(fee.amount, payer_user.email, reference, transaction_obj.metadata)
+        initialization = provider.initialize_payment(quote["amount"], payer_user.email, reference, transaction_obj.metadata)
         transaction_obj.provider_reference = initialization.provider_reference
         transaction_obj.metadata = {**transaction_obj.metadata, "authorization_url": initialization.authorization_url}
         transaction_obj.save(update_fields=["provider_reference", "metadata", "updated_at"])

@@ -16,7 +16,7 @@ from apps.facilities.models import AccreditationStatus, FacilityType, MedicalFac
 from apps.food_handlers.models import FoodHandlerCategory, FoodHandlerProfile, Gender
 from apps.locations.models import State
 from apps.organizations.models import Organization, OrganizationType
-from apps.payments.models import AssessmentFee, LedgerEntryType, PaymentAllocation, PaymentAllocationStatus, PaymentLedgerEntry, PaymentProvider, PaymentReconciliationRecord, PaymentStatus, PaymentTransaction, PaymentWebhookEvent, Receipt, ReconciliationStatus, RefundRequest, RefundStatus, WebhookProcessingStatus
+from apps.payments.models import AssessmentFee, LedgerEntryType, PaymentAllocation, PaymentAllocationStatus, PaymentLedgerEntry, PaymentProvider, PaymentReconciliationRecord, PaymentStatus, PaymentTransaction, PaymentWebhookEvent, PlatformFeeSetting, Receipt, ReconciliationStatus, RefundRequest, RefundStatus, WebhookProcessingStatus
 from apps.payments.services import PaymentService
 from apps.settlements.models import Settlement, SettlementBatch, SettlementBatchStatus, SettlementStatus
 from apps.subscriptions.models import EmployerInvoice, EmployerSubscriptionPlan, InvoiceStatus
@@ -135,12 +135,16 @@ class PaymentSubscriptionSettlementTests(APITestCase):
         self.fee = AssessmentFee.objects.create(
             state=self.state,
             facility_type=FacilityType.DIAGNOSTIC_CENTRE,
-            amount="15000.00",
+            amount="13000.00",
             state_fee="3000.00",
             facility_fee="10000.00",
-            platform_fee="2000.00",
             effective_from=timezone.localdate(),
             created_by=self.state_admin,
+        )
+        self.platform_fee = PlatformFeeSetting.objects.create(
+            fee_code=PaymentService.ASSESSMENT_PLATFORM_FEE_CODE,
+            amount="2000.00",
+            effective_from=timezone.localdate(),
         )
         self.food_handler_profile = FoodHandlerProfile.objects.create(
             user=self.food_handler,
@@ -184,10 +188,9 @@ class PaymentSubscriptionSettlementTests(APITestCase):
             {
                 "state": str(self.state.id),
                 "facility_type": FacilityType.CLINIC,
-                "amount": "10000.00",
+                "amount": "9000.00",
                 "state_fee": "2000.00",
                 "facility_fee": "7000.00",
-                "platform_fee": "1000.00",
                 "effective_from": str(timezone.localdate()),
                 "status": "active",
             },
@@ -195,7 +198,8 @@ class PaymentSubscriptionSettlementTests(APITestCase):
         )
 
         self.assertEqual(response.status_code, 201)
-        self.assertEqual(data(response)["amount"], "10000.00")
+        self.assertEqual(data(response)["amount"], "9000.00")
+        self.assertEqual(data(response)["platform_fee"], "2000.00")
 
     def test_assessment_payment_requires_approved_facility(self):
         self.client.force_authenticate(self.food_handler)
@@ -929,10 +933,10 @@ class PaymentSubscriptionSettlementTests(APITestCase):
             payment_allocation=PaymentAllocation.objects.get(payment_transaction=transaction_obj),
             fee_schedule=self.fee,
             assessment=assessment,
-            gross_amount=self.fee.amount,
+            gross_amount=self.fee.amount + self.platform_fee.amount,
             facility_amount=self.fee.facility_fee,
             state_amount=self.fee.state_fee,
-            platform_amount=self.fee.platform_fee,
+            platform_amount=self.platform_fee.amount,
         )
 
     def test_settlement_batch_failure_retry_and_processing_are_guarded(self):

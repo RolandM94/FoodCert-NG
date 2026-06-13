@@ -11,6 +11,8 @@ from apps.audit.services import log_action
 from apps.certificates.models import Certificate
 from apps.certificates.services import CertificateService
 from apps.inspections.models import (
+    ChecklistCategory,
+    ChecklistSeverity,
     CaseStatus,
     CorrectiveActionResponse,
     CorrectiveActionStatus,
@@ -25,7 +27,19 @@ from apps.inspections.models import (
     InspectionStatus,
     InspectionType,
     NoticeStatus,
+    FindingType,
 )
+from apps.forms.models import (
+    AssignmentStatus,
+    FormAssignment,
+    FormRecipient,
+    FormResponse,
+    FormResponseActivityLog,
+    FormSyncStatus,
+    FormTemplatePurpose,
+    ResponseStatus,
+)
+from apps.forms.validation import validate_form_response
 from apps.notifications.models import Notification, NotificationCategory
 
 
@@ -183,6 +197,158 @@ class InspectionService:
         inspection.save(update_fields=["evidence_files", "updated_at"])
         log_action(action=AuditAction.WORKFLOW_TRANSITION, actor=actor, target=inspection, metadata={"event": "inspection_evidence_added"})
         return inspection
+
+    @classmethod
+    @transaction.atomic
+    def assign_form_template(cls, *, inspection, actor, template):
+        cls.ensure_inspector(actor)
+        if template.status != "published":
+            raise ValidationError("Only published form templates can be assigned to inspections.")
+        latest_version = template.versions.filter(status="published").order_by("-version_number").first() or template.versions.order_by("-version_number").first()
+        if not latest_version:
+            raise ValidationError("This form template has no published version.")
+        assignment, _ = FormAssignment.objects.get_or_create(
+            template=template,
+            template_version=latest_version,
+            assigned_to_type="user",
+            assigned_to_id=str(inspection.inspector_id),
+            context_type="inspection",
+            context_id=str(inspection.id),
+            defaults={
+                "title": f"{inspection.reference} inspection form",
+                "purpose": template.purpose or FormTemplatePurpose.INSPECTION_CHECKLIST,
+                "assigned_by": actor,
+                "recipient_role": "inspector",
+                "allow_offline": True,
+                "status": AssignmentStatus.ACTIVE,
+            },
+        )
+        recipient, _ = FormRecipient.objects.get_or_create(
+            assignment=assignment,
+            recipient_type="user",
+            recipient_id=str(inspection.inspector_id),
+            defaults={"organization_id": getattr(inspection.inspector, "organization_id", None), "role_id": "inspector"},
+        )
+        form_response, _ = FormResponse.objects.get_or_create(
+            assignment=assignment,
+            template=template,
+            template_version=latest_version,
+            respondent_user=inspection.inspector,
+            context_type="inspection",
+            context_id=str(inspection.id),
+            defaults={
+                "recipient": recipient,
+                "respondent_organization_id": getattr(inspection.inspector, "organization_id", None),
+                "sync_status": FormSyncStatus.ONLINE,
+                "started_at": timezone.now(),
+                "last_saved_at": timezone.now(),
+            },
+        )
+        log_action(
+            action=AuditAction.WORKFLOW_TRANSITION,
+            actor=actor,
+            target=inspection,
+            metadata={"event": "inspection_form_assigned", "template_id": str(template.id), "response_id": str(form_response.id)},
+        )
+        return assignment, form_response
+
+    @classmethod
+    def inspection_form_workspace(cls, *, inspection):
+        response = FormResponse.objects.select_related("assignment", "template", "template_version", "respondent_user").filter(
+            context_type="inspection",
+            context_id=str(inspection.id),
+            assignment__assigned_to_id=str(inspection.inspector_id),
+        ).order_by("-created_at").first()
+        return response
+
+    @classmethod
+    @transaction.atomic
+    def submit_form_response(cls, *, inspection, actor, response_json):
+        cls.ensure_inspector(actor)
+        form_response = cls.inspection_form_workspace(inspection=inspection)
+        if not form_response:
+            raise ValidationError("No form response is linked to this inspection.")
+        validation_errors = validate_form_response(
+            form_response.template_version.schema_json if form_response.template_version_id else {},
+            response_json,
+            form_response.template_version.logic_json if form_response.template_version_id else {},
+        )
+        if validation_errors:
+            raise ValidationError({"errors": validation_errors})
+        form_response.response_json = response_json
+        form_response.status = ResponseStatus.SUBMITTED
+        form_response.submitted_at = timezone.now()
+        form_response.last_saved_at = form_response.submitted_at
+        form_response.sync_status = FormSyncStatus.ONLINE
+        form_response.save(update_fields=["response_json", "status", "submitted_at", "last_saved_at", "sync_status", "updated_at"])
+        if form_response.recipient_id:
+            form_response.recipient.status = "submitted"
+            form_response.recipient.submitted_at = form_response.submitted_at
+            form_response.recipient.save(update_fields=["status", "submitted_at", "updated_at"])
+        FormResponseActivityLog.objects.create(response=form_response, actor=actor, action="inspection_form_submitted")
+        if inspection.status == InspectionStatus.ASSIGNED:
+            inspection.transition_to(InspectionStatus.ACCEPTED)
+        if inspection.status in {InspectionStatus.ACCEPTED, InspectionStatus.SCHEDULED}:
+            inspection.transition_to(InspectionStatus.IN_PROGRESS)
+        inspection.checklist_responses = response_json
+        inspection.compliance_score = cls.compliance_score(response_json)
+        inspection.save(update_fields=["checklist_responses", "compliance_score", "updated_at"])
+        created_findings = cls.generate_findings_from_form(inspection=inspection, actor=actor, form_response=form_response)
+        log_action(
+            action=AuditAction.WORKFLOW_TRANSITION,
+            actor=actor,
+            target=inspection,
+            metadata={"event": "inspection_form_submitted", "response_id": str(form_response.id), "findings_created": created_findings},
+        )
+        return form_response
+
+    @classmethod
+    def generate_findings_from_form(cls, *, inspection, actor, form_response):
+        schema = form_response.template_version.schema_json if form_response.template_version_id else {}
+        created = 0
+        for section in schema.get("sections", []) or []:
+            for question in section.get("questions", []) or []:
+                created += cls._finding_for_question(inspection, actor, question, form_response.response_json.get(question.get("key")))
+        return created
+
+    @classmethod
+    def _finding_for_question(cls, inspection, actor, question, value):
+        if question.get("type") == "repeat_group":
+            count = 0
+            items = value if isinstance(value, list) else []
+            for item in items:
+                if not isinstance(item, dict):
+                    continue
+                for nested in question.get("questions", []) or []:
+                    count += cls._finding_for_question(inspection, actor, nested, item.get(nested.get("key")))
+            return count
+        finding_config = question.get("critical_finding") or question.get("finding") or {}
+        if not finding_config or not cls._is_finding_value(value):
+            return 0
+        severity = finding_config.get("severity", ChecklistSeverity.CRITICAL)
+        finding_type = finding_config.get("finding_type", FindingType.CRITICAL_NON_COMPLIANCE if severity == ChecklistSeverity.CRITICAL else FindingType.MAJOR_NON_COMPLIANCE)
+        InspectionFinding.objects.get_or_create(
+            inspection=inspection,
+            category=finding_config.get("category", ChecklistCategory.HYGIENE),
+            finding_type=finding_type,
+            severity=severity,
+            description=finding_config.get("description") or f"{question.get('label', question.get('key', 'Inspection question'))}: {value}",
+            defaults={
+                "recommended_action": finding_config.get("recommended_action", ""),
+                "created_by": actor,
+            },
+        )
+        return 1
+
+    @staticmethod
+    def _is_finding_value(value):
+        if value is False:
+            return True
+        if isinstance(value, str):
+            return value.strip().lower() in {"no", "false", "fail", "failed", "critical", "non_compliant", "non-compliant"}
+        if isinstance(value, (int, float)):
+            return value <= 0
+        return False
 
     @classmethod
     @transaction.atomic

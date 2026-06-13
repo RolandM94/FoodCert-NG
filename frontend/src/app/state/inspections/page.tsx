@@ -14,6 +14,7 @@ import {
   reviewStateInspection,
   type StateInspectionItem,
 } from "@/lib/api/state";
+import { fetchFormTemplates } from "@/lib/api/forms";
 import { downloadCsv } from "@/lib/export/csv";
 import type { EnforcementAction, InspectionStatus } from "@/types/inspections";
 
@@ -46,6 +47,7 @@ export default function Page() {
   const [selectedInspectionId, setSelectedInspectionId] = useState("");
   const [selectedInspectorId, setSelectedInspectorId] = useState("");
   const [selectedEmployerId, setSelectedEmployerId] = useState("");
+  const [selectedFormTemplateId, setSelectedFormTemplateId] = useState("");
   const [assignmentFindings, setAssignmentFindings] = useState("");
   const [reviewFindings, setReviewFindings] = useState("");
   const [reviewAction, setReviewAction] = useState<EnforcementAction>("none");
@@ -57,6 +59,10 @@ export default function Page() {
   });
   const usersQuery = useQuery({ queryKey: ["state-users"], queryFn: fetchStateUsers });
   const employersQuery = useQuery({ queryKey: ["state-employers-for-inspections"], queryFn: () => fetchStateEmployers() });
+  const formTemplatesQuery = useQuery({
+    queryKey: ["state-inspection-form-templates"],
+    queryFn: () => fetchFormTemplates({ purpose: "inspection_checklist", status: "published" }),
+  });
   const rows = inspectionsQuery.data || [];
   const inspectors = useMemo(() => (usersQuery.data || []).filter((user) => user.role === "inspector"), [usersQuery.data]);
   const selectedInspection = rows.find((inspection) => inspection.id === selectedInspectionId) || rows[0];
@@ -68,10 +74,12 @@ export default function Page() {
       assignStateInspection({
         inspector: selectedInspectorId,
         employer: selectedEmployerId,
+        form_template: selectedFormTemplateId || undefined,
         findings: assignmentFindings,
       }),
     onSuccess: () => {
       setAssignmentFindings("");
+      setSelectedFormTemplateId("");
       invalidate();
     },
   });
@@ -172,6 +180,10 @@ export default function Page() {
                 <select className="h-10 rounded border border-neutral-200 bg-white px-3 text-sm" value={selectedEmployerId} onChange={(event) => setSelectedEmployerId(event.target.value)}>
                   <option value="">Select employer</option>
                   {(employersQuery.data || []).map((employer) => <option key={employer.id} value={employer.id}>{employer.business_name}</option>)}
+                </select>
+                <select className="h-10 rounded border border-neutral-200 bg-white px-3 text-sm" value={selectedFormTemplateId} onChange={(event) => setSelectedFormTemplateId(event.target.value)}>
+                  <option value="">No dynamic checklist</option>
+                  {(formTemplatesQuery.data || []).map((template) => <option key={template.id} value={template.id}>{template.title}</option>)}
                 </select>
                 <textarea className="min-h-20 rounded border border-neutral-200 bg-neutral-50 px-3 py-2 text-sm" value={assignmentFindings} onChange={(event) => setAssignmentFindings(event.target.value)} placeholder="Assignment note or scope" />
                 <button className="h-10 rounded bg-brand-700 px-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-neutral-300" disabled={!selectedInspectorId || !selectedEmployerId || assignMutation.isPending} onClick={() => assignMutation.mutate()} type="button">

@@ -1,4 +1,5 @@
 import { apiClient, unwrap, type ApiEnvelope } from "@/lib/api/client";
+import type { FormAssignment, FormResponse, FormTemplate } from "@/lib/api/forms";
 import type {
   EmployerInspectionDetail,
   EmployerInspectionSummary,
@@ -8,6 +9,16 @@ import type {
   InspectionResponse,
   InspectionResponseType
 } from "@/types/inspections";
+
+function unwrapMaybe<T>(value: ApiEnvelope<T> | T): T {
+  return value && typeof value === "object" && "data" in value ? (value as ApiEnvelope<T>).data : value as T;
+}
+
+export type InspectionFormWorkspace = {
+  assignment: FormAssignment | null;
+  response: FormResponse | null;
+  available_templates: FormTemplate[];
+};
 
 export async function createInspection(payload: Record<string, unknown>): Promise<Inspection> {
   const response = await apiClient.post<ApiEnvelope<Inspection>>("/inspections/", payload);
@@ -37,6 +48,29 @@ export async function submitInspection(id: string): Promise<Inspection> {
 export async function addInspectionEvidence(id: string, payload: Record<string, unknown>): Promise<Inspection> {
   const response = await apiClient.post<ApiEnvelope<Inspection>>(`/inspections/${id}/evidence/`, payload);
   return unwrap(response.data);
+}
+
+export async function fetchInspectionFormWorkspace(id: string): Promise<InspectionFormWorkspace> {
+  const response = await apiClient.get<ApiEnvelope<InspectionFormWorkspace> | InspectionFormWorkspace>(`/inspections/${id}/form-response/`);
+  return unwrapMaybe(response.data);
+}
+
+export async function assignInspectionForm(id: string, form_template: string): Promise<InspectionFormWorkspace> {
+  const response = await apiClient.post<ApiEnvelope<InspectionFormWorkspace> | InspectionFormWorkspace>(`/inspections/${id}/assign-form/`, {
+    form_template,
+  });
+  return unwrapMaybe(response.data);
+}
+
+export async function submitInspectionFormResponse(
+  id: string,
+  response_json: Record<string, unknown>
+): Promise<{ inspection: Inspection; response: FormResponse }> {
+  const response = await apiClient.post<ApiEnvelope<{ inspection: Inspection; response: FormResponse }> | { inspection: Inspection; response: FormResponse }>(
+    `/inspections/${id}/submit-form/`,
+    { response_json }
+  );
+  return unwrapMaybe(response.data);
 }
 
 export async function scanInspectionCertificate(id: string, certificate_number: string): Promise<InspectionCertificateScan> {

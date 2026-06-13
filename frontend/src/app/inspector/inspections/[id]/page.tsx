@@ -3,18 +3,24 @@
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, ArrowLeft, BadgeCheck, ClipboardCheck, ShieldAlert, Stethoscope } from "lucide-react";
+import { AlertTriangle, ArrowLeft, BadgeCheck, ClipboardCheck, ExternalLink, Save, Send, ShieldAlert, Stethoscope } from "lucide-react";
+import { useEffect, useState } from "react";
 
+import { KoboFormRenderer, type KoboMediaUploadContext, type KoboMediaUploadStatus, type KoboQuestion, type KoboSchema } from "@/components/forms/kobo-form-renderer";
 import { PortalShell } from "@/components/layout/portal-shell";
 import { StatusBadge } from "@/components/status/status-badge";
+import { saveFormResponseDraft, uploadFormResponseAttachment } from "@/lib/api/forms";
 import {
   createFinding,
   fetchComplianceSummary,
   fetchFoodHandlers,
+  fetchInspectionFormWorkspace,
   getFindings,
   getInspection,
+  submitInspectionFormResponse,
   type FoodHandlerBrief
 } from "@/lib/api/inspections";
+import { validateKoboResponse, type KoboValidationError } from "@/lib/forms/kobo-validation";
 
 function formatDate(value?: string | null) {
   if (!value) return "Not set";
@@ -38,6 +44,9 @@ export default function Page() {
   const params = useParams<{ id: string }>();
   const inspectionId = params.id;
   const queryClient = useQueryClient();
+  const [formValues, setFormValues] = useState<Record<string, unknown>>({});
+  const [formErrors, setFormErrors] = useState<KoboValidationError[]>([]);
+  const [mediaStatuses, setMediaStatuses] = useState<Record<string, KoboMediaUploadStatus>>({});
 
   const inspectionQuery = useQuery({
     queryKey: ["inspection", inspectionId],
@@ -63,6 +72,12 @@ export default function Page() {
     enabled: Boolean(inspectionId),
   });
 
+  const formWorkspaceQuery = useQuery({
+    queryKey: ["inspection-form-workspace", inspectionId],
+    queryFn: () => fetchInspectionFormWorkspace(inspectionId),
+    enabled: Boolean(inspectionId),
+  });
+
   const findingMutation = useMutation({
     mutationFn: (handler: FoodHandlerBrief) =>
       createFinding(inspectionId, {
@@ -84,6 +99,63 @@ export default function Page() {
   const handlers = handlersQuery.data || [];
   const findings = findingsQuery.data || [];
   const excludedHandlers = handlers.filter(isExcluded);
+  const formResponse = formWorkspaceQuery.data?.response || null;
+  const formAssignment = formWorkspaceQuery.data?.assignment || null;
+  const formSchema = (formResponse?.template_schema || {}) as KoboSchema;
+  const formLogic = formResponse?.template_logic;
+  const formIsReadOnly = ["submitted", "reviewed", "approved"].includes(formResponse?.status || "");
+
+  useEffect(() => {
+    if (formResponse?.id) setFormValues(formResponse.response_json || {});
+  }, [formResponse?.id, formResponse?.response_json]);
+
+  const saveDraftMutation = useMutation({
+    mutationFn: () => {
+      if (!formResponse) throw new Error("No inspection form response exists.");
+      return saveFormResponseDraft(formResponse.id, { response_json: formValues });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["inspection-form-workspace", inspectionId] });
+    },
+  });
+
+  const submitFormMutation = useMutation({
+    mutationFn: () => {
+      if (!formResponse) throw new Error("No inspection form response exists.");
+      const errors = validateKoboResponse(formSchema, formValues, formLogic);
+      setFormErrors(errors);
+      if (errors.length) throw new Error("Resolve the highlighted form fields before submitting.");
+      return submitInspectionFormResponse(inspectionId, formValues);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["inspection", inspectionId] });
+      queryClient.invalidateQueries({ queryKey: ["inspection-form-workspace", inspectionId] });
+      queryClient.invalidateQueries({ queryKey: ["inspection-findings", inspectionId] });
+    },
+  });
+
+  async function handleMediaUpload(question: KoboQuestion, file: File, context: KoboMediaUploadContext) {
+    if (!formResponse) {
+      return { file_name: file.name, file_size: file.size, mime_type: file.type, sync_status: "local_only" };
+    }
+    setMediaStatuses((current) => ({ ...current, [context.fieldKey]: { state: "uploading" } }));
+    try {
+      const attachment = await uploadFormResponseAttachment(formResponse.id, {
+        question_key: context.questionKey || question.key,
+        repeat_group_key: context.repeatGroupKey,
+        repeat_item_id: context.repeatItemId,
+        file,
+      });
+      setMediaStatuses((current) => ({ ...current, [context.fieldKey]: { state: "uploaded" } }));
+      return attachment;
+    } catch (error) {
+      setMediaStatuses((current) => ({
+        ...current,
+        [context.fieldKey]: { state: "failed", message: error instanceof Error ? error.message : "Upload failed" },
+      }));
+      throw error;
+    }
+  }
 
   return (
     <PortalShell
@@ -146,6 +218,70 @@ export default function Page() {
               <p className="mt-2 text-2xl font-bold text-neutral-900">{findings.length}</p>
             </div>
           </div>
+        </section>
+
+        <section className="rounded-lg border border-neutral-200 bg-white shadow-sm">
+          <div className="flex flex-col gap-3 border-b border-neutral-200 p-4 md:flex-row md:items-center md:justify-between">
+            <div>
+              <h2 className="text-base font-bold text-neutral-900">Inspection Form</h2>
+              <p className="mt-1 text-xs font-semibold text-neutral-500">
+                {formAssignment ? `${formAssignment.template_title || "Assigned checklist"} · offline enabled` : "No dynamic checklist has been assigned to this inspection."}
+              </p>
+            </div>
+            {formResponse ? (
+              <div className="flex flex-wrap gap-2">
+                <Link className="inline-flex h-9 items-center gap-2 rounded border border-neutral-200 px-3 text-xs font-bold text-neutral-700 hover:bg-neutral-50" href={`/forms/${formResponse.id}`}>
+                  <ExternalLink size={14} />
+                  Offline form
+                </Link>
+                <button
+                  className="inline-flex h-9 items-center gap-2 rounded border border-brand-200 px-3 text-xs font-bold text-brand-700 disabled:opacity-50"
+                  disabled={formIsReadOnly || saveDraftMutation.isPending}
+                  onClick={() => saveDraftMutation.mutate()}
+                  type="button"
+                >
+                  <Save size={14} />
+                  {saveDraftMutation.isPending ? "Saving..." : "Save draft"}
+                </button>
+                <button
+                  className="inline-flex h-9 items-center gap-2 rounded bg-brand-700 px-3 text-xs font-bold text-white disabled:bg-neutral-300"
+                  disabled={formIsReadOnly || submitFormMutation.isPending}
+                  onClick={() => submitFormMutation.mutate()}
+                  type="button"
+                >
+                  <Send size={14} />
+                  {submitFormMutation.isPending ? "Submitting..." : "Submit form"}
+                </button>
+              </div>
+            ) : null}
+          </div>
+          {formWorkspaceQuery.isLoading ? (
+            <p className="p-4 text-sm font-semibold text-neutral-500">Loading inspection form...</p>
+          ) : formResponse && formSchema.sections?.length ? (
+            <div className="grid gap-3 p-4">
+              {saveDraftMutation.isSuccess ? <div className="rounded bg-brand-50 px-3 py-2 text-xs font-bold text-brand-700">Draft saved.</div> : null}
+              {submitFormMutation.isError ? (
+                <div className="rounded bg-danger-50 px-3 py-2 text-xs font-bold text-danger-700">
+                  {submitFormMutation.error instanceof Error ? submitFormMutation.error.message : "Could not submit inspection form."}
+                </div>
+              ) : null}
+              <KoboFormRenderer
+                schema={formSchema}
+                values={formValues}
+                onChange={(values) => {
+                  setFormValues(values);
+                  if (formErrors.length) setFormErrors(validateKoboResponse(formSchema, values, formLogic));
+                }}
+                readOnly={formIsReadOnly}
+                errors={formErrors}
+                logic={formLogic}
+                mediaUploadStatuses={mediaStatuses}
+                onMediaUpload={handleMediaUpload}
+              />
+            </div>
+          ) : (
+            <p className="p-4 text-sm font-semibold text-neutral-500">Ask the State Ministry to assign an inspection checklist template for this inspection.</p>
+          )}
         </section>
 
         <section className="rounded-lg border border-neutral-200 bg-white shadow-sm">

@@ -12,7 +12,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from apps.accounts.models import UserInvite
+from apps.accounts.models import UserInvite, UserRole
 from apps.accounts.permissions import IsActiveUser
 from apps.accounts.services import InviteService
 from apps.audit.models import AuditAction, AuditLog
@@ -796,9 +796,9 @@ class StateAssessmentFeeListCreateView(APIView):
         return queryset.order_by("-effective_from", "-created_at")
 
     def validate_fee_split(self, data):
-        total = data["state_fee"] + data["facility_fee"] + data["platform_fee"]
+        total = data["state_fee"] + data["facility_fee"]
         if total != data["amount"]:
-            raise ValidationError("State, facility, and platform fees must equal the gross amount.")
+            raise ValidationError("State and facility fees must equal the state assessment amount. Platform fees are configured by the platform owner and added at checkout.")
 
     def validate_no_overlap(self, *, facility_type, effective_from, effective_to=None, exclude=None):
         queryset = self.get_queryset().filter(
@@ -823,7 +823,6 @@ class StateAssessmentFeeListCreateView(APIView):
             "currency",
             "state_fee",
             "facility_fee",
-            "platform_fee",
             "provider_fee_handling",
             "effective_from",
             "effective_to",
@@ -869,7 +868,6 @@ class StateAssessmentFeeDetailView(StateAssessmentFeeListCreateView):
             "amount": serializer.validated_data.get("amount", fee.amount),
             "state_fee": serializer.validated_data.get("state_fee", fee.state_fee),
             "facility_fee": serializer.validated_data.get("facility_fee", fee.facility_fee),
-            "platform_fee": serializer.validated_data.get("platform_fee", fee.platform_fee),
         }
         self.validate_fee_split(values)
         facility_type = serializer.validated_data.get("facility_type", fee.facility_type)
@@ -1526,11 +1524,23 @@ class StateInspectionListView(StateInspectionMixin, APIView):
             raise PermissionDenied("You can only assign inspections in your state.")
         data = dict(serializer.validated_data)
         data.pop("inspector", None)
+        form_template = data.pop("form_template", None)
+        if form_template and request.user.role not in {UserRole.SUPER_ADMIN, UserRole.FEDERAL_ADMIN}:
+            if request.user.organization_id and form_template.owner_organization_id != request.user.organization_id:
+                raise PermissionDenied("You can only assign inspection forms owned by your ministry.")
+            if not request.user.organization_id and form_template.owner_organization.state_id != request.user.state_id:
+                raise PermissionDenied("You can only assign inspection forms owned by your state.")
         inspection = InspectionService.assign(
             actor=request.user,
             inspector=inspector,
             **data,
         )
+        if form_template:
+            InspectionService.assign_form_template(
+                inspection=inspection,
+                actor=request.user,
+                template=form_template,
+            )
         return Response(StateInspectionSerializer(inspection).data, status=status.HTTP_201_CREATED)
 
 

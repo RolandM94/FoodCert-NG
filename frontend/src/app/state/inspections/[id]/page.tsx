@@ -2,10 +2,14 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { useParams } from "next/navigation";
-import { ClipboardCheck, History, MessageSquareText } from "lucide-react";
+import { ClipboardCheck, FileText, History, MessageSquareText } from "lucide-react";
 import { PortalShell } from "@/components/layout/portal-shell";
 import { StatusCell } from "@/components/ui/data-table";
+import { StatusBadge } from "@/components/status/status-badge";
+import { KoboFormRenderer, type KoboSchema } from "@/components/forms/kobo-form-renderer";
+import { fetchInspectionFormWorkspace } from "@/lib/api/inspections";
 import { fetchStateInspection } from "@/lib/api/state";
+import type { KoboLogic } from "@/lib/forms/kobo-logic";
 
 function dateLabel(value?: string | null) {
   if (!value) return "Not set";
@@ -19,7 +23,15 @@ export default function Page() {
     queryFn: () => fetchStateInspection(params.id),
     enabled: Boolean(params.id),
   });
+  const formWorkspaceQuery = useQuery({
+    queryKey: ["state-inspection-form-workspace", params.id],
+    queryFn: () => fetchInspectionFormWorkspace(params.id),
+    enabled: Boolean(params.id),
+  });
   const inspection = inspectionQuery.data;
+  const formResponse = formWorkspaceQuery.data?.response || null;
+  const formSchema = (formResponse?.template_schema || {}) as KoboSchema;
+  const formLogic = (formResponse?.template_logic || {}) as KoboLogic;
 
   return (
     <PortalShell role="state_admin" title="Inspection detail" description="Review inspection findings, employer responses, enforcement status, and audit history.">
@@ -50,17 +62,32 @@ export default function Page() {
               <p className="whitespace-pre-wrap text-sm leading-6 text-neutral-700">{inspection.findings || "No findings recorded."}</p>
             </div>
 
-            <div className="rounded-lg border border-neutral-200 bg-white p-5 shadow-sm">
-              <h3 className="mb-3 text-sm font-bold text-neutral-900">Checklist</h3>
-              <div className="grid gap-2">
-                {Object.entries(inspection.checklist_responses || {}).length ? Object.entries(inspection.checklist_responses).map(([key, value]) => (
-                  <div key={key} className="flex items-center justify-between rounded border border-neutral-100 bg-neutral-50 px-3 py-2 text-sm">
-                    <span className="font-semibold text-neutral-800">{key.replaceAll("_", " ")}</span>
-                    <span className="text-neutral-600">{String(value)}</span>
+            {formResponse && formSchema.sections?.length ? (
+              <div className="rounded-lg border border-neutral-200 bg-white shadow-sm">
+                <div className="flex items-center justify-between border-b border-neutral-200 p-4">
+                  <div className="flex items-center gap-2">
+                    <FileText className="text-brand-700" size={18} />
+                    <h3 className="text-sm font-bold text-neutral-900">{formResponse.template_title || "Inspection Form Response"}</h3>
                   </div>
-                )) : <p className="text-sm text-neutral-600">No checklist responses recorded.</p>}
+                  <StatusBadge status={formResponse.status} />
+                </div>
+                <div className="p-4">
+                  <KoboFormRenderer schema={formSchema} values={formResponse.response_json || {}} readOnly logic={formLogic} />
+                </div>
               </div>
-            </div>
+            ) : (
+              <div className="rounded-lg border border-neutral-200 bg-white p-5 shadow-sm">
+                <h3 className="mb-3 text-sm font-bold text-neutral-900">Checklist</h3>
+                <div className="grid gap-2">
+                  {Object.entries(inspection.checklist_responses || {}).length ? Object.entries(inspection.checklist_responses).map(([key, value]) => (
+                    <div key={key} className="flex items-center justify-between rounded border border-neutral-100 bg-neutral-50 px-3 py-2 text-sm">
+                      <span className="font-semibold text-neutral-800">{key.replaceAll("_", " ")}</span>
+                      <span className="text-neutral-600">{String(value)}</span>
+                    </div>
+                  )) : <p className="text-sm text-neutral-600">No checklist responses recorded.</p>}
+                </div>
+              </div>
+            )}
           </section>
 
           <aside className="grid gap-4">

@@ -302,18 +302,28 @@ class Command(BaseCommand):
         _nin(chioma_fh, "11122233344", NINVerificationStatus.VERIFIED, "Chioma Eze", date(1994, 1, 30), "female", 0.93)
 
         # ── assessment fee ──
-        from apps.payments.models import AssessmentFee
+        from apps.payments.models import AssessmentFee, PlatformFeeSetting
 
         AssessmentFee.objects.get_or_create(
             state=lagos, facility_type=excel_fac.facility_type,
             defaults={
                 "amount": "5000.00",
                 "state_fee": "800.00",
-                "facility_fee": "3500.00",
-                "platform_fee": "700.00",
+                "facility_fee": "4200.00",
                 "effective_from": date.today() - timedelta(days=365),
                 "status": "active",
                 "created_by": la_state,
+            },
+        )
+        PlatformFeeSetting.objects.get_or_create(
+            fee_code="food_handler_assessment",
+            currency="NGN",
+            status="active",
+            defaults={
+                "fee_name": "Food Handler Assessment Platform Fee",
+                "amount": "700.00",
+                "effective_from": date.today() - timedelta(days=365),
+                "created_by": super_admin,
             },
         )
 

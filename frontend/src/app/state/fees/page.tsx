@@ -30,7 +30,6 @@ const blankForm: StateAssessmentFeePayload = {
   amount: "",
   state_fee: "",
   facility_fee: "",
-  platform_fee: "",
   provider_fee_handling: "deduct_from_platform",
   currency: "NGN",
   effective_from: new Date().toISOString().slice(0, 10),
@@ -51,7 +50,7 @@ function dateLabel(value?: string | null) {
 
 function splitMatches(form: StateAssessmentFeePayload) {
   const gross = Number(form.amount || 0);
-  const split = Number(form.state_fee || 0) + Number(form.facility_fee || 0) + Number(form.platform_fee || 0);
+  const split = Number(form.state_fee || 0) + Number(form.facility_fee || 0);
   return gross > 0 && gross === split;
 }
 
@@ -95,7 +94,7 @@ export default function Page() {
   const fees = feesQuery.data || [];
 
   return (
-    <PortalShell role="state_admin" title="Assessment fees" description="Configure state assessment fee splits and active pricing.">
+    <PortalShell role="state_admin" title="Assessment fees" description="Configure state assessment fee splits. Platform fees are owned by FoodCert and added automatically at checkout.">
       <div className="grid gap-5">
         <section className="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm">
           <div className="grid gap-3 md:grid-cols-[220px_220px_1fr_auto] md:items-end">
@@ -143,8 +142,9 @@ export default function Page() {
             columns={[
               { key: "facility_type", header: "Facility type", render: (row) => row.facility_type.replaceAll("_", " ") },
               { key: "fee_name", header: "Fee name", render: (row) => row.fee_name },
-              { key: "amount", header: "Gross", render: (row) => money(row.amount) },
-              { key: "split", header: "Split", render: (row) => `${money(row.facility_fee)} facility / ${money(row.state_fee)} state / ${money(row.platform_fee)} platform` },
+              { key: "amount", header: "State assessment fee", render: (row) => money(row.amount) },
+              { key: "split", header: "State split", render: (row) => `${money(row.facility_fee)} facility / ${money(row.state_fee)} state` },
+              { key: "platform_fee", header: "Platform fee", render: (row) => `${money(row.platform_fee)} auto-added` },
               { key: "effective", header: "Effective period", render: (row) => `${dateLabel(row.effective_from)} - ${dateLabel(row.effective_to)}` },
               { key: "status", header: "Status", render: (row) => <StatusCell status={row.status} /> },
               {
@@ -162,7 +162,6 @@ export default function Page() {
                           amount: row.amount,
                           state_fee: row.state_fee,
                           facility_fee: row.facility_fee,
-                          platform_fee: row.platform_fee,
                           provider_fee_handling: row.provider_fee_handling,
                           currency: row.currency,
                           effective_from: row.effective_from,
@@ -202,7 +201,7 @@ export default function Page() {
           <div className="w-full max-w-2xl rounded-lg border border-neutral-200 bg-white shadow-xl">
             <div className="border-b border-neutral-100 px-6 py-4">
               <h2 className="text-lg font-bold text-neutral-900">{editing ? "Edit assessment fee" : "New assessment fee"}</h2>
-              <p className="mt-1 text-sm text-neutral-500">Gross amount must equal facility, state, and platform splits.</p>
+              <p className="mt-1 text-sm text-neutral-500">State assessment amount must equal facility and state shares. FoodCert platform fee is configured by the platform owner and added automatically at checkout.</p>
             </div>
             <form
               className="grid gap-4 p-6"
@@ -223,7 +222,7 @@ export default function Page() {
                   </select>
                 </label>
                 <label className="grid gap-1 text-sm font-semibold text-neutral-700">
-                  Gross amount
+                  State assessment amount
                   <input className="h-10 rounded border border-neutral-200 bg-neutral-50 px-3" required type="number" min="0" step="0.01" value={form.amount} onChange={(event) => setForm((prev) => ({ ...prev, amount: event.target.value }))} />
                 </label>
                 <label className="grid gap-1 text-sm font-semibold text-neutral-700">
@@ -233,10 +232,6 @@ export default function Page() {
                 <label className="grid gap-1 text-sm font-semibold text-neutral-700">
                   State amount
                   <input className="h-10 rounded border border-neutral-200 bg-neutral-50 px-3" required type="number" min="0" step="0.01" value={form.state_fee} onChange={(event) => setForm((prev) => ({ ...prev, state_fee: event.target.value }))} />
-                </label>
-                <label className="grid gap-1 text-sm font-semibold text-neutral-700">
-                  Platform amount
-                  <input className="h-10 rounded border border-neutral-200 bg-neutral-50 px-3" required type="number" min="0" step="0.01" value={form.platform_fee} onChange={(event) => setForm((prev) => ({ ...prev, platform_fee: event.target.value }))} />
                 </label>
                 <label className="grid gap-1 text-sm font-semibold text-neutral-700">
                   Status
@@ -264,7 +259,7 @@ export default function Page() {
               </div>
 
               <p className={`rounded px-3 py-2 text-sm font-semibold ${splitMatches(form) ? "bg-brand-50 text-brand-700" : "bg-warning-50 text-warning-700"}`}>
-                Split preview: {money(form.facility_fee || "0")} + {money(form.state_fee || "0")} + {money(form.platform_fee || "0")} = {money(String(Number(form.facility_fee || 0) + Number(form.state_fee || 0) + Number(form.platform_fee || 0)))}
+                State split preview: {money(form.facility_fee || "0")} facility + {money(form.state_fee || "0")} state = {money(String(Number(form.facility_fee || 0) + Number(form.state_fee || 0)))}
               </p>
               {saveMutation.isError ? <p className="rounded bg-danger-50 px-3 py-2 text-sm font-semibold text-danger-700">Could not save this fee. Check split totals and overlapping active periods.</p> : null}
               <div className="flex justify-end gap-3">

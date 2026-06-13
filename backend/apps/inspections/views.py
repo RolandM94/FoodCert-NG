@@ -15,6 +15,8 @@ from apps.audit.models import AuditAction
 from apps.audit.services import log_action
 from apps.certificates.models import Certificate, CertificateVerificationLog, SuspiciousCertificateReport, VerificationActorType, VerificationResult
 from apps.certificates.services import CertificateService
+from apps.forms.models import FormPrimaryModule, FormTemplate, FormTemplatePurpose, FormTemplateStatus
+from apps.forms.serializers import FormAssignmentSerializer, FormResponseSerializer, FormTemplateSerializer
 from apps.inspections.models import (
     CorrectiveActionResponse,
     CorrectiveActionStatus,
@@ -41,6 +43,7 @@ from apps.inspections.serializers import (
     InspectionEvidenceSerializer,
     InspectionFindingCreateSerializer,
     InspectionFindingSerializer,
+    InspectionResponseSerializer,
     InspectorCertificateFlagSerializer,
     InspectorCertificateNumberSerializer,
     InspectorCertificateSaveSerializer,
@@ -162,6 +165,94 @@ class InspectionViewSet(viewsets.ModelViewSet):
             evidence=serializer.validated_data,
         )
         return Response(InspectionSerializer(inspection).data)
+
+    def _inspection_template_queryset(self):
+        queryset = (
+            FormTemplate.objects.filter(status=FormTemplateStatus.PUBLISHED)
+            .filter(Q(purpose=FormTemplatePurpose.INSPECTION_CHECKLIST) | Q(primary_module=FormPrimaryModule.INSPECTIONS))
+            .order_by("title")
+        )
+        user = self.request.user
+        if user.role not in {UserRole.SUPER_ADMIN, UserRole.FEDERAL_ADMIN}:
+            if user.organization_id:
+                queryset = queryset.filter(owner_organization=user.organization)
+            elif user.state_id:
+                queryset = queryset.filter(owner_organization__state=user.state)
+        return queryset
+
+    def _ensure_can_assign_form(self, inspection):
+        if self.request.user.role not in {UserRole.STATE_ADMIN, UserRole.SUPER_ADMIN, UserRole.FEDERAL_ADMIN}:
+            raise PermissionDenied("Only ministry administrators can assign inspection forms.")
+        if self.request.user.role == UserRole.STATE_ADMIN and inspection.employer.state_id != self.request.user.state_id:
+            raise PermissionDenied("You can only assign forms to inspections in your state.")
+
+    def _ensure_can_submit_form(self, inspection):
+        if self.request.user.role in {UserRole.STATE_ADMIN, UserRole.SUPER_ADMIN, UserRole.FEDERAL_ADMIN}:
+            return
+        if self.request.user.role == UserRole.INSPECTOR and inspection.inspector_id == self.request.user.id:
+            return
+        raise PermissionDenied("You cannot submit this inspection form.")
+
+    @extend_schema(responses=dict)
+    @action(detail=True, methods=["get"], url_path="form-response")
+    def form_response(self, request, pk=None):
+        inspection = self.get_object()
+        form_response = InspectionService.inspection_form_workspace(inspection=inspection)
+        payload = {
+            "assignment": FormAssignmentSerializer(form_response.assignment).data if form_response else None,
+            "response": FormResponseSerializer(form_response).data if form_response else None,
+            "available_templates": FormTemplateSerializer(self._inspection_template_queryset(), many=True).data
+            if request.user.role in {UserRole.STATE_ADMIN, UserRole.SUPER_ADMIN, UserRole.FEDERAL_ADMIN}
+            else [],
+        }
+        return Response(payload)
+
+    @extend_schema(responses=dict)
+    @action(detail=True, methods=["post"], url_path="assign-form")
+    def assign_form(self, request, pk=None):
+        inspection = self.get_object()
+        self._ensure_can_assign_form(inspection)
+        template_id = request.data.get("form_template") or request.data.get("template") or request.data.get("template_id")
+        if not template_id:
+            raise ValidationError({"form_template": "Select an inspection form template."})
+        template = self._inspection_template_queryset().filter(id=template_id).first()
+        if not template:
+            raise ValidationError({"form_template": "Select a published inspection form template."})
+        assignment, form_response = InspectionService.assign_form_template(
+            inspection=inspection,
+            actor=request.user,
+            template=template,
+        )
+        return Response(
+            {
+                "assignment": FormAssignmentSerializer(assignment).data,
+                "response": FormResponseSerializer(form_response).data,
+            },
+            status=status.HTTP_201_CREATED,
+        )
+
+    @extend_schema(responses=dict)
+    @action(detail=True, methods=["post"], url_path="submit-form")
+    def submit_form(self, request, pk=None):
+        inspection = self.get_object()
+        self._ensure_can_submit_form(inspection)
+        response_json = request.data.get("response_json")
+        if response_json is None:
+            response_json = request.data.get("responses")
+        if response_json is None:
+            raise ValidationError({"response_json": "Submit the completed inspection form data."})
+        form_response = InspectionService.submit_form_response(
+            inspection=inspection,
+            actor=request.user,
+            response_json=response_json,
+        )
+        inspection.refresh_from_db()
+        return Response(
+            {
+                "inspection": InspectionSerializer(inspection).data,
+                "response": FormResponseSerializer(form_response).data,
+            }
+        )
 
     @extend_schema(request=CertificateScanSerializer, responses=InspectionCertificateScanSerializer)
     @action(detail=True, methods=["post"], url_path="scan-certificate")
@@ -738,3 +829,173 @@ class FederalEnforcementReportsView(APIView):
         if request.user.role not in {UserRole.FEDERAL_ADMIN, UserRole.SUPER_ADMIN}:
             raise PermissionDenied("Only federal administrators can view enforcement reports.")
         return Response({"reports": [], "filters": {}})
+
+
+class StateInspectionsView(APIView):
+    permission_classes = [IsAuthenticated, IsActiveUser]
+
+    def _ensure_state_admin(self, user):
+        if user.role not in {UserRole.STATE_ADMIN, UserRole.SUPER_ADMIN, UserRole.FEDERAL_ADMIN}:
+            raise PermissionDenied("Only state ministry administrators can manage inspections.")
+
+    def _base_queryset(self, user):
+        qs = Inspection.objects.select_related(
+            "inspector", "employer", "employer__state", "employer__lga", "branch", "assigned_by"
+        ).prefetch_related("employer_responses")
+        if user.role in {UserRole.SUPER_ADMIN, UserRole.FEDERAL_ADMIN}:
+            return qs
+        return qs.filter(employer__state=user.state)
+
+    def _serialize(self, inspection, include_detail=False):
+        from apps.audit.models import AuditLog
+        payload = InspectionSerializer(inspection).data
+        payload["state_name"] = inspection.employer.state.name if inspection.employer.state else None
+        payload["lga_name"] = inspection.employer.lga.name if inspection.employer.lga else None
+        payload["responses"] = InspectionResponseSerializer(
+            inspection.employer_responses.select_related("submitted_by").order_by("-submitted_at"), many=True
+        ).data
+        audit_logs = AuditLog.objects.filter(
+            target_type="Inspection", target_id=str(inspection.id)
+        ).select_related("actor").order_by("-created_at")[:20]
+        payload["audit_history"] = [
+            {
+                "id": str(log.id),
+                "action": log.action,
+                "actor_name": log.actor.get_full_name() if log.actor else None,
+                "metadata": log.metadata or {},
+                "created_at": log.created_at.isoformat(),
+            }
+            for log in audit_logs
+        ]
+        if include_detail:
+            form_response = InspectionService.inspection_form_workspace(inspection=inspection)
+            payload["form_response"] = FormResponseSerializer(form_response).data if form_response else None
+            payload["form_assignment"] = FormAssignmentSerializer(form_response.assignment).data if form_response else None
+        return payload
+
+    def get(self, request):
+        self._ensure_state_admin(request.user)
+        qs = self._base_queryset(request.user)
+        queue = request.query_params.get("queue")
+        if queue == "active":
+            qs = qs.exclude(status__in=[InspectionStatus.CLOSED, InspectionStatus.CANCELLED])
+        elif queue == "submitted":
+            qs = qs.filter(status=InspectionStatus.SUBMITTED)
+        elif queue == "enforcement":
+            qs = qs.exclude(enforcement_action="none")
+        status_filter = request.query_params.get("status")
+        if status_filter:
+            qs = qs.filter(status=status_filter)
+        enforcement = request.query_params.get("enforcement_action")
+        if enforcement:
+            qs = qs.filter(enforcement_action=enforcement)
+        search = request.query_params.get("search")
+        if search:
+            qs = qs.filter(
+                Q(employer__business_name__icontains=search)
+                | Q(inspector__first_name__icontains=search)
+                | Q(inspector__last_name__icontains=search)
+                | Q(findings__icontains=search)
+                | Q(reference__icontains=search)
+            )
+        inspector = request.query_params.get("inspector")
+        if inspector:
+            qs = qs.filter(inspector_id=inspector)
+        employer = request.query_params.get("employer")
+        if employer:
+            qs = qs.filter(employer_id=employer)
+        qs = qs.order_by("-inspection_date")[:200]
+        return Response([self._serialize(inspection) for inspection in qs])
+
+    def post(self, request):
+        self._ensure_state_admin(request.user)
+        serializer = CreateInspectionSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        inspector_id = request.data.get("inspector")
+        if not inspector_id:
+            raise ValidationError({"inspector": "Select an inspector."})
+        from apps.accounts.models import User as UserModel
+        inspector = UserModel.objects.filter(id=inspector_id, role=UserRole.INSPECTOR).first()
+        if not inspector:
+            raise ValidationError({"inspector": "Inspector not found."})
+        inspection = InspectionService.assign(
+            actor=request.user,
+            inspector=inspector,
+            **serializer.validated_data,
+        )
+        form_template_id = request.data.get("form_template")
+        if form_template_id:
+            template = FormTemplate.objects.filter(
+                id=form_template_id, status=FormTemplateStatus.PUBLISHED
+            ).first()
+            if template:
+                InspectionService.assign_form_template(
+                    inspection=inspection, actor=request.user, template=template
+                )
+        return Response(self._serialize(inspection), status=status.HTTP_201_CREATED)
+
+
+class StateInspectionDetailView(APIView):
+    permission_classes = [IsAuthenticated, IsActiveUser]
+
+    def _ensure_state_admin(self, user):
+        if user.role not in {UserRole.STATE_ADMIN, UserRole.SUPER_ADMIN, UserRole.FEDERAL_ADMIN}:
+            raise PermissionDenied("Only state ministry administrators can view inspections.")
+
+    def get(self, request, pk):
+        self._ensure_state_admin(request.user)
+        inspection = Inspection.objects.select_related(
+            "inspector", "employer", "employer__state", "employer__lga", "branch", "assigned_by"
+        ).prefetch_related("employer_responses").filter(id=pk).first()
+        if not inspection:
+            raise ValidationError("Inspection not found.")
+        if request.user.role == UserRole.STATE_ADMIN and inspection.employer.state_id != request.user.state_id:
+            raise PermissionDenied("You can only view inspections in your state.")
+        view = StateInspectionsView()
+        return Response(view._serialize(inspection, include_detail=True))
+
+
+class StateInspectionReviewView(APIView):
+    permission_classes = [IsAuthenticated, IsActiveUser]
+
+    def patch(self, request, pk):
+        if request.user.role not in {UserRole.STATE_ADMIN, UserRole.SUPER_ADMIN, UserRole.FEDERAL_ADMIN}:
+            raise PermissionDenied("Only state ministry administrators can review inspections.")
+        inspection = Inspection.objects.select_related(
+            "inspector", "employer", "employer__state", "employer__lga", "branch"
+        ).prefetch_related("employer_responses").filter(id=pk).first()
+        if not inspection:
+            raise ValidationError("Inspection not found.")
+        if request.user.role == UserRole.STATE_ADMIN and inspection.employer.state_id != request.user.state_id:
+            raise PermissionDenied("You can only review inspections in your state.")
+        kwargs = {}
+        if "enforcement_action" in request.data:
+            kwargs["enforcement_action"] = request.data["enforcement_action"]
+        if "findings" in request.data:
+            kwargs["findings"] = request.data["findings"]
+        if "checklist_responses" in request.data:
+            kwargs["checklist_responses"] = request.data["checklist_responses"]
+        if "evidence_files" in request.data:
+            kwargs["evidence_files"] = request.data["evidence_files"]
+        inspection = InspectionService.review(inspection=inspection, actor=request.user, **kwargs)
+        view = StateInspectionsView()
+        return Response(view._serialize(inspection, include_detail=True))
+
+
+class StateInspectionCloseView(APIView):
+    permission_classes = [IsAuthenticated, IsActiveUser]
+
+    def patch(self, request, pk):
+        if request.user.role not in {UserRole.STATE_ADMIN, UserRole.SUPER_ADMIN, UserRole.FEDERAL_ADMIN}:
+            raise PermissionDenied("Only state ministry administrators can close inspections.")
+        inspection = Inspection.objects.select_related(
+            "inspector", "employer", "employer__state", "employer__lga", "branch"
+        ).prefetch_related("employer_responses").filter(id=pk).first()
+        if not inspection:
+            raise ValidationError("Inspection not found.")
+        if request.user.role == UserRole.STATE_ADMIN and inspection.employer.state_id != request.user.state_id:
+            raise PermissionDenied("You can only close inspections in your state.")
+        closure_notes = request.data.get("closure_notes", "")
+        inspection = InspectionService.close(inspection=inspection, actor=request.user, closure_notes=closure_notes)
+        view = StateInspectionsView()
+        return Response(view._serialize(inspection, include_detail=True))

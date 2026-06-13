@@ -206,7 +206,6 @@ export type StateAssessmentFeePayload = {
   amount: string;
   state_fee: string;
   facility_fee: string;
-  platform_fee: string;
   provider_fee_handling?: string;
   currency?: string;
   effective_from: string;
@@ -563,6 +562,7 @@ export type StateInspectionAssignmentPayload = {
   inspector: string;
   employer: string;
   branch?: string;
+  form_template?: string;
   inspection_date?: string;
   checklist_responses?: Record<string, boolean | string | number>;
   enforcement_action?: EnforcementAction;

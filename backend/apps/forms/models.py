@@ -1,8 +1,9 @@
 from django.db import models
+from django.utils import timezone
 
 from apps.common.models import UUIDModel, TimestampedModel
 from apps.accounts.models import User
-from apps.organizations.models import Organization, OrganizationUnit
+from apps.organizations.models import Organization
 
 
 class FormTemplatePurpose(models.TextChoices):
@@ -20,11 +21,50 @@ class FormTemplatePurpose(models.TextChoices):
     GENERAL_DATA_COLLECTION = "general_data_collection", "General Data Collection"
 
 
+class FormPrimaryModule(models.TextChoices):
+    INSPECTIONS = "inspections", "Inspections"
+    EMPLOYERS = "employers", "Employers / Food Businesses"
+    FACILITIES = "facilities", "Medical Facilities"
+    ACCREDITATION = "accreditation", "Accreditation"
+    FOOD_HANDLERS = "food_handlers", "Food Handlers"
+    REPORTS = "reports", "Reports"
+    COMPLIANCE = "compliance", "Compliance Monitoring"
+    TRAINING = "training", "Training / Feedback"
+    INCIDENTS = "incidents", "Incident Reporting"
+    GENERAL = "general", "General"
+
+
 class FormTemplateStatus(models.TextChoices):
     DRAFT = "draft", "Draft"
     PUBLISHED = "published", "Published"
     ARCHIVED = "archived", "Archived"
     DEPRECATED = "deprecated", "Deprecated"
+
+
+class FormVersionStatus(models.TextChoices):
+    DRAFT = "draft", "Draft"
+    PUBLISHED = "published", "Published"
+    DEPRECATED = "deprecated", "Deprecated"
+
+
+class FormRecipientStatus(models.TextChoices):
+    NOT_STARTED = "not_started", "Not Started"
+    IN_PROGRESS = "in_progress", "In Progress"
+    SUBMITTED = "submitted", "Submitted"
+    REVIEWED = "reviewed", "Reviewed"
+    RETURNED = "returned", "Returned"
+    OVERDUE = "overdue", "Overdue"
+    CANCELLED = "cancelled", "Cancelled"
+
+
+class FormSyncStatus(models.TextChoices):
+    ONLINE = "online", "Online"
+    AVAILABLE_OFFLINE = "available_offline", "Available Offline"
+    SYNC_PENDING = "sync_pending", "Sync Pending"
+    SYNCING = "syncing", "Syncing"
+    SYNCED = "synced", "Synced"
+    SYNC_FAILED = "sync_failed", "Sync Failed"
+    CONFLICT = "conflict", "Conflict Detected"
 
 
 class FormTemplate(UUIDModel, TimestampedModel):
@@ -33,10 +73,15 @@ class FormTemplate(UUIDModel, TimestampedModel):
     purpose = models.CharField(max_length=50, choices=FormTemplatePurpose.choices, db_index=True)
     owner_organization = models.ForeignKey(Organization, on_delete=models.CASCADE, related_name="form_templates")
     target_respondent_type = models.CharField(max_length=50, blank=True)
-    module_context = models.CharField(max_length=50, blank=True, help_text="e.g. inspections, employer, facility, food_handler")
+    primary_module = models.CharField(max_length=50, choices=FormPrimaryModule.choices, default=FormPrimaryModule.GENERAL, db_index=True)
+    module_context = models.CharField(max_length=50, blank=True, help_text="Compatibility field; use primary_module for new forms.")
+    default_context_type = models.CharField(max_length=50, blank=True)
+    language = models.CharField(max_length=16, default="en")
+    settings_json = models.JSONField(default=dict, blank=True)
     status = models.CharField(max_length=20, choices=FormTemplateStatus.choices, default=FormTemplateStatus.DRAFT, db_index=True)
     current_version = models.PositiveIntegerField(default=1)
     created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name="form_templates_created")
+    archived_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         ordering = ["-updated_at"]
@@ -44,6 +89,7 @@ class FormTemplate(UUIDModel, TimestampedModel):
             models.Index(fields=["purpose"]),
             models.Index(fields=["status"]),
             models.Index(fields=["owner_organization"]),
+            models.Index(fields=["primary_module", "status"]),
         ]
 
     def __str__(self):
@@ -54,11 +100,13 @@ class FormTemplateVersion(UUIDModel, TimestampedModel):
     template = models.ForeignKey(FormTemplate, on_delete=models.CASCADE, related_name="versions")
     version_number = models.PositiveIntegerField()
     schema_json = models.JSONField(default=dict, help_text="Sections and questions definition")
+    logic_json = models.JSONField(default=dict, blank=True)
     scoring_json = models.JSONField(default=dict, blank=True)
     conditional_logic_json = models.JSONField(default=dict, blank=True)
+    settings_json = models.JSONField(default=dict, blank=True)
     published_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name="template_versions_published")
     published_at = models.DateTimeField(null=True, blank=True)
-    status = models.CharField(max_length=20, choices=FormTemplateStatus.choices, default=FormTemplateStatus.DRAFT)
+    status = models.CharField(max_length=20, choices=FormVersionStatus.choices, default=FormVersionStatus.DRAFT)
 
     class Meta:
         unique_together = [("template", "version_number")]
@@ -95,11 +143,13 @@ class FormAssignment(UUIDModel, TimestampedModel):
     start_date = models.DateTimeField(null=True, blank=True)
     due_date = models.DateTimeField(null=True, blank=True)
     allow_draft = models.BooleanField(default=True)
+    allow_offline = models.BooleanField(default=False)
     allow_multiple_submissions = models.BooleanField(default=False)
     allow_late_submission = models.BooleanField(default=False)
     requires_review = models.BooleanField(default=False)
     reviewer_role = models.CharField(max_length=50, blank=True)
     status = models.CharField(max_length=20, choices=AssignmentStatus.choices, default=AssignmentStatus.DRAFT, db_index=True)
+    closed_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         ordering = ["-created_at"]
@@ -116,18 +166,51 @@ class FormAssignment(UUIDModel, TimestampedModel):
 
 class ResponseStatus(models.TextChoices):
     NOT_STARTED = "not_started", "Not Started"
+    DRAFT = "draft", "Draft"
     IN_PROGRESS = "in_progress", "In Progress"
     SUBMITTED = "submitted", "Submitted"
     RETURNED = "returned", "Returned"
     REVIEWED = "reviewed", "Reviewed"
+    APPROVED = "approved", "Approved"
+    REJECTED = "rejected", "Rejected"
     OVERDUE = "overdue", "Overdue"
     CANCELLED = "cancelled", "Cancelled"
+    SYNC_PENDING = "sync_pending", "Sync Pending"
+    SYNC_FAILED = "sync_failed", "Sync Failed"
+
+
+class FormRecipient(UUIDModel, TimestampedModel):
+    assignment = models.ForeignKey(FormAssignment, on_delete=models.CASCADE, related_name="recipients")
+    recipient_type = models.CharField(max_length=50)
+    recipient_id = models.CharField(max_length=100)
+    organization = models.ForeignKey(Organization, on_delete=models.PROTECT, null=True, blank=True, related_name="form_recipients")
+    role_id = models.CharField(max_length=100, blank=True)
+    status = models.CharField(max_length=20, choices=FormRecipientStatus.choices, default=FormRecipientStatus.NOT_STARTED, db_index=True)
+    notified_at = models.DateTimeField(null=True, blank=True)
+    started_at = models.DateTimeField(null=True, blank=True)
+    submitted_at = models.DateTimeField(null=True, blank=True)
+    reviewed_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["assignment", "recipient_type", "recipient_id"]
+        indexes = [
+            models.Index(fields=["assignment", "status"]),
+            models.Index(fields=["recipient_type", "recipient_id"]),
+            models.Index(fields=["organization", "status"]),
+        ]
+        constraints = [
+            models.UniqueConstraint(fields=["assignment", "recipient_type", "recipient_id"], name="forms_unique_assignment_recipient"),
+        ]
+
+    def __str__(self):
+        return f"{self.assignment.title} recipient {self.recipient_type}:{self.recipient_id}"
 
 
 class FormResponse(UUIDModel, TimestampedModel):
     assignment = models.ForeignKey(FormAssignment, on_delete=models.CASCADE, related_name="responses")
     template = models.ForeignKey(FormTemplate, on_delete=models.PROTECT, related_name="responses")
     template_version = models.ForeignKey(FormTemplateVersion, on_delete=models.PROTECT, null=True, related_name="responses")
+    recipient = models.ForeignKey(FormRecipient, on_delete=models.SET_NULL, null=True, blank=True, related_name="responses")
     respondent_user = models.ForeignKey(User, on_delete=models.PROTECT, related_name="form_responses")
     respondent_organization = models.ForeignKey(Organization, on_delete=models.PROTECT, null=True, blank=True, related_name="form_responses")
     context_type = models.CharField(max_length=50, blank=True)
@@ -136,6 +219,11 @@ class FormResponse(UUIDModel, TimestampedModel):
     score = models.FloatField(null=True, blank=True)
     risk_rating = models.CharField(max_length=20, blank=True)
     status = models.CharField(max_length=20, choices=ResponseStatus.choices, default=ResponseStatus.NOT_STARTED, db_index=True)
+    sync_status = models.CharField(max_length=20, choices=FormSyncStatus.choices, default=FormSyncStatus.ONLINE, db_index=True)
+    device_id = models.CharField(max_length=128, blank=True)
+    offline_created_at = models.DateTimeField(null=True, blank=True)
+    started_at = models.DateTimeField(null=True, blank=True)
+    last_saved_at = models.DateTimeField(null=True, blank=True)
     submitted_at = models.DateTimeField(null=True, blank=True)
     reviewed_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="responses_reviewed")
     reviewed_at = models.DateTimeField(null=True, blank=True)
@@ -146,9 +234,89 @@ class FormResponse(UUIDModel, TimestampedModel):
         ordering = ["-created_at"]
         indexes = [
             models.Index(fields=["status"]),
+            models.Index(fields=["sync_status"]),
             models.Index(fields=["assignment"]),
             models.Index(fields=["respondent_user"]),
+            models.Index(fields=["context_type", "context_id"]),
         ]
 
     def __str__(self):
         return f"Response by {self.respondent_user} for {self.template.title}"
+
+
+class FormResponseAttachment(UUIDModel, TimestampedModel):
+    response = models.ForeignKey(FormResponse, on_delete=models.CASCADE, related_name="attachments")
+    question_key = models.CharField(max_length=120)
+    repeat_group_key = models.CharField(max_length=120, blank=True)
+    repeat_item_id = models.CharField(max_length=120, blank=True)
+    file = models.FileField(upload_to="form_response_attachments/", null=True, blank=True)
+    file_url = models.URLField(blank=True)
+    file_type = models.CharField(max_length=50, blank=True)
+    file_name = models.CharField(max_length=255, blank=True)
+    file_size = models.PositiveBigIntegerField(null=True, blank=True)
+    mime_type = models.CharField(max_length=120, blank=True)
+    uploaded_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="form_response_attachments")
+    captured_at = models.DateTimeField(null=True, blank=True)
+    gps_latitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
+    gps_longitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
+    metadata_json = models.JSONField(default=dict, blank=True)
+    sync_status = models.CharField(max_length=20, choices=FormSyncStatus.choices, default=FormSyncStatus.ONLINE, db_index=True)
+
+    class Meta:
+        ordering = ["response", "question_key", "created_at"]
+        indexes = [
+            models.Index(fields=["response", "question_key"]),
+            models.Index(fields=["sync_status"]),
+        ]
+
+    def __str__(self):
+        return self.file_name or self.file_url or f"Attachment for {self.question_key}"
+
+
+class FormResponseActivityLog(UUIDModel, TimestampedModel):
+    response = models.ForeignKey(FormResponse, on_delete=models.CASCADE, related_name="activity_logs")
+    actor = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="form_response_activity")
+    action = models.CharField(max_length=64, db_index=True)
+    details_json = models.JSONField(default=dict, blank=True)
+    ip_address = models.GenericIPAddressField(null=True, blank=True)
+    device_id = models.CharField(max_length=128, blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["response", "action"]),
+            models.Index(fields=["actor", "created_at"]),
+        ]
+
+    def __str__(self):
+        return f"{self.action} on {self.response_id}"
+
+
+class OfflineSyncQueue(UUIDModel, TimestampedModel):
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="form_offline_sync_jobs")
+    assignment = models.ForeignKey(FormAssignment, on_delete=models.CASCADE, null=True, blank=True, related_name="offline_sync_jobs")
+    response = models.ForeignKey(FormResponse, on_delete=models.SET_NULL, null=True, blank=True, related_name="offline_sync_jobs")
+    local_response_id = models.CharField(max_length=128, db_index=True)
+    operation_type = models.CharField(max_length=50)
+    payload_json = models.JSONField(default=dict, blank=True)
+    media_payload_ref = models.CharField(max_length=255, blank=True)
+    status = models.CharField(max_length=20, choices=FormSyncStatus.choices, default=FormSyncStatus.SYNC_PENDING, db_index=True)
+    attempt_count = models.PositiveIntegerField(default=0)
+    last_attempt_at = models.DateTimeField(null=True, blank=True)
+    error_message = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ["created_at"]
+        indexes = [
+            models.Index(fields=["user", "status"]),
+            models.Index(fields=["assignment", "status"]),
+            models.Index(fields=["local_response_id"]),
+        ]
+
+    def mark_attempt(self, error_message: str = ""):
+        self.attempt_count += 1
+        self.last_attempt_at = timezone.now()
+        if error_message:
+            self.status = FormSyncStatus.SYNC_FAILED
+            self.error_message = error_message
+        self.save(update_fields=["attempt_count", "last_attempt_at", "status", "error_message", "updated_at"])

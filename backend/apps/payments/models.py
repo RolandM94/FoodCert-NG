@@ -166,6 +166,41 @@ class AssessmentFee(BaseModel):
         )
 
 
+class PlatformFeeSetting(BaseModel):
+    fee_code = models.CharField(max_length=80, default="food_handler_assessment", db_index=True)
+    fee_name = models.CharField(max_length=255, default="FoodCert platform fee")
+    amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    currency = models.CharField(max_length=3, default="NGN")
+    effective_from = models.DateField()
+    effective_to = models.DateField(null=True, blank=True)
+    status = models.CharField(max_length=24, choices=ActiveStatus.choices, default=ActiveStatus.ACTIVE, db_index=True)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="created_platform_fee_settings",
+    )
+    notes = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ["-effective_from"]
+        indexes = [
+            models.Index(fields=["fee_code", "status"]),
+            models.Index(fields=["effective_from", "effective_to"]),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.fee_code} {self.amount} {self.currency}"
+
+    @property
+    def is_current(self) -> bool:
+        today = timezone.localdate()
+        return self.status == ActiveStatus.ACTIVE and self.effective_from <= today and (
+            self.effective_to is None or self.effective_to >= today
+        )
+
+
 class PaymentTransaction(BaseModel):
     payer_user = models.ForeignKey(
         settings.AUTH_USER_MODEL,

@@ -92,7 +92,6 @@ class AssessmentFeeViewSet(viewsets.ModelViewSet):
             "amount": serializer.validated_data.get("amount", instance.amount),
             "state_fee": serializer.validated_data.get("state_fee", instance.state_fee),
             "facility_fee": serializer.validated_data.get("facility_fee", instance.facility_fee),
-            "platform_fee": serializer.validated_data.get("platform_fee", instance.platform_fee),
         }
         self._validate_fee_split(validated)
         self._validate_not_used_for_financial_change(instance, serializer.validated_data)
@@ -109,9 +108,9 @@ class AssessmentFeeViewSet(viewsets.ModelViewSet):
         log_action(action=AuditAction.UPDATE, actor=user, target=fee)
 
     def _validate_fee_split(self, data):
-        total = data["state_fee"] + data["facility_fee"] + data["platform_fee"]
+        total = data["state_fee"] + data["facility_fee"]
         if total != data["amount"]:
-            raise ValidationError("State, facility, and platform fees must equal the gross amount.")
+            raise ValidationError("State and facility fees must equal the state assessment amount. Platform fees are configured by the platform owner and added at checkout.")
 
     def _validate_no_overlap(self, *, facility_type, state, effective_from, effective_to=None, exclude=None):
         queryset = AssessmentFee.objects.filter(
@@ -138,7 +137,6 @@ class AssessmentFeeViewSet(viewsets.ModelViewSet):
             "currency",
             "state_fee",
             "facility_fee",
-            "platform_fee",
             "provider_fee_handling",
             "effective_from",
             "effective_to",

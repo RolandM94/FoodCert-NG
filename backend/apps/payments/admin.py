@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from apps.payments.models import AssessmentFee, PaymentAllocation, PaymentLedgerEntry, PaymentProvider, PaymentReconciliationRecord, PaymentTransaction, PaymentWebhookEvent, RefundRequest
+from apps.payments.models import AssessmentFee, PaymentAllocation, PaymentLedgerEntry, PaymentProvider, PaymentReconciliationRecord, PaymentTransaction, PaymentWebhookEvent, PlatformFeeSetting, RefundRequest
 
 
 @admin.register(AssessmentFee)
@@ -8,6 +8,13 @@ class AssessmentFeeAdmin(admin.ModelAdmin):
     list_display = ("state", "facility_type", "fee_name", "amount", "currency", "status", "effective_from", "effective_to", "approved_at")
     list_filter = ("state", "facility_type", "status")
     search_fields = ("state__name", "state__code", "facility_type", "fee_name")
+
+
+@admin.register(PlatformFeeSetting)
+class PlatformFeeSettingAdmin(admin.ModelAdmin):
+    list_display = ("fee_code", "fee_name", "amount", "currency", "status", "effective_from", "effective_to")
+    list_filter = ("fee_code", "status", "currency")
+    search_fields = ("fee_code", "fee_name")
 
 
 @admin.register(PaymentTransaction)

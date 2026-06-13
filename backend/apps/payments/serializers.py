@@ -3,10 +3,12 @@ from rest_framework import serializers
 from apps.facilities.models import MedicalFacility
 from apps.payments.models import AssessmentFee, PaymentAllocation, PaymentProvider, PaymentReconciliationRecord, PaymentTransaction, PaymentWebhookEvent, Receipt, RefundRequest
 from apps.payments.permissions import redacted_finance_metadata
+from apps.payments.services import PaymentService
 
 
 class AssessmentFeeSerializer(serializers.ModelSerializer):
     state_name = serializers.CharField(source="state.name", read_only=True)
+    platform_fee = serializers.SerializerMethodField()
 
     class Meta:
         model = AssessmentFee
@@ -32,7 +34,10 @@ class AssessmentFeeSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
         )
-        read_only_fields = ("id", "created_by", "approved_by", "approved_at", "created_at", "updated_at")
+        read_only_fields = ("id", "created_by", "approved_by", "approved_at", "platform_fee", "created_at", "updated_at")
+
+    def get_platform_fee(self, obj):
+        return f"{PaymentService.current_platform_fee(currency=obj.currency):.2f}"
 
 
 class PaymentTransactionSerializer(serializers.ModelSerializer):

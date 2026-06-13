@@ -9,6 +9,19 @@ from apps.certificates.services import CertificateService
 from apps.employers.models import Employer, EstablishmentCategory
 from apps.facilities.models import AccreditationStatus, FacilityType, MedicalFacility, OwnershipType
 from apps.food_handlers.models import FoodHandlerCategory, FoodHandlerProfile, FoodHandlerStatus, Gender
+from apps.forms.models import (
+    AssignmentStatus,
+    FormAssignment,
+    FormPrimaryModule,
+    FormRecipient,
+    FormResponse,
+    FormTemplate,
+    FormTemplatePurpose,
+    FormTemplateStatus,
+    FormTemplateVersion,
+    FormVersionStatus,
+    ResponseStatus,
+)
 from apps.illness.models import ClearanceStatus, IllnessReport, SuspectedCondition
 from apps.inspections.models import (
     ChecklistCategory,
@@ -102,6 +115,51 @@ class InspectionWorkflowTests(APITestCase):
             system_identifier="FCN-INSP001",
         )
 
+    def _inspection_form_template(self):
+        template = FormTemplate.objects.create(
+            title="Food Business Inspection Checklist",
+            description="Operational inspection checklist.",
+            purpose=FormTemplatePurpose.INSPECTION_CHECKLIST,
+            owner_organization=self.employer_org,
+            target_respondent_type="inspector",
+            primary_module=FormPrimaryModule.INSPECTIONS,
+            default_context_type="inspection",
+            status=FormTemplateStatus.PUBLISHED,
+            created_by=self.state_admin,
+        )
+        FormTemplateVersion.objects.create(
+            template=template,
+            version_number=1,
+            schema_json={
+                "sections": [
+                    {
+                        "key": "hygiene",
+                        "title": "Hygiene",
+                        "questions": [
+                            {
+                                "key": "handwashing_available",
+                                "label": "Handwashing station available",
+                                "type": "yes_no",
+                                "required": True,
+                                "critical_finding": {
+                                    "description": "Handwashing station is not available.",
+                                    "recommended_action": "Require immediate corrective action and follow-up inspection.",
+                                    "category": ChecklistCategory.HYGIENE,
+                                    "severity": ChecklistSeverity.CRITICAL,
+                                },
+                            }
+                        ],
+                    }
+                ]
+            },
+            logic_json={"rules": []},
+            settings_json={"allow_offline": True},
+            published_by=self.state_admin,
+            published_at=timezone.now(),
+            status=FormVersionStatus.PUBLISHED,
+        )
+        return template
+
     def _certificate(self):
         NINVerification.objects.create(
             food_handler=self.food_handler,
@@ -162,6 +220,66 @@ class InspectionWorkflowTests(APITestCase):
         self.assertEqual(data(submit_response)["status"], InspectionStatus.SUBMITTED)
         self.assertEqual(data(submit_response)["compliance_score"], "66.67")
         self.assertTrue(Notification.objects.filter(recipient=self.employer_user, category=NotificationCategory.ENFORCEMENT).exists())
+
+    def test_state_can_assign_dynamic_inspection_form(self):
+        template = self._inspection_form_template()
+        self.client.force_authenticate(self.state_admin)
+
+        response = self.client.post(
+            "/api/state/inspections/",
+            {
+                "inspector": str(self.inspector.id),
+                "employer": str(self.employer.id),
+                "form_template": str(template.id),
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        inspection_id = data(response)["id"]
+        assignment = FormAssignment.objects.get(context_type="inspection", context_id=inspection_id)
+        self.assertEqual(assignment.template, template)
+        self.assertEqual(assignment.assigned_to_id, str(self.inspector.id))
+        self.assertEqual(assignment.status, AssignmentStatus.ACTIVE)
+        self.assertTrue(assignment.allow_offline)
+        self.assertTrue(FormRecipient.objects.filter(assignment=assignment, recipient_id=str(self.inspector.id)).exists())
+        self.assertTrue(FormResponse.objects.filter(assignment=assignment, respondent_user=self.inspector).exists())
+
+    def test_inspector_submits_dynamic_form_and_generates_critical_finding(self):
+        template = self._inspection_form_template()
+        inspection = Inspection.objects.create(inspector=self.inspector, employer=self.employer, status=InspectionStatus.ASSIGNED)
+        self.client.force_authenticate(self.state_admin)
+        assign_response = self.client.post(
+            f"/api/inspections/{inspection.id}/assign-form/",
+            {"form_template": str(template.id)},
+            format="json",
+        )
+        self.assertEqual(assign_response.status_code, 201)
+
+        self.client.force_authenticate(self.inspector)
+        workspace_response = self.client.get(f"/api/inspections/{inspection.id}/form-response/")
+        self.assertEqual(workspace_response.status_code, 200)
+        self.assertEqual(data(workspace_response)["response"]["context_id"], str(inspection.id))
+
+        submit_response = self.client.post(
+            f"/api/inspections/{inspection.id}/submit-form/",
+            {"response_json": {"handwashing_available": False}},
+            format="json",
+        )
+
+        self.assertEqual(submit_response.status_code, 200)
+        form_response = FormResponse.objects.get(id=data(submit_response)["response"]["id"])
+        inspection.refresh_from_db()
+        self.assertEqual(form_response.status, ResponseStatus.SUBMITTED)
+        self.assertEqual(inspection.status, InspectionStatus.IN_PROGRESS)
+        self.assertEqual(inspection.checklist_responses, {"handwashing_available": False})
+        self.assertTrue(
+            InspectionFinding.objects.filter(
+                inspection=inspection,
+                severity=ChecklistSeverity.CRITICAL,
+                description="Handwashing station is not available.",
+            ).exists()
+        )
 
     def test_inspector_can_add_evidence_and_scan_certificate(self):
         certificate = self._certificate()
@@ -336,7 +454,7 @@ class InspectionWorkflowTests(APITestCase):
         payload = data(response)
         self.assertEqual(payload["response_type"], InspectionResponseType.CORRECTIVE_ACTION)
         inspection.refresh_from_db()
-        self.assertEqual(inspection.status, InspectionStatus.EMPLOYER_RESPONSE_SUBMITTED)
+        self.assertEqual(inspection.status, InspectionStatus.CORRECTIVE_ACTION_SUBMITTED)
 
     def test_branch_manager_can_only_respond_to_branch_inspection(self):
         branch = OrganizationUnit.objects.create(

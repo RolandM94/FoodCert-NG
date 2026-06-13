@@ -437,10 +437,9 @@ class StateAssessmentFeeEndpointTests(APITestCase):
         return {
             "fee_name": "Clinic assessment",
             "facility_type": facility_type,
-            "amount": "10000.00",
+            "amount": "9000.00",
             "state_fee": "2000.00",
             "facility_fee": "7000.00",
-            "platform_fee": "1000.00",
             "provider_fee_handling": "deduct_from_platform",
             "currency": "NGN",
             "effective_from": "2026-05-18",
@@ -456,14 +455,24 @@ class StateAssessmentFeeEndpointTests(APITestCase):
         self.assertEqual(str(payload(response)["state"]), str(self.lagos.id))
         self.assertEqual(AssessmentFee.objects.get().created_by, self.state_admin)
 
-    def test_state_fee_split_is_server_validated(self):
+    def test_state_fee_split_is_server_validated_without_platform_fee(self):
         self.client.force_authenticate(self.state_admin)
         data = self.fee_payload()
-        data["platform_fee"] = "2000.00"
+        data["facility_fee"] = "6000.00"
 
         response = self.client.post("/api/state/fees/", data, format="json")
 
         self.assertEqual(response.status_code, 400)
+
+    def test_state_fee_create_ignores_client_platform_fee(self):
+        self.client.force_authenticate(self.state_admin)
+        data = self.fee_payload()
+        data["platform_fee"] = "5000.00"
+
+        response = self.client.post("/api/state/fees/", data, format="json")
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(AssessmentFee.objects.get().platform_fee, 0)
 
     def test_state_fee_periods_cannot_overlap_for_same_facility_type(self):
         self.client.force_authenticate(self.state_admin)
@@ -478,10 +487,9 @@ class StateAssessmentFeeEndpointTests(APITestCase):
         AssessmentFee.objects.create(
             state=self.lagos,
             facility_type="clinic",
-            amount="10000.00",
+            amount="9000.00",
             state_fee="2000.00",
             facility_fee="7000.00",
-            platform_fee="1000.00",
             effective_from="2026-05-18",
             created_by=self.state_admin,
         )
@@ -490,8 +498,7 @@ class StateAssessmentFeeEndpointTests(APITestCase):
             facility_type="clinic",
             amount="9000.00",
             state_fee="2000.00",
-            facility_fee="6000.00",
-            platform_fee="1000.00",
+            facility_fee="7000.00",
             effective_from="2026-05-18",
             created_by=self.other_state_admin,
         )
@@ -534,10 +541,9 @@ class StateAssessmentFeeEndpointTests(APITestCase):
         fee = AssessmentFee.objects.create(
             state=self.lagos,
             facility_type="clinic",
-            amount="10000.00",
+            amount="9000.00",
             state_fee="2000.00",
             facility_fee="7000.00",
-            platform_fee="1000.00",
             effective_from="2026-05-18",
             created_by=self.state_admin,
         )
@@ -556,7 +562,7 @@ class StateAssessmentFeeEndpointTests(APITestCase):
 
         response = self.client.patch(
             f"/api/state/fee-schedules/{fee.id}/",
-            {"amount": "12000.00", "state_fee": "3000.00", "facility_fee": "8000.00", "platform_fee": "1000.00"},
+            {"amount": "11000.00", "state_fee": "3000.00", "facility_fee": "8000.00"},
             format="json",
         )
 

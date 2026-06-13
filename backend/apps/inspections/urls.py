@@ -15,6 +15,10 @@ from apps.inspections.views import (
     InspectorTasksView,
     StateEnforcementDashboardView,
     StateEnforcementReportsView,
+    StateInspectionCloseView,
+    StateInspectionDetailView,
+    StateInspectionReviewView,
+    StateInspectionsView,
     inspector_flag_certificate,
     inspector_save_certificate_to_inspection,
     inspector_verify_certificate,
@@ -42,6 +46,11 @@ urlpatterns += [
     path("inspections/<uuid:pk>/employer-context/", InspectionEmployerContextView.as_view(), name="inspection-employer-context"),
     path("inspections/<uuid:pk>/compliance-summary/", InspectionComplianceSummaryView.as_view(), name="inspection-compliance-summary"),
     path("inspections/<uuid:pk>/food-handlers/", InspectionFoodHandlersView.as_view(), name="inspection-food-handlers"),
+
+    path("state/inspections/", StateInspectionsView.as_view(), name="state-inspections"),
+    path("state/inspections/<uuid:pk>/", StateInspectionDetailView.as_view(), name="state-inspection-detail"),
+    path("state/inspections/<uuid:pk>/review/", StateInspectionReviewView.as_view(), name="state-inspection-review"),
+    path("state/inspections/<uuid:pk>/close/", StateInspectionCloseView.as_view(), name="state-inspection-close"),
 
     path("state/enforcement/dashboard/", StateEnforcementDashboardView.as_view(), name="state-enforcement-dashboard"),
     path("state/enforcement/reports/<str:report_type>/", StateEnforcementReportsView.as_view(), name="state-enforcement-reports"),
