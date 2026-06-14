@@ -15,6 +15,7 @@ from apps.inspections.views import (
     InspectorTasksView,
     StateEnforcementDashboardView,
     StateEnforcementReportsView,
+    InspectionSettingsView,
     StateInspectionCloseView,
     StateInspectionDetailView,
     StateInspectionReviewView,
@@ -47,6 +48,7 @@ urlpatterns += [
     path("inspections/<uuid:pk>/compliance-summary/", InspectionComplianceSummaryView.as_view(), name="inspection-compliance-summary"),
     path("inspections/<uuid:pk>/food-handlers/", InspectionFoodHandlersView.as_view(), name="inspection-food-handlers"),
 
+    path("state/account-settings/inspection-settings/", InspectionSettingsView.as_view(), name="inspection-settings"),
     path("state/inspections/", StateInspectionsView.as_view(), name="state-inspections"),
     path("state/inspections/<uuid:pk>/", StateInspectionDetailView.as_view(), name="state-inspection-detail"),
     path("state/inspections/<uuid:pk>/review/", StateInspectionReviewView.as_view(), name="state-inspection-review"),

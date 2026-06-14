@@ -1,5 +1,6 @@
 from django.contrib.auth import get_user_model
 from django.core.files.uploadedfile import SimpleUploadedFile
+from django.utils import timezone
 from rest_framework.test import APITestCase
 
 from apps.accounts.models import UserRole
@@ -10,6 +11,7 @@ from apps.food_handlers.models import FoodHandlerCategory, FoodHandlerProfile, G
 from apps.lab_tests.models import LabTest
 from apps.locations.models import State
 from apps.organizations.models import Organization, OrganizationType, OrganizationUnit, OrganizationUnitType
+from apps.policy.models import StatePolicyConfig
 
 User = get_user_model()
 
@@ -166,6 +168,13 @@ class FacilityAccreditationWorkflowTests(APITestCase):
 
     def test_state_admin_can_approve_only_own_state_facility(self):
         facility, application = self._create_facility_and_application()
+        policy, _ = StatePolicyConfig.objects.get_or_create(state=self.lagos)
+        policy.medical_facility_settings = {
+            **policy.medical_facility_settings,
+            "validity_duration": 2,
+            "validity_unit": "years",
+        }
+        policy.save(update_fields=["medical_facility_settings", "updated_at"])
         self.client.force_authenticate(self.facility_admin)
         submit_response = self.client.patch(f"/api/facility-accreditation/{application['id']}/submit/")
         self.assertEqual(submit_response.status_code, 200)
@@ -190,7 +199,7 @@ class FacilityAccreditationWorkflowTests(APITestCase):
         db_facility = MedicalFacility.objects.get(id=facility["id"])
         self.assertEqual(db_facility.accreditation_status, AccreditationStatus.APPROVED)
         self.assertTrue(db_facility.can_conduct_assessments)
-        self.assertIsNotNone(db_facility.accreditation_expiry_date)
+        self.assertEqual(db_facility.accreditation_expiry_date, timezone.localdate().replace(year=timezone.localdate().year + 2))
 
     def test_facility_admin_can_upload_accreditation_document(self):
         facility, application = self._create_facility_and_application()

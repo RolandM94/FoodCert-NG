@@ -6,6 +6,10 @@ import type { EnforcementAction, Inspection, InspectionStatus } from "@/types/in
 import type { OrganizationUnit, UserInvite } from "@/types/organizations";
 import type { DashboardPayload } from "@/types/reports";
 
+function unwrapMaybe<T>(value: ApiEnvelope<T> | T): T {
+  return value && typeof value === "object" && "data" in value ? (value as ApiEnvelope<T>).data : value as T;
+}
+
 export type StateDashboardParams = {
   state?: string;
   lga?: string;
@@ -132,6 +136,11 @@ export async function fetchStateFacilities(params?: StateFacilityFilters): Promi
   return unwrap(response.data);
 }
 
+export async function fetchStateFacility(id: string): Promise<MedicalFacility> {
+  const response = await apiClient.get<ApiEnvelope<MedicalFacility>>(`/medical-facilities/${id}/`);
+  return unwrap(response.data);
+}
+
 export type StateFacilityApplicationFilters = {
   status?: string;
   queue?: "pending";
@@ -147,6 +156,225 @@ export async function fetchStateFacilityApplications(
     { params }
   );
   return unwrap(response.data);
+}
+
+export type MedicalFacilityAccreditationSettings = {
+  accreditation_template: string;
+  reaccreditation_template: string;
+  validity_duration: number;
+  validity_unit: "days" | "months" | "years";
+  initial_review_sla: number;
+  review_day_type: "working_days" | "calendar_days";
+  correction_window: number;
+  correction_day_type: "working_days" | "calendar_days";
+  renewal_window_days: number;
+  grace_period_days: number;
+  reminder_days_before_expiry: number[];
+  escalation_days_after_sla: number[];
+  disable_assessments_when_expired: boolean;
+  disable_assessments_when_suspended: boolean;
+  allow_renewal_after_expiry: boolean;
+  allow_suspended_renewal: boolean;
+  auto_expire_on_expiry_date: boolean;
+  require_state_approval_to_reactivate: boolean;
+  require_reinspection_before_reactivation: boolean;
+};
+
+export type StatePolicyConfig = {
+  id: string;
+  state: string;
+  state_name?: string;
+  requires_state_certificate_validation: boolean;
+  certificate_validity_months: number;
+  typhoid_validity_years: number;
+  hepatitis_a_second_dose_months: number;
+  auto_renewal_reminder_days: number[];
+  medical_facility_settings: MedicalFacilityAccreditationSettings;
+  state_profile_settings: StateProfileSettings;
+  notification_settings: StateNotificationSettings;
+  security_access_settings: StateSecurityAccessSettings;
+  updated_by?: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type StateProfileSettings = {
+  ministry_name: string;
+  public_display_name: string;
+  official_email: string;
+  official_phone: string;
+  website: string;
+  address_line_1: string;
+  address_line_2: string;
+  city: string;
+  country: string;
+  postal_code: string;
+  state_logo_url: string;
+  state_seal_url: string;
+  certificate_logo_url: string;
+  receipt_logo_url: string;
+  primary_brand_color: string;
+  secondary_brand_color: string;
+  signatories: Array<Record<string, string | boolean>>;
+  timezone: string;
+  currency: string;
+  working_days: string[];
+  working_hours_start: string;
+  working_hours_end: string;
+  public_holidays_source: string;
+};
+
+export type StateNotificationSettings = {
+  channels: Record<string, boolean | string>;
+  event_rules: Record<string, boolean>;
+  reminder_schedules: Record<string, number[]>;
+  recipient_roles: Record<string, boolean>;
+  templates_enabled: boolean;
+  delivery_logs_visible: boolean;
+};
+
+export type StateSecurityAccessSettings = {
+  minimum_password_length: number;
+  require_uppercase: boolean;
+  require_lowercase: boolean;
+  require_number: boolean;
+  require_symbol: boolean;
+  password_expiry_days: number;
+  prevent_password_reuse: number;
+  force_password_reset_for_new_users: boolean;
+  mfa_required_for_admins: boolean;
+  mfa_required_for_finance: boolean;
+  mfa_required_for_certificate_approvers: boolean;
+  allowed_mfa_methods: string[];
+  session_timeout_minutes: number;
+  idle_timeout_minutes: number;
+  concurrent_sessions_allowed: number;
+  force_logout_on_role_change: boolean;
+  failed_login_attempts: number;
+  lockout_duration_minutes: number;
+  notify_admin_on_lockout: boolean;
+  allowed_email_domains: string[];
+  block_public_email_domains: boolean;
+  enable_api_access: boolean;
+  allow_api_tokens: boolean;
+  require_token_expiry: boolean;
+  require_sensitive_export_approval: boolean;
+  restrict_medical_data_export: boolean;
+  watermark_pdf_exports: boolean;
+  audit_all_exports: boolean;
+  enable_periodic_access_review: boolean;
+  access_review_frequency_days: number;
+};
+
+export type StateAuditLogItem = {
+  id: string;
+  created_at: string;
+  actor_name?: string;
+  actor_email?: string;
+  action: string;
+  module: string;
+  event: string;
+  target_type: string;
+  target_id: string;
+  status: string;
+  ip_address?: string | null;
+  user_agent: string;
+  metadata: Record<string, unknown>;
+};
+
+export async function fetchStateMedicalFacilitySettings(): Promise<StatePolicyConfig> {
+  const response = await apiClient.get<ApiEnvelope<StatePolicyConfig> | StatePolicyConfig>(
+    "/state-policy-configs/my-medical-facility-settings/"
+  );
+  return unwrapMaybe(response.data);
+}
+
+export async function updateStateMedicalFacilitySettings(
+  settings: MedicalFacilityAccreditationSettings
+): Promise<StatePolicyConfig> {
+  const response = await apiClient.patch<ApiEnvelope<StatePolicyConfig> | StatePolicyConfig>(
+    "/state-policy-configs/my-medical-facility-settings/",
+    { medical_facility_settings: settings }
+  );
+  return unwrapMaybe(response.data);
+}
+
+export async function fetchStateProfileSettings(): Promise<StatePolicyConfig> {
+  const response = await apiClient.get<ApiEnvelope<StatePolicyConfig> | StatePolicyConfig>("/state-policy-configs/my-state-profile/");
+  return unwrapMaybe(response.data);
+}
+
+export async function updateStateProfileSettings(settings: StateProfileSettings): Promise<StatePolicyConfig> {
+  const response = await apiClient.patch<ApiEnvelope<StatePolicyConfig> | StatePolicyConfig>("/state-policy-configs/my-state-profile/", { state_profile_settings: settings });
+  return unwrapMaybe(response.data);
+}
+
+export async function fetchStateNotificationSettings(): Promise<StatePolicyConfig> {
+  const response = await apiClient.get<ApiEnvelope<StatePolicyConfig> | StatePolicyConfig>("/state-policy-configs/my-notification-settings/");
+  return unwrapMaybe(response.data);
+}
+
+export async function updateStateNotificationSettings(settings: StateNotificationSettings): Promise<StatePolicyConfig> {
+  const response = await apiClient.patch<ApiEnvelope<StatePolicyConfig> | StatePolicyConfig>("/state-policy-configs/my-notification-settings/", { notification_settings: settings });
+  return unwrapMaybe(response.data);
+}
+
+export async function fetchStateSecurityAccessSettings(): Promise<StatePolicyConfig> {
+  const response = await apiClient.get<ApiEnvelope<StatePolicyConfig> | StatePolicyConfig>("/state-policy-configs/my-security-access-settings/");
+  return unwrapMaybe(response.data);
+}
+
+export async function updateStateSecurityAccessSettings(settings: StateSecurityAccessSettings): Promise<StatePolicyConfig> {
+  const response = await apiClient.patch<ApiEnvelope<StatePolicyConfig> | StatePolicyConfig>("/state-policy-configs/my-security-access-settings/", { security_access_settings: settings });
+  return unwrapMaybe(response.data);
+}
+
+export async function fetchStateAuditLogs(params?: Record<string, string>): Promise<StateAuditLogItem[]> {
+  const response = await apiClient.get<ApiEnvelope<StateAuditLogItem[]> | StateAuditLogItem[]>("/state-policy-configs/my-audit-logs/", { params });
+  return unwrapMaybe(response.data);
+}
+
+export type InspectionSettingsPolicy = {
+  id: string;
+  state_id: string;
+  allow_offline_inspections: boolean;
+  requires_gps_by_default: boolean;
+  requires_inspector_signature: boolean;
+  requires_employer_signature: boolean;
+  auto_open_case_for_high: boolean;
+  auto_open_case_for_critical: boolean;
+  auto_require_followup_for_high: boolean;
+  auto_require_followup_for_critical: boolean;
+  auto_close_passed_inspections: boolean;
+  default_templates: Record<string, string>;
+  severity_levels: Array<Record<string, unknown>>;
+  corrective_deadlines: Array<Record<string, unknown>>;
+  notice_rules: Array<Record<string, unknown>>;
+  escalation_rules: Array<Record<string, unknown>>;
+  score_thresholds: Record<string, string>;
+  reminder_rules: Record<string, unknown>;
+  updated_at: string | null;
+};
+
+export async function fetchInspectionSettings(): Promise<InspectionSettingsPolicy> {
+  const response = await apiClient.get<ApiEnvelope<InspectionSettingsPolicy> | InspectionSettingsPolicy>(
+    "/state/account-settings/inspection-settings/"
+  );
+  return typeof response.data === "object" && "data" in response.data
+    ? (response.data as ApiEnvelope<InspectionSettingsPolicy>).data
+    : response.data as InspectionSettingsPolicy;
+}
+
+export async function updateInspectionSettings(
+  settings: Partial<Omit<InspectionSettingsPolicy, "id" | "state_id" | "updated_at">>
+): Promise<InspectionSettingsPolicy> {
+  const response = await apiClient.patch<ApiEnvelope<InspectionSettingsPolicy> | InspectionSettingsPolicy>(
+    "/state/account-settings/inspection-settings/",
+    settings
+  );
+  return typeof response.data === "object" && "data" in response.data
+    ? (response.data as ApiEnvelope<InspectionSettingsPolicy>).data
+    : response.data as InspectionSettingsPolicy;
 }
 
 async function patchStateFacilityApplication(

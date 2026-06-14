@@ -1195,33 +1195,44 @@ function SettingsTab() {
   );
 }
 
-// ── Main Layout ──
-export function FormsToolLayout() {
+// ── Form Builder Content (embeddable) ──
+export function FormBuilderContent({ basePath = "/state/forms", tabParamName = "tab" }: { basePath?: string; tabParamName?: string }) {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const tabParam = (searchParams.get("tab") ?? "overview") as TabKey;
+  const tabParam = (searchParams.get(tabParamName) ?? "overview") as TabKey;
   const activeTab = TABS[tabParam] ? tabParam : "overview";
   const permsQuery = useQuery({ queryKey: ["forms-permissions"], queryFn: fetchFormsPermissions, staleTime: 60_000 });
   const permsSet = new Set(permsQuery.data?.permissions || []);
 
-  function setTab(tab: TabKey) { router.replace(`/state/forms?tab=${tab}`); }
+  function setTab(tab: TabKey) {
+    const params = new URLSearchParams(searchParams.toString());
+    params.set(tabParamName, tab);
+    router.replace(`${basePath.split("?")[0]}?${params.toString()}`);
+  }
 
   return (
     <FormsPermsCtx.Provider value={permsSet}>
-      <PortalShell role="state_admin" title="Forms Tool" description="Create, assign, and track form templates, responses, and reports across all modules.">
-        <nav className="mb-6 flex gap-0 overflow-x-auto border-b border-neutral-200">
-          {(Object.entries(TABS) as [TabKey, string][]).map(([key, label]) => (
-            <button key={key} className={`shrink-0 border-b-2 px-4 py-3 text-sm font-medium ${activeTab===key?"border-brand-600 text-brand-700":"border-transparent text-neutral-500 hover:text-neutral-800"}`} onClick={() => setTab(key)} type="button">{label}</button>
-          ))}
-        </nav>
-        {activeTab === "overview" && <OverviewTab />}
-        {activeTab === "templates" && <TemplatesTab />}
-        {activeTab === "assignments" && <AssignmentsTab />}
-        {activeTab === "responses" && <ResponsesTab />}
-        {activeTab === "exports" && <ExportsTab />}
-        {activeTab === "reports" && <FormsReportsTab />}
-        {activeTab === "settings" && <SettingsTab />}
-      </PortalShell>
+      <nav className="mb-6 flex gap-0 overflow-x-auto border-b border-neutral-200">
+        {(Object.entries(TABS) as [TabKey, string][]).map(([key, label]) => (
+          <button key={key} className={`shrink-0 border-b-2 px-4 py-3 text-sm font-medium ${activeTab===key?"border-brand-600 text-brand-700":"border-transparent text-neutral-500 hover:text-neutral-800"}`} onClick={() => setTab(key)} type="button">{label}</button>
+        ))}
+      </nav>
+      {activeTab === "overview" && <OverviewTab />}
+      {activeTab === "templates" && <TemplatesTab />}
+      {activeTab === "assignments" && <AssignmentsTab />}
+      {activeTab === "responses" && <ResponsesTab />}
+      {activeTab === "exports" && <ExportsTab />}
+      {activeTab === "reports" && <FormsReportsTab />}
+      {activeTab === "settings" && <SettingsTab />}
     </FormsPermsCtx.Provider>
+  );
+}
+
+// ── Main Layout (standalone page) ──
+export function FormsToolLayout() {
+  return (
+    <PortalShell role="state_admin" title="Form Builder" description="Create, assign, and track form templates, responses, and reports across all modules.">
+      <FormBuilderContent basePath="/state/forms" />
+    </PortalShell>
   );
 }

@@ -831,6 +831,86 @@ class FederalEnforcementReportsView(APIView):
         return Response({"reports": [], "filters": {}})
 
 
+class InspectionSettingsView(APIView):
+    permission_classes = [IsAuthenticated, IsActiveUser]
+
+    def _ensure_state_admin(self, user):
+        if user.role not in {UserRole.STATE_ADMIN, UserRole.SUPER_ADMIN}:
+            raise PermissionDenied("Only state administrators can manage inspection settings.")
+
+    def _get_or_create_policy(self, user):
+        from apps.inspections.models import InspectionSettingsPolicy
+        state = user.state
+        if not state:
+            raise ValidationError("User must belong to a state.")
+        policy, _ = InspectionSettingsPolicy.objects.get_or_create(state=state)
+        return policy
+
+    def _serialize(self, policy):
+        return {
+            "id": str(policy.id),
+            "state_id": str(policy.state_id),
+            "allow_offline_inspections": policy.allow_offline_inspections,
+            "requires_gps_by_default": policy.requires_gps_by_default,
+            "requires_inspector_signature": policy.requires_inspector_signature,
+            "requires_employer_signature": policy.requires_employer_signature,
+            "auto_open_case_for_high": policy.auto_open_case_for_high,
+            "auto_open_case_for_critical": policy.auto_open_case_for_critical,
+            "auto_require_followup_for_high": policy.auto_require_followup_for_high,
+            "auto_require_followup_for_critical": policy.auto_require_followup_for_critical,
+            "auto_close_passed_inspections": policy.auto_close_passed_inspections,
+            "default_templates": policy.default_templates_json,
+            "severity_levels": policy.severity_levels_json,
+            "corrective_deadlines": policy.corrective_deadlines_json,
+            "notice_rules": policy.notice_rules_json,
+            "escalation_rules": policy.escalation_rules_json,
+            "score_thresholds": policy.score_thresholds_json,
+            "reminder_rules": policy.reminder_rules_json,
+            "updated_at": policy.updated_at.isoformat() if policy.updated_at else None,
+        }
+
+    def get(self, request):
+        self._ensure_state_admin(request.user)
+        policy = self._get_or_create_policy(request.user)
+        return Response(self._serialize(policy))
+
+    def patch(self, request):
+        self._ensure_state_admin(request.user)
+        policy = self._get_or_create_policy(request.user)
+        boolean_fields = [
+            "allow_offline_inspections", "requires_gps_by_default",
+            "requires_inspector_signature", "requires_employer_signature",
+            "auto_open_case_for_high", "auto_open_case_for_critical",
+            "auto_require_followup_for_high", "auto_require_followup_for_critical",
+            "auto_close_passed_inspections",
+        ]
+        json_fields = {
+            "default_templates": "default_templates_json",
+            "severity_levels": "severity_levels_json",
+            "corrective_deadlines": "corrective_deadlines_json",
+            "notice_rules": "notice_rules_json",
+            "escalation_rules": "escalation_rules_json",
+            "score_thresholds": "score_thresholds_json",
+            "reminder_rules": "reminder_rules_json",
+        }
+        update_fields = ["updated_at"]
+        for field in boolean_fields:
+            if field in request.data:
+                setattr(policy, field, bool(request.data[field]))
+                update_fields.append(field)
+        for api_key, model_field in json_fields.items():
+            if api_key in request.data:
+                setattr(policy, model_field, request.data[api_key])
+                update_fields.append(model_field)
+        policy.updated_by = request.user
+        update_fields.append("updated_by")
+        policy.save(update_fields=update_fields)
+        from apps.audit.services import log_action
+        from apps.audit.models import AuditAction
+        log_action(action=AuditAction.UPDATE, actor=request.user, target=policy, metadata={"event": "inspection_settings_updated"})
+        return Response(self._serialize(policy))
+
+
 class StateInspectionsView(APIView):
     permission_classes = [IsAuthenticated, IsActiveUser]
 

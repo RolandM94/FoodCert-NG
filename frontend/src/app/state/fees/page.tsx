@@ -3,7 +3,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Banknote, Check, PauseCircle, Send, Plus } from "lucide-react";
 import { useState } from "react";
-import { PortalShell } from "@/components/layout/portal-shell";
 import { DataTable, StatusCell } from "@/components/ui/data-table";
 import {
   approveStateAssessmentFee,
@@ -15,6 +14,7 @@ import {
   type AssessmentFee,
   type StateAssessmentFeePayload,
 } from "@/lib/api/state";
+import { redirect } from "next/navigation";
 
 const FACILITY_TYPES = [
   ["clinic", "Clinic"],
@@ -54,7 +54,7 @@ function splitMatches(form: StateAssessmentFeePayload) {
   return gross > 0 && gross === split;
 }
 
-export default function Page() {
+export function StateFeesSettingsPanel() {
   const queryClient = useQueryClient();
   const [status, setStatus] = useState("");
   const [facilityType, setFacilityType] = useState("");
@@ -94,7 +94,7 @@ export default function Page() {
   const fees = feesQuery.data || [];
 
   return (
-    <PortalShell role="state_admin" title="Assessment fees" description="Configure state assessment fee splits. Platform fees are owned by FoodCert and added automatically at checkout.">
+    <>
       <div className="grid gap-5">
         <section className="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm">
           <div className="grid gap-3 md:grid-cols-[220px_220px_1fr_auto] md:items-end">
@@ -270,6 +270,10 @@ export default function Page() {
           </div>
         </div>
       ) : null}
-    </PortalShell>
+    </>
   );
+}
+
+export default function Page() {
+  redirect("/state/account-settings?tab=fees-payments");
 }

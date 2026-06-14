@@ -63,7 +63,6 @@ export const PORTAL_NAV: Record<UserRole, PortalNavItem[]> = {
   employer: [
     { label: "Dashboard", href: "/employer/dashboard", icon: Activity },
     { label: "Business Profile", href: "/employer/business-profile", icon: Building2 },
-    { label: "Stakeholder Management", href: "/employer/stakeholder-management", icon: UsersRound },
     { label: "Directory & Registry", href: "/employer/directory", icon: BookOpen },
     { label: "Compliance", href: "/employer/compliance", icon: ClipboardCheck },
     { label: "Vaccinations", href: "/employer/vaccinations", icon: Syringe },
@@ -74,6 +73,7 @@ export const PORTAL_NAV: Record<UserRole, PortalNavItem[]> = {
     { label: "Bulk Payments", href: "/employer/bulk-assessment-payments", icon: ReceiptText },
     { label: "Notifications", href: "/employer/notifications", icon: Bell },
     { label: "Reports", href: "/employer/reports", icon: BarChart3 },
+    { label: "Stakeholder Management", href: "/employer/stakeholder-management", icon: UsersRound },
     { label: "Inspections", href: "/employer/inspections", icon: ClipboardList },
     { label: "Settings", href: "/employer/settings", icon: Settings }
   ],
@@ -105,23 +105,18 @@ export const PORTAL_NAV: Record<UserRole, PortalNavItem[]> = {
   ],
   state_admin: [
     { label: "Dashboard", href: "/state/dashboard", icon: Activity },
-    { label: "Stakeholder Management", href: "/state/stakeholder-management", icon: UsersRound },
     { label: "Directory & Registry", href: "/state/directory", icon: BookOpen },
     { label: "Medical Facilities", href: "/state/medical-facilities", icon: Building2 },
-    { label: "Forms Tool", href: "/state/forms", icon: FileStack },
+
     { label: "Certificates", href: "/state/certificates", icon: FileCheck2 },
-    { label: "Templates", href: "/state/certificate-templates", icon: Settings },
-    { label: "Inspections", href: "/state/inspections", icon: ClipboardCheck },
-    { label: "Notices", href: "/state/inspectorate/notices", icon: AlertTriangle },
-    { label: "Cases", href: "/state/inspectorate/cases", icon: ShieldCheck },
-    { label: "Enforcement", href: "/state/enforcement/dashboard", icon: BarChart3 },
-    { label: "Fees", href: "/state/fees", icon: Banknote },
-    { label: "Revenue", href: "/state/revenue", icon: Landmark },
+    { label: "Inspections & Enforcement", href: "/state/inspections-enforcement", icon: ClipboardCheck },
+    { label: "Payments & Revenue", href: "/state/revenue", icon: Landmark },
     { label: "Reports", href: "/state/reports", icon: BarChart3 },
+    { label: "Stakeholder Management", href: "/state/stakeholder-management", icon: UsersRound },
+    { label: "Account Settings", href: "/state/account-settings", icon: Settings },
   ],
   federal_admin: [
     { label: "Dashboard", href: "/federal/dashboard", icon: Activity },
-    { label: "Stakeholder Management", href: "/federal/stakeholder-management", icon: UsersRound },
     { label: "Directory & Registry", href: "/federal/directory", icon: BookOpen },
     { label: "States", href: "/federal/states", icon: MapPin },
     { label: "Certificates", href: "/federal/certificates", icon: BadgeCheck },
@@ -133,6 +128,7 @@ export const PORTAL_NAV: Record<UserRole, PortalNavItem[]> = {
     { label: "Audit", href: "/federal/audit", icon: ClipboardCheck },
     { label: "Queries", href: "/federal/queries", icon: Bell },
     { label: "Reports", href: "/federal/reports", icon: ClipboardList },
+    { label: "Stakeholder Management", href: "/federal/stakeholder-management", icon: UsersRound },
     { label: "Policy Config", href: "/federal/policy-config", icon: Landmark },
     { label: "Templates", href: "/admin/certificate-templates", icon: Settings },
   ],
@@ -146,7 +142,6 @@ export const PORTAL_NAV: Record<UserRole, PortalNavItem[]> = {
   ],
   super_admin: [
     { label: "Dashboard", href: "/federal/dashboard", icon: Activity },
-    { label: "Stakeholder Management", href: "/admin/stakeholder-management", icon: UsersRound },
     { label: "Directory & Registry", href: "/admin/directory", icon: BookOpen },
     { label: "States", href: "/federal/states", icon: MapPin },
     { label: "Certificates", href: "/federal/certificates", icon: BadgeCheck },
@@ -156,6 +151,7 @@ export const PORTAL_NAV: Record<UserRole, PortalNavItem[]> = {
     { label: "Audit", href: "/federal/audit", icon: ClipboardCheck },
     { label: "Queries", href: "/federal/queries", icon: Bell },
     { label: "Reports", href: "/federal/reports", icon: ClipboardList },
+    { label: "Stakeholder Management", href: "/admin/stakeholder-management", icon: UsersRound },
     { label: "Policy Config", href: "/federal/policy-config", icon: Landmark }
   ]
 };

@@ -84,13 +84,48 @@ export function PortalShell({
 
   const notificationHref = role === "employer" ? "/employer/notifications" : "/food-handler/notifications";
 
+  const isNavActive = (href: string) => pathname === href || pathname.startsWith(`${href}/`);
+
   return (
-    <main className="min-h-screen bg-neutral-50 text-neutral-900">
-      <header className="border-b border-brand-100 bg-white">
-        <div className="mx-auto flex min-h-16 max-w-7xl flex-col gap-3 px-4 py-3 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between gap-4">
-            <div className="flex items-center gap-4">
-              <Link href="/" className="flex items-center gap-3">
+    <main className="min-h-screen bg-neutral-50 text-neutral-900 lg:grid lg:grid-cols-[280px_minmax(0,1fr)]">
+      <aside className="hidden border-r border-neutral-200 bg-white lg:sticky lg:top-0 lg:flex lg:h-screen lg:flex-col">
+        <div className="border-b border-neutral-100 px-5 py-5">
+          <Link href="/" className="flex items-center gap-3">
+            <div className="flex h-11 w-11 items-center justify-center rounded-lg bg-brand-600 text-white">
+              <ShieldCheck aria-hidden="true" size={23} />
+            </div>
+            <div className="min-w-0">
+              <p className="truncate text-sm font-bold text-neutral-900">FoodCert NG</p>
+              <p className="truncate text-xs text-neutral-500">{ROLE_LABELS[role]}</p>
+            </div>
+          </Link>
+        </div>
+
+        <nav className="flex-1 space-y-1 overflow-y-auto px-3 py-4">
+          {nav.map((item) => {
+            const Icon = item.icon;
+            const active = isNavActive(item.href);
+            return (
+              <Link
+                key={item.href}
+                className={`flex min-h-10 items-center gap-3 rounded-lg px-3 py-2 text-sm font-semibold transition-colors ${
+                  active ? "bg-brand-50 text-brand-700" : "text-neutral-600 hover:bg-neutral-50 hover:text-neutral-950"
+                }`}
+                href={item.href}
+              >
+                <Icon aria-hidden="true" className="shrink-0" size={17} />
+                <span className="min-w-0 truncate">{item.label}</span>
+              </Link>
+            );
+          })}
+        </nav>
+      </aside>
+
+      <div className="min-w-0">
+        <header className="sticky top-0 z-30 border-b border-neutral-200 bg-white/95 backdrop-blur">
+          <div className="flex min-h-16 items-center justify-between gap-4 px-4 py-3 sm:px-6 lg:px-8">
+            <div className="flex min-w-0 items-center gap-4">
+              <Link href="/" className="flex items-center gap-3 lg:hidden">
                 <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-brand-600 text-white">
                   <ShieldCheck aria-hidden="true" size={22} />
                 </div>
@@ -106,7 +141,7 @@ export function PortalShell({
                 stateName={scopeMeta.stateName}
               />
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex shrink-0 items-center gap-2">
               <NotificationBell href={notificationHref} />
               {isLoggedIn ? (
                 <button
@@ -125,10 +160,10 @@ export function PortalShell({
               )}
             </div>
           </div>
-          <nav className="flex gap-0 overflow-x-auto">
+          <nav className="flex gap-1 overflow-x-auto border-t border-neutral-100 px-4 sm:px-6 lg:hidden">
             {nav.map((item) => {
               const Icon = item.icon;
-              const active = pathname === item.href;
+              const active = isNavActive(item.href);
               return (
                 <Link
                   key={item.href}
@@ -143,16 +178,17 @@ export function PortalShell({
               );
             })}
           </nav>
-        </div>
-      </header>
-      <section className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
-        <div className="mb-6">
-          <p className="text-xs font-bold uppercase tracking-wide text-brand-700">{ROLE_LABELS[role]}</p>
-          <h1 className="mt-2 text-2xl font-bold tracking-tight text-neutral-900 sm:text-3xl">{title}</h1>
-          <p className="mt-2 max-w-3xl text-sm leading-6 text-neutral-600">{description}</p>
-        </div>
-        {children}
-      </section>
+        </header>
+
+        <section className="w-full px-4 py-6 sm:px-6 lg:px-8 xl:px-10 2xl:px-12">
+          <div className="mb-6">
+            <p className="text-xs font-bold uppercase tracking-wide text-brand-700">{ROLE_LABELS[role]}</p>
+            <h1 className="mt-2 text-2xl font-bold tracking-tight text-neutral-900 sm:text-3xl">{title}</h1>
+            <p className="mt-2 max-w-4xl text-sm leading-6 text-neutral-600">{description}</p>
+          </div>
+          {children}
+        </section>
+      </div>
     </main>
   );
 }

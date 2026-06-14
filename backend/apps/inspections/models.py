@@ -595,3 +595,33 @@ class EnforcementCase(BaseModel):
 
     def __str__(self) -> str:
         return f"Case {self.case_reference} [{self.get_status_display()}]"
+
+
+class InspectionSettingsPolicy(BaseModel):
+    state = models.OneToOneField("locations.State", on_delete=models.CASCADE, related_name="inspection_settings")
+    allow_offline_inspections = models.BooleanField(default=True)
+    requires_gps_by_default = models.BooleanField(default=False)
+    requires_inspector_signature = models.BooleanField(default=False)
+    requires_employer_signature = models.BooleanField(default=False)
+    auto_open_case_for_high = models.BooleanField(default=True)
+    auto_open_case_for_critical = models.BooleanField(default=True)
+    auto_require_followup_for_high = models.BooleanField(default=True)
+    auto_require_followup_for_critical = models.BooleanField(default=True)
+    auto_close_passed_inspections = models.BooleanField(default=False)
+    default_templates_json = models.JSONField(default=dict, blank=True, help_text="Map of inspection_type -> template_id")
+    severity_levels_json = models.JSONField(default=list, blank=True, help_text="List of severity level configs")
+    corrective_deadlines_json = models.JSONField(default=list, blank=True, help_text="List of deadline rules")
+    notice_rules_json = models.JSONField(default=list, blank=True, help_text="Notice generation rules by severity")
+    escalation_rules_json = models.JSONField(default=list, blank=True, help_text="Escalation trigger rules")
+    score_thresholds_json = models.JSONField(default=dict, blank=True, help_text="Score range -> outcome mapping")
+    reminder_rules_json = models.JSONField(default=dict, blank=True, help_text="Reminder schedule config")
+    updated_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="inspection_settings_updated"
+    )
+
+    class Meta:
+        verbose_name = "Inspection Settings Policy"
+        verbose_name_plural = "Inspection Settings Policies"
+
+    def __str__(self) -> str:
+        return f"Inspection Settings - {self.state.name}" if self.state_id else "Inspection Settings"

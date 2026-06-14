@@ -1,9 +1,13 @@
+import calendar
+from datetime import timedelta
+
 from django.db import transaction
 from django.utils import timezone
 
 from apps.audit.models import AuditAction
 from apps.audit.services import log_action
 from apps.facilities.models import AccreditationStatus, MedicalFacility
+from apps.policy.models import StatePolicyConfig, default_medical_facility_settings
 
 
 class FacilityProfileService:
@@ -29,6 +33,31 @@ class FacilityProfileService:
 
 class FacilityAccreditationService:
     """Handles auditable state transitions for medical facility accreditation."""
+
+    @staticmethod
+    def accreditation_expiry_date(facility, start_date):
+        settings = default_medical_facility_settings()
+        if facility.state_id:
+            config = StatePolicyConfig.objects.filter(state=facility.state).first()
+            if config:
+                settings = {**settings, **config.medical_facility_settings}
+
+        duration = max(int(settings.get("validity_duration") or 12), 1)
+        unit = settings.get("validity_unit") or "months"
+        if unit == "days":
+            return start_date + timedelta(days=duration)
+        if unit == "years":
+            target_year = start_date.year + duration
+            try:
+                return start_date.replace(year=target_year)
+            except ValueError:
+                return start_date.replace(year=target_year, day=28)
+
+        month = start_date.month - 1 + duration
+        year = start_date.year + month // 12
+        month = month % 12 + 1
+        day = min(start_date.day, calendar.monthrange(year, month)[1])
+        return start_date.replace(year=year, month=month, day=day)
 
     @classmethod
     @transaction.atomic
@@ -109,7 +138,7 @@ class FacilityAccreditationService:
         facility = application.facility
         facility.accreditation_status = AccreditationStatus.APPROVED
         facility.accreditation_start_date = today
-        facility.accreditation_expiry_date = MedicalFacility.default_expiry_date(today)
+        facility.accreditation_expiry_date = cls.accreditation_expiry_date(facility, today)
         facility.approved_by = reviewer
         facility.save(
             update_fields=[
@@ -165,7 +194,7 @@ class FacilityAccreditationService:
         if not application.facility.accreditation_start_date:
             application.facility.accreditation_start_date = today
         if not application.facility.accreditation_expiry_date or application.facility.accreditation_expiry_date < today:
-            application.facility.accreditation_expiry_date = MedicalFacility.default_expiry_date(today)
+            application.facility.accreditation_expiry_date = cls.accreditation_expiry_date(application.facility, today)
         application.facility.approved_by = reviewer
         application.facility.save(
             update_fields=[
