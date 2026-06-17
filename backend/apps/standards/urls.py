@@ -1,0 +1,135 @@
+from rest_framework.routers import DefaultRouter
+
+from .views import (
+    ActiveStandardsViewSet,
+    ApprovalViewSet,
+    CertificateTemplateViewSet,
+    CertificateValidityRuleViewSet,
+    EstablishmentCategoryViewSet,
+    FacilityRequirementRuleViewSet,
+    FoodHandlerCategoryViewSet,
+    IndicatorEvidenceViewSet,
+    MEIndicatorDataSourceViewSet,
+    MEIndicatorViewSet,
+    MEIndicatorValueViewSet,
+    MedicalTestRuleViewSet,
+    PhysicalExaminationRuleViewSet,
+    PolicyDocumentViewSet,
+    PolicyVersionViewSet,
+    ReportingTemplateViewSet,
+    ReturnToWorkRuleViewSet,
+    StateAcknowledgementViewSet,
+    StateConfigurationControlViewSet,
+    StandardsAuditLogViewSet,
+    VaccinationRuleViewSet,
+)
+
+router = DefaultRouter()
+
+router.register(
+    "federal/standards/policy-versions",
+    PolicyVersionViewSet,
+    basename="policy-versions",
+)
+router.register(
+    "federal/standards/food-handler-categories",
+    FoodHandlerCategoryViewSet,
+    basename="food-handler-categories",
+)
+router.register(
+    "federal/standards/establishment-categories",
+    EstablishmentCategoryViewSet,
+    basename="establishment-categories",
+)
+router.register(
+    "federal/standards/medical-test-rules",
+    MedicalTestRuleViewSet,
+    basename="medical-test-rules",
+)
+router.register(
+    "federal/standards/physical-examination-rules",
+    PhysicalExaminationRuleViewSet,
+    basename="physical-examination-rules",
+)
+router.register(
+    "federal/standards/vaccination-rules",
+    VaccinationRuleViewSet,
+    basename="vaccination-rules",
+)
+router.register(
+    "federal/standards/certificate-templates",
+    CertificateTemplateViewSet,
+    basename="certificate-templates",
+)
+router.register(
+    "federal/standards/certificate-validity-rules",
+    CertificateValidityRuleViewSet,
+    basename="certificate-validity-rules",
+)
+router.register(
+    "federal/standards/return-to-work-rules",
+    ReturnToWorkRuleViewSet,
+    basename="return-to-work-rules",
+)
+router.register(
+    "federal/standards/facility-requirements",
+    FacilityRequirementRuleViewSet,
+    basename="facility-requirements",
+)
+router.register(
+    "federal/standards/reporting-templates",
+    ReportingTemplateViewSet,
+    basename="reporting-templates",
+)
+router.register(
+    "federal/standards/me-indicators",
+    MEIndicatorViewSet,
+    basename="me-indicators",
+)
+router.register(
+    "federal/standards/indicator-values",
+    MEIndicatorValueViewSet,
+    basename="me-indicator-values",
+)
+router.register(
+    "federal/standards/indicator-data-sources",
+    MEIndicatorDataSourceViewSet,
+    basename="me-indicator-data-sources",
+)
+router.register(
+    "federal/standards/indicator-evidence",
+    IndicatorEvidenceViewSet,
+    basename="indicator-evidence",
+)
+router.register(
+    "federal/standards/documents",
+    PolicyDocumentViewSet,
+    basename="policy-documents",
+)
+router.register(
+    "federal/standards/state-config-controls",
+    StateConfigurationControlViewSet,
+    basename="state-config-controls",
+)
+router.register(
+    "federal/standards/approval-queue",
+    ApprovalViewSet,
+    basename="approval-queue",
+)
+router.register(
+    "federal/standards/state-acknowledgements",
+    StateAcknowledgementViewSet,
+    basename="state-acknowledgements",
+)
+router.register(
+    "federal/standards/change-history",
+    StandardsAuditLogViewSet,
+    basename="standards-change-history",
+)
+router.register(
+    "standards/active",
+    ActiveStandardsViewSet,
+    basename="active-standards",
+)
+
+urlpatterns = router.urls

@@ -1,3 +1,4 @@
+from django.db.models import Q
 from rest_framework import viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied
@@ -133,7 +134,13 @@ class StatePolicyConfigViewSet(viewsets.ModelViewSet):
         if not user.state_id:
             raise PermissionDenied("State admin account is not linked to a state.")
 
-        queryset = AuditLog.objects.select_related("actor", "state").filter(state=user.state).order_by("-created_at")
+        queryset = AuditLog.objects.select_related("actor", "organization", "state").order_by("-created_at")
+        if user.organization_id:
+            queryset = queryset.filter(
+                Q(organization_id=user.organization_id) | Q(organization__isnull=True, state=user.state)
+            )
+        else:
+            queryset = queryset.filter(state=user.state)
         action_filter = request.query_params.get("action")
         module_filter = request.query_params.get("module")
         search = request.query_params.get("search")

@@ -21,6 +21,7 @@ from apps.forms.models import (
     FormTemplate,
     FormTemplatePurpose,
     FormTemplateStatus,
+    FormTemplateVisibility,
     FormTemplateVersion,
     OfflineSyncQueue,
     ResponseStatus,
@@ -33,7 +34,9 @@ User = get_user_model()
 
 
 def payload(response):
-    return response.data.get("data", response.data)
+    if isinstance(response.data, dict):
+        return response.data.get("data", response.data)
+    return response.data
 
 
 class FormsEngineFoundationTests(APITestCase):
@@ -184,6 +187,1092 @@ class FormsEngineFoundationTests(APITestCase):
         version = template.versions.get(version_number=1)
         self.assertEqual(version.schema_json["sections"][0]["key"], "overview")
         self.assertTrue(version.settings_json["allow_offline"])
+
+    def test_draft_template_can_be_deleted(self):
+        template = self.create_template()
+        FormTemplateVersion.objects.create(
+            template=template,
+            version_number=1,
+            schema_json={"sections": []},
+            status=FormTemplateStatus.DRAFT,
+        )
+
+        response = self.client.delete(f"/api/forms/templates/{template.id}/")
+
+        self.assertEqual(response.status_code, 204)
+        self.assertFalse(FormTemplate.objects.filter(id=template.id).exists())
+        self.assertTrue(AuditLog.objects.filter(action=AuditAction.DELETE, target_id=str(template.id)).exists())
+
+    def test_published_template_must_be_archived_instead_of_deleted(self):
+        template = self.create_template()
+        template.status = FormTemplateStatus.PUBLISHED
+        template.save(update_fields=["status", "updated_at"])
+
+        response = self.client.delete(f"/api/forms/templates/{template.id}/")
+
+        self.assertEqual(response.status_code, 400)
+        self.assertTrue(FormTemplate.objects.filter(id=template.id).exists())
+
+    def test_assigned_template_cannot_be_deleted(self):
+        template = self.create_template()
+        FormAssignment.objects.create(
+            title="Monthly facility report",
+            template=template,
+            purpose=template.purpose,
+            assigned_by=self.admin,
+            assigned_to_type="organization",
+            assigned_to_id=str(self.org.id),
+        )
+
+        response = self.client.delete(f"/api/forms/templates/{template.id}/")
+
+        self.assertEqual(response.status_code, 400)
+        self.assertTrue(FormTemplate.objects.filter(id=template.id).exists())
+
+    def test_templates_are_organization_native_unless_explicitly_shared(self):
+        federal_org = Organization.objects.create(name="Federal Ministry of Health", organization_type=OrganizationType.FEDERAL_MINISTRY)
+        federal_admin = User.objects.create_user(
+            username="federal-forms-admin",
+            email="federal-forms-admin@example.com",
+            password="StrongPass123!",
+            role=UserRole.FEDERAL_ADMIN,
+            organization=federal_org,
+        )
+        state_template = self.create_template()
+        federal_template = FormTemplate.objects.create(
+            title="Federal M&E Reporting",
+            description="Federal owned reporting form.",
+            purpose=FormTemplatePurpose.GENERAL_DATA_COLLECTION,
+            owner_organization=federal_org,
+            target_respondent_type="state_ministry",
+            primary_module=FormPrimaryModule.REPORTS,
+            created_by=federal_admin,
+        )
+
+        self.client.force_authenticate(federal_admin)
+        response = self.client.get("/api/forms/templates/")
+
+        self.assertEqual(response.status_code, 200)
+        template_ids = {item["id"] for item in payload(response)}
+        self.assertIn(str(federal_template.id), template_ids)
+        self.assertNotIn(str(state_template.id), template_ids)
+
+        state_template.settings_json = {"shared_with_organizations": [str(federal_org.id)]}
+        state_template.save(update_fields=["settings_json", "updated_at"])
+        shared_response = self.client.get("/api/forms/templates/")
+
+        shared_ids = {item["id"] for item in payload(shared_response)}
+        self.assertIn(str(state_template.id), shared_ids)
+
+    def test_shared_template_is_visible_but_not_mutable_by_non_owner(self):
+        federal_org = Organization.objects.create(name="Federal Ministry of Health", organization_type=OrganizationType.FEDERAL_MINISTRY)
+        federal_admin = User.objects.create_user(
+            username="federal-forms-editor",
+            email="federal-forms-editor@example.com",
+            password="StrongPass123!",
+            role=UserRole.FEDERAL_ADMIN,
+            organization=federal_org,
+        )
+        state_template = self.create_template()
+        state_template.settings_json = {"shared_with_organizations": [str(federal_org.id)]}
+        state_template.save(update_fields=["settings_json", "updated_at"])
+        self.client.force_authenticate(federal_admin)
+
+        update_response = self.client.patch(
+            f"/api/forms/templates/{state_template.id}/",
+            {"title": "Changed by Federal"},
+            format="json",
+        )
+        draft_response = self.client.post(
+            f"/api/forms/templates/{state_template.id}/save-draft/",
+            {"schema_json": {"sections": []}},
+            format="json",
+        )
+
+        self.assertEqual(update_response.status_code, 403)
+        self.assertEqual(draft_response.status_code, 403)
+
+    def test_federal_cannot_assign_unshared_state_template_by_id(self):
+        federal_org = Organization.objects.create(name="Federal Ministry of Health", organization_type=OrganizationType.FEDERAL_MINISTRY)
+        federal_admin = User.objects.create_user(
+            username="federal-forms-assigner",
+            email="federal-forms-assigner@example.com",
+            password="StrongPass123!",
+            role=UserRole.FEDERAL_ADMIN,
+            organization=federal_org,
+        )
+        state_template = self.create_template()
+        state_template.status = FormTemplateStatus.PUBLISHED
+        state_template.save(update_fields=["status", "updated_at"])
+        state_version = FormTemplateVersion.objects.create(
+            template=state_template,
+            version_number=1,
+            schema_json={"sections": []},
+            status=FormTemplateStatus.PUBLISHED,
+        )
+        self.client.force_authenticate(federal_admin)
+
+        response = self.client.post(
+            "/api/forms/assignments/",
+            {
+                "title": "Improper Federal Assignment",
+                "template": str(state_template.id),
+                "template_version": str(state_version.id),
+                "purpose": state_template.purpose,
+                "assigned_to_type": "organization",
+                "assigned_to_id": str(federal_org.id),
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 403)
+
+    def test_federal_template_defaults_private_and_can_be_marked_standard(self):
+        federal_org = Organization.objects.create(name="Federal Ministry of Health", organization_type=OrganizationType.FEDERAL_MINISTRY)
+        federal_admin = User.objects.create_user(
+            username="federal-template-standard",
+            email="federal-template-standard@example.com",
+            password="StrongPass123!",
+            role=UserRole.FEDERAL_ADMIN,
+            organization=federal_org,
+        )
+        self.client.force_authenticate(federal_admin)
+
+        created = self.client.post(
+            "/api/forms/templates/",
+            {
+                "title": "Federal M&E Data Collection",
+                "purpose": FormTemplatePurpose.FEDERAL_ME_DATA_COLLECTION,
+                "primary_module": FormPrimaryModule.REPORTS,
+            },
+            format="json",
+        )
+
+        self.assertEqual(created.status_code, 201)
+        self.assertEqual(payload(created)["visibility"], FormTemplateVisibility.FEDERAL_PRIVATE)
+        marked = self.client.post(f"/api/forms/templates/{payload(created)['id']}/mark-standard/", format="json")
+        self.assertEqual(marked.status_code, 200)
+        self.assertEqual(payload(marked)["visibility"], FormTemplateVisibility.FEDERAL_STANDARD)
+        self.assertTrue(AuditLog.objects.filter(metadata__event="form_template_marked_standard").exists())
+
+    def test_federal_can_share_template_with_selected_state(self):
+        federal_org = Organization.objects.create(name="Federal Ministry of Health", organization_type=OrganizationType.FEDERAL_MINISTRY)
+        federal_admin = User.objects.create_user(
+            username="federal-template-share",
+            email="federal-template-share@example.com",
+            password="StrongPass123!",
+            role=UserRole.FEDERAL_ADMIN,
+            organization=federal_org,
+        )
+        state = State.objects.create(name="Oyo", code="OY")
+        template = FormTemplate.objects.create(
+            title="Guideline Survey",
+            purpose=FormTemplatePurpose.GUIDELINE_IMPLEMENTATION_SURVEY,
+            owner_organization=federal_org,
+            visibility=FormTemplateVisibility.FEDERAL_PRIVATE,
+            created_by=federal_admin,
+        )
+        self.client.force_authenticate(federal_admin)
+
+        response = self.client.post(
+            f"/api/forms/templates/{template.id}/share-to-states/",
+            {"state_ids": [str(state.id)]},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data = payload(response)
+        self.assertEqual(data["visibility"], FormTemplateVisibility.FEDERAL_SHARED)
+        self.assertEqual(data["shared_state_names"], ["Oyo"])
+        self.assertTrue(AuditLog.objects.filter(metadata__event="federal_template_shared_with_states").exists())
+
+    def test_state_can_list_standard_and_shared_federal_templates_only(self):
+        lagos = State.objects.create(name="Lagos", code="LA")
+        oyo = State.objects.create(name="Oyo", code="OY")
+        state_org = Organization.objects.create(name="Lagos State MOH", organization_type=OrganizationType.STATE_MINISTRY, state=lagos)
+        state_admin = User.objects.create_user(
+            username="lagos-federal-template-viewer",
+            email="lagos-federal-template-viewer@example.com",
+            password="StrongPass123!",
+            role=UserRole.STATE_ADMIN,
+            state=lagos,
+            organization=state_org,
+        )
+        federal_org = Organization.objects.create(name="Federal Ministry of Health", organization_type=OrganizationType.FEDERAL_MINISTRY)
+        standard = FormTemplate.objects.create(
+            title="National Standard Template",
+            purpose=FormTemplatePurpose.STATE_REPORTING_FORM,
+            owner_organization=federal_org,
+            visibility=FormTemplateVisibility.FEDERAL_STANDARD,
+            status=FormTemplateStatus.PUBLISHED,
+        )
+        shared = FormTemplate.objects.create(
+            title="Lagos Shared Template",
+            purpose=FormTemplatePurpose.CROSS_STATE_SURVEY,
+            owner_organization=federal_org,
+            visibility=FormTemplateVisibility.FEDERAL_SHARED,
+            status=FormTemplateStatus.PUBLISHED,
+        )
+        shared.shared_with_states.add(lagos)
+        other_shared = FormTemplate.objects.create(
+            title="Oyo Shared Template",
+            purpose=FormTemplatePurpose.CROSS_STATE_SURVEY,
+            owner_organization=federal_org,
+            visibility=FormTemplateVisibility.FEDERAL_SHARED,
+            status=FormTemplateStatus.PUBLISHED,
+        )
+        other_shared.shared_with_states.add(oyo)
+        private = FormTemplate.objects.create(
+            title="Federal Private Template",
+            purpose=FormTemplatePurpose.FEDERAL_ME_DATA_COLLECTION,
+            owner_organization=federal_org,
+            visibility=FormTemplateVisibility.FEDERAL_PRIVATE,
+            status=FormTemplateStatus.PUBLISHED,
+        )
+        self.client.force_authenticate(state_admin)
+
+        response = self.client.get("/api/state/forms/federal-templates/")
+
+        self.assertEqual(response.status_code, 200)
+        template_ids = {item["id"] for item in payload(response)}
+        self.assertIn(str(standard.id), template_ids)
+        self.assertIn(str(shared.id), template_ids)
+        self.assertNotIn(str(other_shared.id), template_ids)
+        self.assertNotIn(str(private.id), template_ids)
+
+    def test_state_can_adopt_federal_template_as_read_only(self):
+        lagos = State.objects.create(name="Lagos", code="LA")
+        state_org = Organization.objects.create(name="Lagos State MOH", organization_type=OrganizationType.STATE_MINISTRY, state=lagos)
+        state_admin = User.objects.create_user(
+            username="lagos-template-adopter",
+            email="lagos-template-adopter@example.com",
+            password="StrongPass123!",
+            role=UserRole.STATE_ADMIN,
+            state=lagos,
+            organization=state_org,
+        )
+        federal_org = Organization.objects.create(name="Federal Ministry of Health", organization_type=OrganizationType.FEDERAL_MINISTRY)
+        federal_template = FormTemplate.objects.create(
+            title="Federal Standard Inspection Performance",
+            purpose=FormTemplatePurpose.INSPECTION_PERFORMANCE_REPORTING_TEMPLATE,
+            owner_organization=federal_org,
+            visibility=FormTemplateVisibility.FEDERAL_STANDARD,
+            status=FormTemplateStatus.PUBLISHED,
+        )
+        federal_version = FormTemplateVersion.objects.create(
+            template=federal_template,
+            version_number=1,
+            schema_json={"sections": [{"key": "summary", "questions": [{"key": "count", "type": "number"}]}]},
+            status=FormTemplateStatus.PUBLISHED,
+        )
+        self.client.force_authenticate(state_admin)
+
+        adopted_response = self.client.post(f"/api/state/forms/federal-templates/{federal_template.id}/adopt/", format="json")
+
+        self.assertEqual(adopted_response.status_code, 201)
+        adopted = FormTemplate.objects.get(id=payload(adopted_response)["id"])
+        self.assertEqual(adopted.owner_organization, state_org)
+        self.assertEqual(adopted.source_template, federal_template)
+        self.assertEqual(adopted.source_version, federal_version)
+        self.assertEqual(adopted.settings_json["federal_source"]["adoption_type"], "adopted")
+        self.assertEqual(adopted.status, FormTemplateStatus.PUBLISHED)
+        self.assertTrue(adopted.versions.filter(version_number=1).exists())
+        self.assertTrue(AuditLog.objects.filter(metadata__event="federal_template_adopted").exists())
+
+        update_response = self.client.patch(
+            f"/api/forms/templates/{adopted.id}/",
+            {"title": "Should not edit adopted template"},
+            format="json",
+        )
+        self.assertEqual(update_response.status_code, 403)
+
+    def test_state_can_clone_federal_template_into_editable_draft(self):
+        lagos = State.objects.create(name="Lagos", code="LA")
+        state_org = Organization.objects.create(name="Lagos State MOH", organization_type=OrganizationType.STATE_MINISTRY, state=lagos)
+        state_admin = User.objects.create_user(
+            username="lagos-template-cloner",
+            email="lagos-template-cloner@example.com",
+            password="StrongPass123!",
+            role=UserRole.STATE_ADMIN,
+            state=lagos,
+            organization=state_org,
+        )
+        federal_org = Organization.objects.create(name="Federal Ministry of Health", organization_type=OrganizationType.FEDERAL_MINISTRY)
+        federal_template = FormTemplate.objects.create(
+            title="Federal Guideline Survey",
+            purpose=FormTemplatePurpose.GUIDELINE_IMPLEMENTATION_SURVEY,
+            owner_organization=federal_org,
+            visibility=FormTemplateVisibility.FEDERAL_STANDARD,
+            status=FormTemplateStatus.PUBLISHED,
+        )
+        FormTemplateVersion.objects.create(
+            template=federal_template,
+            version_number=1,
+            schema_json={"sections": [{"key": "guidelines", "questions": [{"key": "implemented", "type": "yes_no"}]}]},
+            status=FormTemplateStatus.PUBLISHED,
+        )
+        self.client.force_authenticate(state_admin)
+
+        clone_response = self.client.post(
+            f"/api/state/forms/federal-templates/{federal_template.id}/clone/",
+            {"title": "Lagos Guideline Survey"},
+            format="json",
+        )
+
+        self.assertEqual(clone_response.status_code, 201)
+        cloned = FormTemplate.objects.get(id=payload(clone_response)["id"])
+        self.assertEqual(cloned.title, "Lagos Guideline Survey")
+        self.assertEqual(cloned.owner_organization, state_org)
+        self.assertEqual(cloned.source_template, federal_template)
+        self.assertEqual(cloned.settings_json["federal_source"]["adoption_type"], "cloned")
+        self.assertEqual(cloned.status, FormTemplateStatus.DRAFT)
+        self.assertTrue(cloned.versions.filter(version_number=1, status=FormTemplateStatus.DRAFT).exists())
+        self.assertTrue(AuditLog.objects.filter(metadata__event="federal_template_cloned").exists())
+
+        update_response = self.client.patch(
+            f"/api/forms/templates/{cloned.id}/",
+            {"title": "Edited Lagos Guideline Survey"},
+            format="json",
+        )
+        self.assertEqual(update_response.status_code, 200)
+        cloned.refresh_from_db()
+        self.assertEqual(cloned.title, "Edited Lagos Guideline Survey")
+
+    def test_federal_assignment_to_all_states_creates_state_recipients(self):
+        lagos = State.objects.create(name="Lagos", code="LA")
+        oyo = State.objects.create(name="Oyo", code="OY")
+        lagos_org = Organization.objects.create(name="Lagos State MOH", organization_type=OrganizationType.STATE_MINISTRY, state=lagos)
+        oyo_org = Organization.objects.create(name="Oyo State MOH", organization_type=OrganizationType.STATE_MINISTRY, state=oyo)
+        federal_org = Organization.objects.create(name="Federal Ministry of Health", organization_type=OrganizationType.FEDERAL_MINISTRY)
+        federal_admin = User.objects.create_user(
+            username="federal-assignment-all",
+            email="federal-assignment-all@example.com",
+            password="StrongPass123!",
+            role=UserRole.FEDERAL_ADMIN,
+            organization=federal_org,
+        )
+        template = FormTemplate.objects.create(
+            title="Monthly State Reporting",
+            purpose=FormTemplatePurpose.STATE_REPORTING_FORM,
+            owner_organization=federal_org,
+            visibility=FormTemplateVisibility.FEDERAL_STANDARD,
+            status=FormTemplateStatus.PUBLISHED,
+            created_by=federal_admin,
+        )
+        FormTemplateVersion.objects.create(template=template, version_number=1, schema_json={"sections": []}, status=FormTemplateStatus.PUBLISHED)
+        self.client.force_authenticate(federal_admin)
+
+        response = self.client.post(
+            "/api/federal/forms/assignments/",
+            {"title": "June State Reporting", "template": str(template.id), "recipient_scope": "all_states"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 201, response.data)
+        assignment = FormAssignment.objects.get(id=payload(response)["id"])
+        self.assertEqual(assignment.assigned_to_type, "all_states")
+        self.assertEqual(set(assignment.recipients.values_list("organization_id", flat=True)), {lagos_org.id, oyo_org.id})
+        self.assertTrue(AuditLog.objects.filter(metadata__event="federal_form_assignment_created").exists())
+
+    def test_federal_assignment_to_selected_states_only_targets_selected_state_orgs(self):
+        lagos = State.objects.create(name="Lagos", code="LA")
+        oyo = State.objects.create(name="Oyo", code="OY")
+        lagos_org = Organization.objects.create(name="Lagos State MOH", organization_type=OrganizationType.STATE_MINISTRY, state=lagos)
+        Organization.objects.create(name="Oyo State MOH", organization_type=OrganizationType.STATE_MINISTRY, state=oyo)
+        federal_org = Organization.objects.create(name="Federal Ministry of Health", organization_type=OrganizationType.FEDERAL_MINISTRY)
+        federal_admin = User.objects.create_user(
+            username="federal-assignment-selected",
+            email="federal-assignment-selected@example.com",
+            password="StrongPass123!",
+            role=UserRole.FEDERAL_ADMIN,
+            organization=federal_org,
+        )
+        state_admin = User.objects.create_user(
+            username="lagos-assignment-viewer",
+            email="lagos-assignment-viewer@example.com",
+            password="StrongPass123!",
+            role=UserRole.STATE_ADMIN,
+            state=lagos,
+            organization=lagos_org,
+        )
+        template = FormTemplate.objects.create(
+            title="Guideline Implementation",
+            purpose=FormTemplatePurpose.GUIDELINE_IMPLEMENTATION_SURVEY,
+            owner_organization=federal_org,
+            visibility=FormTemplateVisibility.FEDERAL_STANDARD,
+            status=FormTemplateStatus.PUBLISHED,
+            created_by=federal_admin,
+        )
+        FormTemplateVersion.objects.create(template=template, version_number=1, schema_json={"sections": []}, status=FormTemplateStatus.PUBLISHED)
+        self.client.force_authenticate(federal_admin)
+
+        created = self.client.post(
+            "/api/federal/forms/assignments/",
+            {"title": "Guideline Survey", "template": str(template.id), "recipient_scope": "selected_states", "state_ids": [str(lagos.id)]},
+            format="json",
+        )
+
+        self.assertEqual(created.status_code, 201, created.data)
+        assignment = FormAssignment.objects.get(id=payload(created)["id"])
+        self.assertEqual(list(assignment.recipients.values_list("organization_id", flat=True)), [lagos_org.id])
+
+        self.client.force_authenticate(state_admin)
+        state_list = self.client.get("/api/state/forms/federal-assignments/")
+        self.assertEqual(state_list.status_code, 200)
+        self.assertEqual([item["id"] for item in payload(state_list)], [str(assignment.id)])
+
+    def test_federal_operational_assignment_is_blocked_without_special_permission(self):
+        federal_org = Organization.objects.create(name="Federal Ministry of Health", organization_type=OrganizationType.FEDERAL_MINISTRY)
+        federal_admin = User.objects.create_user(
+            username="federal-assignment-blocked",
+            email="federal-assignment-blocked@example.com",
+            password="StrongPass123!",
+            role=UserRole.FEDERAL_ADMIN,
+            organization=federal_org,
+        )
+        template = FormTemplate.objects.create(
+            title="Operational Template",
+            purpose=FormTemplatePurpose.FEDERAL_ME_DATA_COLLECTION,
+            owner_organization=federal_org,
+            visibility=FormTemplateVisibility.FEDERAL_PRIVATE,
+            status=FormTemplateStatus.PUBLISHED,
+            created_by=federal_admin,
+        )
+        FormTemplateVersion.objects.create(template=template, version_number=1, schema_json={"sections": []}, status=FormTemplateStatus.PUBLISHED)
+        self.client.force_authenticate(federal_admin)
+
+        response = self.client.post(
+            "/api/federal/forms/assignments/",
+            {"title": "Blocked Operational Assignment", "template": str(template.id), "recipient_scope": "employer"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 403)
+
+    def test_state_can_submit_federal_assignment_and_federal_can_monitor_response(self):
+        lagos = State.objects.create(name="Lagos", code="LA")
+        lagos_org = Organization.objects.create(name="Lagos State MOH", organization_type=OrganizationType.STATE_MINISTRY, state=lagos)
+        federal_org = Organization.objects.create(name="Federal Ministry of Health", organization_type=OrganizationType.FEDERAL_MINISTRY)
+        federal_admin = User.objects.create_user(
+            username="federal-response-monitor",
+            email="federal-response-monitor@example.com",
+            password="StrongPass123!",
+            role=UserRole.FEDERAL_ADMIN,
+            organization=federal_org,
+        )
+        state_admin = User.objects.create_user(
+            username="lagos-federal-response-submitter",
+            email="lagos-federal-response-submitter@example.com",
+            password="StrongPass123!",
+            role=UserRole.STATE_ADMIN,
+            state=lagos,
+            organization=lagos_org,
+        )
+        template = FormTemplate.objects.create(
+            title="Monthly State Compliance Return",
+            purpose=FormTemplatePurpose.STATE_REPORTING_FORM,
+            owner_organization=federal_org,
+            visibility=FormTemplateVisibility.FEDERAL_STANDARD,
+            status=FormTemplateStatus.PUBLISHED,
+            created_by=federal_admin,
+        )
+        FormTemplateVersion.objects.create(
+            template=template,
+            version_number=1,
+            schema_json={
+                "sections": [
+                    {
+                        "key": "summary",
+                        "questions": [
+                            {"key": "inspections_completed", "label": "Inspections completed", "type": "number", "required": True}
+                        ],
+                    }
+                ]
+            },
+            status=FormTemplateStatus.PUBLISHED,
+        )
+        self.client.force_authenticate(federal_admin)
+        created = self.client.post(
+            "/api/federal/forms/assignments/",
+            {"title": "June Compliance Return", "template": str(template.id), "recipient_scope": "selected_states", "state_ids": [str(lagos.id)]},
+            format="json",
+        )
+        self.assertEqual(created.status_code, 201, created.data)
+        assignment = FormAssignment.objects.get(id=payload(created)["id"])
+
+        self.client.force_authenticate(state_admin)
+        submitted = self.client.post(
+            f"/api/state/forms/federal-assignments/{assignment.id}/response/",
+            {"response_json": {"inspections_completed": 24}},
+            format="json",
+        )
+        self.assertEqual(submitted.status_code, 200, submitted.data)
+        form_response = FormResponse.objects.get(id=payload(submitted)["id"])
+        self.assertEqual(form_response.status, ResponseStatus.SUBMITTED)
+        self.assertEqual(form_response.recipient.status, FormRecipientStatus.SUBMITTED)
+
+        self.client.force_authenticate(federal_admin)
+        summary = self.client.get(f"/api/federal/forms/assignments/{assignment.id}/response-summary/")
+        responses = self.client.get("/api/federal/forms/responses/", {"assignment": str(assignment.id)})
+
+        self.assertEqual(summary.status_code, 200, summary.data)
+        self.assertEqual(summary.data["total_assigned_states"], 1)
+        self.assertEqual(summary.data["submitted_states"], 1)
+        self.assertEqual(summary.data["pending_states"], 0)
+        self.assertEqual(summary.data["response_rate"], 100)
+        self.assertEqual(responses.status_code, 200, responses.data)
+        self.assertEqual([item["id"] for item in payload(responses)], [str(form_response.id)])
+
+    def test_federal_state_response_matrix_tracks_pending_and_submitted_states(self):
+        lagos = State.objects.create(name="Lagos", code="LA")
+        oyo = State.objects.create(name="Oyo", code="OY")
+        lagos_org = Organization.objects.create(name="Lagos State MOH", organization_type=OrganizationType.STATE_MINISTRY, state=lagos)
+        oyo_org = Organization.objects.create(name="Oyo State MOH", organization_type=OrganizationType.STATE_MINISTRY, state=oyo)
+        federal_org = Organization.objects.create(name="Federal Ministry of Health", organization_type=OrganizationType.FEDERAL_MINISTRY)
+        federal_admin = User.objects.create_user(
+            username="federal-matrix-monitor",
+            email="federal-matrix-monitor@example.com",
+            password="StrongPass123!",
+            role=UserRole.FEDERAL_ADMIN,
+            organization=federal_org,
+        )
+        lagos_admin = User.objects.create_user(
+            username="lagos-matrix-submitter",
+            email="lagos-matrix-submitter@example.com",
+            password="StrongPass123!",
+            role=UserRole.STATE_ADMIN,
+            state=lagos,
+            organization=lagos_org,
+        )
+        template = FormTemplate.objects.create(
+            title="Guideline Implementation Return",
+            purpose=FormTemplatePurpose.GUIDELINE_IMPLEMENTATION_SURVEY,
+            owner_organization=federal_org,
+            visibility=FormTemplateVisibility.FEDERAL_STANDARD,
+            status=FormTemplateStatus.PUBLISHED,
+            created_by=federal_admin,
+        )
+        FormTemplateVersion.objects.create(
+            template=template,
+            version_number=1,
+            schema_json={"sections": [{"key": "summary", "questions": [{"key": "implemented", "type": "yes_no", "required": True}]}]},
+            status=FormTemplateStatus.PUBLISHED,
+        )
+        self.client.force_authenticate(federal_admin)
+        created = self.client.post(
+            "/api/federal/forms/assignments/",
+            {"title": "Guideline Return", "template": str(template.id), "recipient_scope": "all_states"},
+            format="json",
+        )
+        self.assertEqual(created.status_code, 201, created.data)
+        assignment = FormAssignment.objects.get(id=payload(created)["id"])
+        self.assertEqual(set(assignment.recipients.values_list("organization_id", flat=True)), {lagos_org.id, oyo_org.id})
+
+        self.client.force_authenticate(lagos_admin)
+        submitted = self.client.post(
+            f"/api/state/forms/federal-assignments/{assignment.id}/response/",
+            {"response_json": {"implemented": True}},
+            format="json",
+        )
+        self.assertEqual(submitted.status_code, 200, submitted.data)
+
+        self.client.force_authenticate(federal_admin)
+        matrix = self.client.get(f"/api/federal/forms/assignments/{assignment.id}/state-response-matrix/")
+        self.assertEqual(matrix.status_code, 200, matrix.data)
+        rows_by_state = {row["state_name"]: row for row in payload(matrix)}
+        self.assertEqual(rows_by_state["Lagos"]["submitted"], 1)
+        self.assertEqual(rows_by_state["Lagos"]["pending"], 0)
+        self.assertEqual(rows_by_state["Oyo"]["submitted"], 0)
+        self.assertEqual(rows_by_state["Oyo"]["pending"], 1)
+
+    def test_federal_response_detail_masks_sensitive_answers_without_permission(self):
+        lagos = State.objects.create(name="Lagos", code="LA")
+        lagos_org = Organization.objects.create(name="Lagos State MOH", organization_type=OrganizationType.STATE_MINISTRY, state=lagos)
+        federal_org = Organization.objects.create(name="Federal Ministry of Health", organization_type=OrganizationType.FEDERAL_MINISTRY)
+        federal_admin = User.objects.create_user(
+            username="federal-sensitive-viewer",
+            email="federal-sensitive-viewer@example.com",
+            password="StrongPass123!",
+            role=UserRole.FEDERAL_ADMIN,
+            organization=federal_org,
+        )
+        state_admin = User.objects.create_user(
+            username="lagos-sensitive-submitter",
+            email="lagos-sensitive-submitter@example.com",
+            password="StrongPass123!",
+            role=UserRole.STATE_ADMIN,
+            state=lagos,
+            organization=lagos_org,
+        )
+        template = FormTemplate.objects.create(
+            title="National Incident Return",
+            purpose=FormTemplatePurpose.NATIONAL_INCIDENT_REPORTING,
+            owner_organization=federal_org,
+            visibility=FormTemplateVisibility.FEDERAL_STANDARD,
+            status=FormTemplateStatus.PUBLISHED,
+            created_by=federal_admin,
+        )
+        FormTemplateVersion.objects.create(
+            template=template,
+            version_number=1,
+            schema_json={
+                "sections": [
+                    {
+                        "key": "incident",
+                        "questions": [
+                            {"key": "incident_count", "label": "Incident count", "type": "number", "required": True, "sensitivity": "public"},
+                            {"key": "patient_symptoms", "label": "Patient symptoms", "type": "long_text", "required": False, "sensitivity": "medical"},
+                        ],
+                    }
+                ]
+            },
+            status=FormTemplateStatus.PUBLISHED,
+        )
+        self.client.force_authenticate(federal_admin)
+        created = self.client.post(
+            "/api/federal/forms/assignments/",
+            {"title": "Incident Return", "template": str(template.id), "recipient_scope": "selected_states", "state_ids": [str(lagos.id)]},
+            format="json",
+        )
+        self.assertEqual(created.status_code, 201, created.data)
+        assignment = FormAssignment.objects.get(id=payload(created)["id"])
+
+        self.client.force_authenticate(state_admin)
+        submitted = self.client.post(
+            f"/api/state/forms/federal-assignments/{assignment.id}/response/",
+            {"response_json": {"incident_count": 2, "patient_symptoms": "Private medical detail"}},
+            format="json",
+        )
+        self.assertEqual(submitted.status_code, 200, submitted.data)
+
+        self.client.force_authenticate(federal_admin)
+        detail = self.client.get(f"/api/federal/forms/responses/{payload(submitted)['id']}/")
+        self.assertEqual(detail.status_code, 200, detail.data)
+        self.assertEqual(payload(detail)["response_json"], {"incident_count": 2})
+        masked_question = payload(detail)["template_schema"]["sections"][0]["questions"][1]
+        self.assertTrue(masked_question["masked"])
+        self.assertEqual(masked_question["key"], "patient_symptoms")
+
+    def test_federal_reports_compare_states_and_overdue_submissions(self):
+        lagos = State.objects.create(name="Lagos", code="LA")
+        oyo = State.objects.create(name="Oyo", code="OY")
+        lagos_org = Organization.objects.create(name="Lagos State MOH", organization_type=OrganizationType.STATE_MINISTRY, state=lagos)
+        oyo_org = Organization.objects.create(name="Oyo State MOH", organization_type=OrganizationType.STATE_MINISTRY, state=oyo)
+        federal_org = Organization.objects.create(name="Federal Ministry of Health", organization_type=OrganizationType.FEDERAL_MINISTRY)
+        federal_admin = User.objects.create_user(
+            username="federal-report-viewer",
+            email="federal-report-viewer@example.com",
+            password="StrongPass123!",
+            role=UserRole.FEDERAL_ADMIN,
+            organization=federal_org,
+        )
+        lagos_admin = User.objects.create_user(
+            username="lagos-report-submitter",
+            email="lagos-report-submitter@example.com",
+            password="StrongPass123!",
+            role=UserRole.STATE_ADMIN,
+            state=lagos,
+            organization=lagos_org,
+        )
+        template = FormTemplate.objects.create(
+            title="State Reporting Template",
+            purpose=FormTemplatePurpose.STATE_REPORTING_FORM,
+            owner_organization=federal_org,
+            visibility=FormTemplateVisibility.FEDERAL_STANDARD,
+            status=FormTemplateStatus.PUBLISHED,
+            created_by=federal_admin,
+        )
+        FormTemplateVersion.objects.create(
+            template=template,
+            version_number=1,
+            schema_json={"sections": [{"key": "summary", "questions": [{"key": "completed", "type": "number", "required": True}]}]},
+            status=FormTemplateStatus.PUBLISHED,
+        )
+        self.client.force_authenticate(federal_admin)
+        created = self.client.post(
+            "/api/federal/forms/assignments/",
+            {"title": "Monthly State Reporting", "template": str(template.id), "recipient_scope": "all_states"},
+            format="json",
+        )
+        self.assertEqual(created.status_code, 201, created.data)
+        assignment = FormAssignment.objects.get(id=payload(created)["id"])
+
+        self.client.force_authenticate(lagos_admin)
+        submitted = self.client.post(
+            f"/api/state/forms/federal-assignments/{assignment.id}/response/",
+            {"response_json": {"completed": 12}},
+            format="json",
+        )
+        self.assertEqual(submitted.status_code, 200, submitted.data)
+        oyo_recipient = assignment.recipients.get(organization=oyo_org)
+        oyo_recipient.status = FormRecipientStatus.OVERDUE
+        oyo_recipient.save(update_fields=["status", "updated_at"])
+
+        self.client.force_authenticate(federal_admin)
+        report = self.client.get(f"/api/federal/forms/reports/state_by_state_response_comparison/?assignment={assignment.id}")
+        self.assertEqual(report.status_code, 200, report.data)
+        data = payload(report)
+        self.assertEqual(data["summary"]["total_assigned_states"], 2)
+        self.assertEqual(data["summary"]["submitted_states"], 1)
+        self.assertEqual(data["summary"]["overdue_states"], 1)
+        rows_by_state = {row["state_name"]: row for row in data["state_response_comparison"]}
+        self.assertEqual(rows_by_state["Lagos"]["submitted"], 1)
+        self.assertEqual(rows_by_state["Oyo"]["overdue"], 1)
+        self.assertEqual(data["overdue_submissions"][0]["state_name"], "Oyo")
+
+    def test_federal_template_adoption_report_lists_state_derivatives(self):
+        lagos = State.objects.create(name="Lagos", code="LA")
+        lagos_org = Organization.objects.create(name="Lagos State MOH", organization_type=OrganizationType.STATE_MINISTRY, state=lagos)
+        state_admin = User.objects.create_user(
+            username="lagos-adoption-report-user",
+            email="lagos-adoption-report-user@example.com",
+            password="StrongPass123!",
+            role=UserRole.STATE_ADMIN,
+            state=lagos,
+            organization=lagos_org,
+        )
+        federal_org = Organization.objects.create(name="Federal Ministry of Health", organization_type=OrganizationType.FEDERAL_MINISTRY)
+        federal_admin = User.objects.create_user(
+            username="federal-adoption-report-viewer",
+            email="federal-adoption-report-viewer@example.com",
+            password="StrongPass123!",
+            role=UserRole.FEDERAL_ADMIN,
+            organization=federal_org,
+        )
+        federal_template = FormTemplate.objects.create(
+            title="Federal Standard Template Usage",
+            purpose=FormTemplatePurpose.GUIDELINE_IMPLEMENTATION_SURVEY,
+            owner_organization=federal_org,
+            visibility=FormTemplateVisibility.FEDERAL_STANDARD,
+            status=FormTemplateStatus.PUBLISHED,
+            created_by=federal_admin,
+        )
+        FormTemplateVersion.objects.create(
+            template=federal_template,
+            version_number=1,
+            schema_json={"sections": []},
+            status=FormTemplateStatus.PUBLISHED,
+        )
+        self.client.force_authenticate(state_admin)
+        adopted = self.client.post(f"/api/state/forms/federal-templates/{federal_template.id}/adopt/", format="json")
+        self.assertEqual(adopted.status_code, 201, adopted.data)
+
+        self.client.force_authenticate(federal_admin)
+        report = self.client.get("/api/federal/forms/reports/template_adoption_by_state/")
+        self.assertEqual(report.status_code, 200, report.data)
+        adoption_rows = payload(report)["template_adoption_by_state"]
+        self.assertEqual(adoption_rows[0]["state_name"], "Lagos")
+        self.assertEqual(adoption_rows[0]["source_template_title"], "Federal Standard Template Usage")
+        self.assertEqual(adoption_rows[0]["adoption_type"], "adopted")
+
+    def test_federal_export_omits_sensitive_fields_and_logs_action(self):
+        lagos = State.objects.create(name="Lagos", code="LA")
+        lagos_org = Organization.objects.create(name="Lagos State MOH", organization_type=OrganizationType.STATE_MINISTRY, state=lagos)
+        federal_org = Organization.objects.create(name="Federal Ministry of Health", organization_type=OrganizationType.FEDERAL_MINISTRY)
+        federal_admin = User.objects.create_user(
+            username="federal-export-user",
+            email="federal-export-user@example.com",
+            password="StrongPass123!",
+            role=UserRole.FEDERAL_ADMIN,
+            organization=federal_org,
+        )
+        state_admin = User.objects.create_user(
+            username="lagos-export-submitter",
+            email="lagos-export-submitter@example.com",
+            password="StrongPass123!",
+            role=UserRole.STATE_ADMIN,
+            state=lagos,
+            organization=lagos_org,
+        )
+        template = FormTemplate.objects.create(
+            title="Federal Export Template",
+            purpose=FormTemplatePurpose.NATIONAL_INCIDENT_REPORTING,
+            owner_organization=federal_org,
+            visibility=FormTemplateVisibility.FEDERAL_STANDARD,
+            status=FormTemplateStatus.PUBLISHED,
+            created_by=federal_admin,
+        )
+        FormTemplateVersion.objects.create(
+            template=template,
+            version_number=1,
+            schema_json={
+                "sections": [
+                    {
+                        "key": "incident",
+                        "questions": [
+                            {"key": "incident_count", "label": "Incident count", "type": "number", "required": True, "sensitivity": "public"},
+                            {"key": "patient_detail", "label": "Patient detail", "type": "long_text", "sensitivity": "medical"},
+                        ],
+                    }
+                ]
+            },
+            status=FormTemplateStatus.PUBLISHED,
+        )
+        self.client.force_authenticate(federal_admin)
+        created = self.client.post(
+            "/api/federal/forms/assignments/",
+            {"title": "Incident Export Assignment", "template": str(template.id), "recipient_scope": "selected_states", "state_ids": [str(lagos.id)]},
+            format="json",
+        )
+        self.assertEqual(created.status_code, 201, created.data)
+        assignment = FormAssignment.objects.get(id=payload(created)["id"])
+
+        self.client.force_authenticate(state_admin)
+        submitted = self.client.post(
+            f"/api/state/forms/federal-assignments/{assignment.id}/response/",
+            {"response_json": {"incident_count": 4, "patient_detail": "Private medical content"}},
+            format="json",
+        )
+        self.assertEqual(submitted.status_code, 200, submitted.data)
+
+        self.client.force_authenticate(federal_admin)
+        export_created = self.client.post(
+            "/api/federal/forms/exports/",
+            {"format": "csv", "filters": {"assignment": str(assignment.id)}},
+            format="json",
+        )
+        self.assertEqual(export_created.status_code, 201, export_created.data)
+        export_id = payload(export_created)["id"]
+        downloaded = self.client.get(f"/api/federal/forms/exports/{export_id}/download/")
+        self.assertEqual(downloaded.status_code, 200)
+        content = downloaded.content.decode()
+        self.assertIn("incident_count", content)
+        self.assertIn("4", content)
+        self.assertNotIn("patient_detail", content)
+        self.assertNotIn("Private medical content", content)
+        self.assertTrue(AuditLog.objects.filter(metadata__event="federal_form_report_export_created").exists())
+        self.assertTrue(AuditLog.objects.filter(metadata__event="federal_form_report_export_downloaded").exists())
+
+    def test_federal_template_lifecycle_uses_federal_audit_events_and_unshare(self):
+        federal_org = Organization.objects.create(name="Federal Ministry of Health", organization_type=OrganizationType.FEDERAL_MINISTRY)
+        federal_admin = User.objects.create_user(
+            username="federal-template-audit-user",
+            email="federal-template-audit-user@example.com",
+            password="StrongPass123!",
+            role=UserRole.FEDERAL_ADMIN,
+            organization=federal_org,
+        )
+        lagos = State.objects.create(name="Lagos", code="LA")
+        self.client.force_authenticate(federal_admin)
+
+        created = self.client.post(
+            "/api/forms/templates/",
+            {
+                "title": "Federal Audit Template",
+                "purpose": FormTemplatePurpose.STATE_REPORTING_FORM,
+                "primary_module": FormPrimaryModule.REPORTS,
+            },
+            format="json",
+        )
+        self.assertEqual(created.status_code, 201, created.data)
+        template_id = payload(created)["id"]
+        published = self.client.post(
+            f"/api/forms/templates/{template_id}/publish/",
+            {"schema_json": {"sections": [{"key": "summary", "questions": []}]}},
+            format="json",
+        )
+        shared = self.client.post(
+            f"/api/forms/templates/{template_id}/share-to-states/",
+            {"state_ids": [str(lagos.id)]},
+            format="json",
+        )
+        unshared = self.client.post(f"/api/forms/templates/{template_id}/unshare-states/", format="json")
+
+        self.assertEqual(published.status_code, 200, published.data)
+        self.assertEqual(shared.status_code, 200, shared.data)
+        self.assertEqual(unshared.status_code, 200, unshared.data)
+        self.assertTrue(AuditLog.objects.filter(metadata__event="federal_template_created").exists())
+        self.assertTrue(AuditLog.objects.filter(metadata__event="federal_template_published").exists())
+        self.assertTrue(AuditLog.objects.filter(metadata__event="federal_template_shared_with_states").exists())
+        self.assertTrue(AuditLog.objects.filter(metadata__event="federal_template_unshared").exists())
+
+    def test_federal_template_alias_endpoints_reuse_form_template_engine(self):
+        federal_org = Organization.objects.create(name="Federal Ministry of Health", organization_type=OrganizationType.FEDERAL_MINISTRY)
+        federal_admin = User.objects.create_user(
+            username="federal-template-alias-user",
+            email="federal-template-alias-user@example.com",
+            password="StrongPass123!",
+            role=UserRole.FEDERAL_ADMIN,
+            organization=federal_org,
+        )
+        lagos = State.objects.create(name="Lagos", code="LA")
+        self.client.force_authenticate(federal_admin)
+
+        created = self.client.post(
+            "/api/federal/forms/templates/",
+            {
+                "title": "Federal Alias Template",
+                "purpose": FormTemplatePurpose.FEDERAL_ME_DATA_COLLECTION,
+                "primary_module": FormPrimaryModule.REPORTS,
+            },
+            format="json",
+        )
+        self.assertEqual(created.status_code, 201, created.data)
+        template_id = payload(created)["id"]
+        self.assertEqual(payload(created)["visibility"], FormTemplateVisibility.FEDERAL_PRIVATE)
+
+        published = self.client.post(
+            f"/api/federal/forms/templates/{template_id}/publish/",
+            {"schema_json": {"sections": [{"key": "summary", "questions": []}]}},
+            format="json",
+        )
+        shared = self.client.post(
+            f"/api/federal/forms/templates/{template_id}/share-to-states/",
+            {"state_ids": [str(lagos.id)]},
+            format="json",
+        )
+        marked = self.client.post(f"/api/federal/forms/templates/{template_id}/mark-standard/", format="json")
+        listed = self.client.get("/api/federal/forms/templates/")
+
+        self.assertEqual(published.status_code, 200, published.data)
+        self.assertEqual(shared.status_code, 200, shared.data)
+        self.assertEqual(marked.status_code, 200, marked.data)
+        self.assertEqual(payload(marked)["visibility"], FormTemplateVisibility.FEDERAL_STANDARD)
+        self.assertEqual(listed.status_code, 200, listed.data)
+        self.assertIn(template_id, {item["id"] for item in payload(listed)})
+
+    def test_federal_forms_permissions_block_wrong_account_types(self):
+        lagos = State.objects.create(name="Lagos", code="LA")
+        state_org = Organization.objects.create(name="Lagos State MOH", organization_type=OrganizationType.STATE_MINISTRY, state=lagos)
+        employer_org = Organization.objects.create(name="No Access Foods", organization_type=OrganizationType.EMPLOYER, state=lagos)
+        state_admin = User.objects.create_user(
+            username="state-federal-permission-denied",
+            email="state-federal-permission-denied@example.com",
+            password="StrongPass123!",
+            role=UserRole.STATE_ADMIN,
+            state=lagos,
+            organization=state_org,
+        )
+        employer_user = User.objects.create_user(
+            username="employer-template-denied",
+            email="employer-template-denied@example.com",
+            password="StrongPass123!",
+            role=UserRole.EMPLOYER,
+            organization=employer_org,
+        )
+
+        self.client.force_authenticate(state_admin)
+        federal_assignments = self.client.get("/api/federal/forms/assignments/")
+        create_federal_assignment = self.client.post("/api/federal/forms/assignments/", {"template": "not-a-template"}, format="json")
+        self.assertEqual(federal_assignments.status_code, 403)
+        self.assertEqual(create_federal_assignment.status_code, 403)
+
+        self.client.force_authenticate(employer_user)
+        create_template = self.client.post(
+            "/api/forms/templates/",
+            {"title": "Employer Cannot Create Platform Template", "purpose": FormTemplatePurpose.GENERAL_DATA_COLLECTION},
+            format="json",
+        )
+        self.assertEqual(create_template.status_code, 403)
+
+    def test_sensitive_federal_response_view_is_audited_for_sensitive_detail_permission(self):
+        lagos = State.objects.create(name="Lagos", code="LA")
+        lagos_org = Organization.objects.create(name="Lagos State MOH", organization_type=OrganizationType.STATE_MINISTRY, state=lagos)
+        federal_org = Organization.objects.create(name="Federal Ministry of Health", organization_type=OrganizationType.FEDERAL_MINISTRY)
+        super_admin = User.objects.create_user(
+            username="super-sensitive-viewer",
+            email="super-sensitive-viewer@example.com",
+            password="StrongPass123!",
+            role=UserRole.SUPER_ADMIN,
+            organization=federal_org,
+        )
+        state_admin = User.objects.create_user(
+            username="state-sensitive-response-owner",
+            email="state-sensitive-response-owner@example.com",
+            password="StrongPass123!",
+            role=UserRole.STATE_ADMIN,
+            state=lagos,
+            organization=lagos_org,
+        )
+        template = FormTemplate.objects.create(
+            title="Sensitive Federal Template",
+            purpose=FormTemplatePurpose.NATIONAL_INCIDENT_REPORTING,
+            owner_organization=federal_org,
+            visibility=FormTemplateVisibility.FEDERAL_STANDARD,
+            status=FormTemplateStatus.PUBLISHED,
+            created_by=super_admin,
+        )
+        version = FormTemplateVersion.objects.create(
+            template=template,
+            version_number=1,
+            schema_json={
+                "sections": [
+                    {
+                        "key": "incident",
+                        "questions": [
+                            {"key": "count", "type": "number", "sensitivity": "public"},
+                            {"key": "patient_detail", "type": "long_text", "sensitivity": "medical"},
+                        ],
+                    }
+                ]
+            },
+            status=FormTemplateStatus.PUBLISHED,
+        )
+        assignment = FormAssignment.objects.create(
+            title="Sensitive Federal Assignment",
+            template=template,
+            template_version=version,
+            purpose=template.purpose,
+            assigned_by=super_admin,
+            assigned_to_type="selected_states",
+            context_type="federal_assignment",
+            status=AssignmentStatus.ACTIVE,
+        )
+        recipient = FormRecipient.objects.create(
+            assignment=assignment,
+            recipient_type="state_ministry",
+            recipient_id=str(lagos.id),
+            organization=lagos_org,
+            status=FormRecipientStatus.SUBMITTED,
+        )
+        form_response = FormResponse.objects.create(
+            assignment=assignment,
+            template=template,
+            template_version=version,
+            recipient=recipient,
+            respondent_user=state_admin,
+            respondent_organization=lagos_org,
+            response_json={"count": 1, "patient_detail": "Visible only to sensitive-detail users"},
+            status=ResponseStatus.SUBMITTED,
+            submitted_at=timezone.now(),
+        )
+        self.client.force_authenticate(super_admin)
+
+        detail = self.client.get(f"/api/federal/forms/responses/{form_response.id}/")
+
+        self.assertEqual(detail.status_code, 200, detail.data)
+        self.assertEqual(payload(detail)["response_json"]["patient_detail"], "Visible only to sensitive-detail users")
+        self.assertTrue(AuditLog.objects.filter(metadata__event="federal_form_response_viewed").exists())
+        self.assertTrue(AuditLog.objects.filter(metadata__event="sensitive_response_viewed").exists())
+
+    def test_direct_national_operational_assignment_requires_special_permission_and_is_audited(self):
+        federal_org = Organization.objects.create(name="Federal Ministry of Health", organization_type=OrganizationType.FEDERAL_MINISTRY)
+        super_admin = User.objects.create_user(
+            username="super-operational-assigner",
+            email="super-operational-assigner@example.com",
+            password="StrongPass123!",
+            role=UserRole.SUPER_ADMIN,
+            organization=federal_org,
+        )
+        template = FormTemplate.objects.create(
+            title="Exceptional Operational Assignment",
+            purpose=FormTemplatePurpose.FEDERAL_ME_DATA_COLLECTION,
+            owner_organization=federal_org,
+            visibility=FormTemplateVisibility.FEDERAL_PRIVATE,
+            status=FormTemplateStatus.PUBLISHED,
+            created_by=super_admin,
+        )
+        FormTemplateVersion.objects.create(template=template, version_number=1, schema_json={"sections": []}, status=FormTemplateStatus.PUBLISHED)
+        self.client.force_authenticate(super_admin)
+
+        response = self.client.post(
+            "/api/federal/forms/assignments/",
+            {"title": "Exceptional Employer Assignment", "template": str(template.id), "recipient_scope": "employer"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 201, response.data)
+        self.assertTrue(AuditLog.objects.filter(metadata__event="direct_national_operational_assignment_created").exists())
 
     def test_response_actions_create_activity_logs_and_update_tracking_fields(self):
         template = self.create_template()

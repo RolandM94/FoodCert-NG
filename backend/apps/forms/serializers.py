@@ -16,20 +16,45 @@ class FormTemplateSerializer(serializers.ModelSerializer):
     owner_name = serializers.CharField(source="owner_organization.name", read_only=True)
     created_by_name = serializers.CharField(source="created_by.get_full_name", read_only=True)
     response_count = serializers.SerializerMethodField()
+    adoption_count = serializers.SerializerMethodField()
+    shared_state_names = serializers.SerializerMethodField()
+    source_template_title = serializers.CharField(source="source_template.title", read_only=True)
+    source_has_newer_version = serializers.SerializerMethodField()
 
     class Meta:
         model = FormTemplate
         fields = (
             "id", "title", "description", "purpose", "owner_organization", "owner_name",
             "target_respondent_type", "primary_module", "module_context", "default_context_type",
-            "language", "settings_json", "status", "current_version", "created_by",
-            "created_by_name", "response_count", "archived_at", "created_at", "updated_at",
+            "language", "settings_json", "visibility", "shared_with_states", "shared_state_names",
+            "source_template", "source_template_title", "source_version",
+            "source_has_newer_version", "status", "current_version", "created_by", "created_by_name", "response_count",
+            "adoption_count", "archived_at", "created_at", "updated_at",
         )
-        read_only_fields = ("id", "owner_name", "created_by_name", "response_count", "archived_at", "created_at", "updated_at")
+        read_only_fields = (
+            "id", "owner_name", "created_by_name", "response_count", "adoption_count",
+            "shared_state_names", "source_template_title", "source_has_newer_version", "archived_at", "created_at", "updated_at",
+        )
         extra_kwargs = {"owner_organization": {"required": False}}
 
     def get_response_count(self, obj):
         return obj.responses.count()
+
+    def get_adoption_count(self, obj):
+        adoption_count = getattr(obj, "adoption_count", None)
+        if adoption_count is not None:
+            return adoption_count
+        return obj.derived_templates.count()
+
+    def get_shared_state_names(self, obj):
+        return [state.name for state in obj.shared_with_states.all()]
+
+    def get_source_has_newer_version(self, obj):
+        return bool(
+            obj.source_template_id
+            and obj.source_version_id
+            and obj.source_template.current_version > obj.source_version.version_number
+        )
 
 
 class FormTemplateVersionSerializer(serializers.ModelSerializer):
@@ -68,7 +93,7 @@ class FormAssignmentSerializer(serializers.ModelSerializer):
             "response_rate", "completion_rate", "closed_at", "created_at", "updated_at",
         )
         read_only_fields = (
-            "id", "assigned_by_name", "template_title", "response_count",
+            "id", "assigned_by", "assigned_by_name", "template_title", "response_count",
             "total_recipients", "status_summary", "response_rate", "completion_rate",
             "closed_at", "created_at", "updated_at",
         )

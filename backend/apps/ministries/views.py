@@ -461,6 +461,20 @@ class FederalAuditLogView(APIView):
         )
 
 
+class FederalAccountAuditLogView(APIView):
+    permission_classes = [IsAuthenticated, IsActiveUser, IsFederalMinistryUser]
+
+    @extend_schema(responses=dict)
+    def get(self, request):
+        return Response(
+            FederalOversightService.account_audit_logs(
+                user=request.user,
+                action=request.query_params.get("action", ""),
+                search=request.query_params.get("search", ""),
+            )
+        )
+
+
 class FederalQueryListCreateView(APIView):
     permission_classes = [IsAuthenticated, IsActiveUser, IsFederalMinistryUser]
 

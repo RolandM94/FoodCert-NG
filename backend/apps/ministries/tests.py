@@ -1746,6 +1746,38 @@ class FederalOversightQueryEndpointTests(APITestCase):
         self.assertNotIn("old_value", record)
         self.assertNotIn("new_value", record)
 
+    def test_federal_account_audit_logs_are_organization_scoped(self):
+        federal_org = Organization.objects.create(
+            name="Federal Ministry of Health",
+            organization_type=OrganizationType.FEDERAL_MINISTRY,
+        )
+        other_org = Organization.objects.create(
+            name="Platform Operations",
+            organization_type=OrganizationType.PLATFORM_OPERATOR,
+        )
+        self.federal_admin.organization = federal_org
+        self.federal_admin.save(update_fields=["organization"])
+        AuditLog.objects.create(
+            actor=self.federal_admin,
+            action=AuditAction.UPDATE,
+            organization=federal_org,
+            metadata={"event": "federal_account_event"},
+        )
+        AuditLog.objects.create(
+            actor=self.federal_admin,
+            action=AuditAction.UPDATE,
+            organization=other_org,
+            metadata={"event": "other_org_event"},
+        )
+        self.client.force_authenticate(self.federal_admin)
+
+        response = self.client.get("/api/federal/account-audit-logs/")
+
+        self.assertEqual(response.status_code, 200)
+        events = [item["metadata"].get("event") for item in payload(response)]
+        self.assertIn("federal_account_event", events)
+        self.assertNotIn("other_org_event", events)
+
     def test_federal_query_lifecycle(self):
         self.client.force_authenticate(self.federal_admin)
 

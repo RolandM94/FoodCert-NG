@@ -4,6 +4,7 @@ from rest_framework.test import APITestCase
 from apps.accounts.models import UserRole
 from apps.audit.models import AuditAction, AuditLog
 from apps.locations.models import State
+from apps.organizations.models import Organization, OrganizationType
 from apps.policy.models import StatePolicyConfig
 
 
@@ -151,3 +152,21 @@ class StateMedicalFacilitySettingsTests(APITestCase):
         events = [item["event"] for item in payload(response)]
         self.assertIn("lagos_event", events)
         self.assertNotIn("oyo_event", events)
+
+    def test_state_audit_logs_prefer_current_organization_scope(self):
+        lagos_org = Organization.objects.create(name="Lagos State MOH", organization_type=OrganizationType.STATE_MINISTRY, state=self.lagos)
+        other_lagos_org = Organization.objects.create(name="Other Lagos Regulator", organization_type=OrganizationType.STATE_MINISTRY, state=self.lagos)
+        self.state_admin.organization = lagos_org
+        self.state_admin.save(update_fields=["organization"])
+        AuditLog.objects.create(actor=self.state_admin, action=AuditAction.UPDATE, organization=lagos_org, state=self.lagos, metadata={"event": "own_org_event", "module": "Account Settings"})
+        AuditLog.objects.create(actor=self.state_admin, action=AuditAction.UPDATE, organization=other_lagos_org, state=self.lagos, metadata={"event": "other_org_event", "module": "Account Settings"})
+        AuditLog.objects.create(actor=self.state_admin, action=AuditAction.UPDATE, state=self.lagos, metadata={"event": "legacy_state_event", "module": "Account Settings"})
+        self.client.force_authenticate(self.state_admin)
+
+        response = self.client.get("/api/state-policy-configs/my-audit-logs/")
+
+        self.assertEqual(response.status_code, 200)
+        events = [item["event"] for item in payload(response)]
+        self.assertIn("own_org_event", events)
+        self.assertIn("legacy_state_event", events)
+        self.assertNotIn("other_org_event", events)

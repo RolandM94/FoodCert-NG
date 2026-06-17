@@ -363,6 +363,11 @@ export async function fetchFederalAuditLogs(params?: Record<string, string>): Pr
   return unwrap(response.data);
 }
 
+export async function fetchFederalAccountAuditLogs(params?: Record<string, string>): Promise<FederalAuditLogItem[]> {
+  const response = await apiClient.get<ApiEnvelope<FederalAuditLogItem[]>>("/federal/account-audit-logs/", { params });
+  return unwrap(response.data);
+}
+
 export async function fetchFederalQueries(params?: { status?: string; state?: string }): Promise<FederalStateQueryItem[]> {
   const response = await apiClient.get<ApiEnvelope<FederalStateQueryItem[]>>("/federal/queries/", { params });
   return unwrap(response.data);

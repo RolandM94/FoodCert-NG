@@ -17,7 +17,7 @@ import {
 } from "recharts";
 import { DashboardCard } from "@/components/ui/dashboard-card";
 import { StatusBadge } from "@/components/status/status-badge";
-import { fetchFormAssignments, fetchFormsAnalytics, fetchFormTemplates } from "@/lib/api/forms";
+import { createFederalFormsExport, downloadFederalFormsExport, fetchFederalFormsReports, fetchFormAssignments, fetchFormsAnalytics, fetchFormTemplates } from "@/lib/api/forms";
 
 const STATUS_COLORS: Record<string, string> = {
   not_started: "#94a3b8",
@@ -55,6 +55,16 @@ const PURPOSE_OPTIONS = [
   { value: "incident_report", label: "Incident Report" },
   { value: "training_feedback", label: "Training Feedback" },
   { value: "general_data_collection", label: "General Data Collection" },
+  { value: "national_policy_template", label: "National Policy Template" },
+  { value: "state_reporting_form", label: "State Reporting Form" },
+  { value: "federal_me_data_collection", label: "Federal M&E Data Collection" },
+  { value: "federal_compliance_review", label: "Federal Compliance Review" },
+  { value: "national_incident_reporting", label: "National Incident Reporting" },
+  { value: "programme_monitoring_form", label: "Programme Monitoring Form" },
+  { value: "guideline_implementation_survey", label: "Guideline Implementation Survey" },
+  { value: "cross_state_survey", label: "Cross-State Survey" },
+  { value: "national_facility_reporting_template", label: "National Facility Reporting Template" },
+  { value: "inspection_performance_reporting_template", label: "Inspection Performance Reporting Template" },
 ];
 
 const STATUS_OPTIONS = [
@@ -86,7 +96,170 @@ function formatLabel(value: string) {
   return value.replaceAll("_", " ").replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
-export function FormsReportsTab() {
+function downloadBlob(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  anchor.click();
+  URL.revokeObjectURL(url);
+}
+
+function FederalFormsReportsTab() {
+  const [templateFilter, setTemplateFilter] = useState("");
+  const [assignmentFilter, setAssignmentFilter] = useState("");
+  const [purposeFilter, setPurposeFilter] = useState("");
+  const [statusFilter, setStatusFilter] = useState("");
+  const [stateFilter, setStateFilter] = useState("");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+  const [exporting, setExporting] = useState(false);
+
+  const params: Record<string, string> = {};
+  if (templateFilter) params.template = templateFilter;
+  if (assignmentFilter) params.assignment = assignmentFilter;
+  if (purposeFilter) params.purpose = purposeFilter;
+  if (statusFilter) params.status = statusFilter;
+  if (stateFilter) params.state = stateFilter;
+  if (dateFrom) params.date_from = dateFrom;
+  if (dateTo) params.date_to = dateTo;
+
+  const reportsQuery = useQuery({
+    queryKey: ["federal-forms-reports", params],
+    queryFn: () => fetchFederalFormsReports(params),
+  });
+  const templatesQuery = useQuery({ queryKey: ["federal-forms-report-templates"], queryFn: () => fetchFormTemplates() });
+  const assignmentsQuery = useQuery({ queryKey: ["federal-forms-report-assignments"], queryFn: () => fetchFormAssignments() });
+  const data = reportsQuery.data;
+
+  async function runExport(format: "csv" | "json" | "xlsx" | "pdf") {
+    setExporting(true);
+    try {
+      const job = await createFederalFormsExport({ format, filters: params });
+      const blob = await downloadFederalFormsExport(job.id);
+      downloadBlob(blob, `federal-form-responses.${format === "xlsx" ? "xls" : format}`);
+    } finally {
+      setExporting(false);
+    }
+  }
+
+  return (
+    <div className="grid gap-5">
+      <div className="grid gap-3 rounded-lg border border-neutral-200 bg-white p-4 shadow-sm md:grid-cols-2 xl:grid-cols-4">
+        <div className="grid gap-1">
+          <label className="text-xs font-semibold text-neutral-500">Template</label>
+          <select className="h-9 rounded border border-neutral-200 bg-white px-3 text-sm" value={templateFilter} onChange={(e) => setTemplateFilter(e.target.value)}>
+            <option value="">All templates</option>
+            {(templatesQuery.data || []).map((t) => <option key={t.id} value={t.id}>{t.title}</option>)}
+          </select>
+        </div>
+        <div className="grid gap-1">
+          <label className="text-xs font-semibold text-neutral-500">Assignment</label>
+          <select className="h-9 rounded border border-neutral-200 bg-white px-3 text-sm" value={assignmentFilter} onChange={(e) => setAssignmentFilter(e.target.value)}>
+            <option value="">All assignments</option>
+            {(assignmentsQuery.data || []).map((a) => <option key={a.id} value={a.id}>{a.title}</option>)}
+          </select>
+        </div>
+        <div className="grid gap-1">
+          <label className="text-xs font-semibold text-neutral-500">Purpose</label>
+          <select className="h-9 rounded border border-neutral-200 bg-white px-3 text-sm" value={purposeFilter} onChange={(e) => setPurposeFilter(e.target.value)}>
+            {PURPOSE_OPTIONS.map((o) => <option key={o.value || "all"} value={o.value}>{o.label}</option>)}
+          </select>
+        </div>
+        <div className="grid gap-1">
+          <label className="text-xs font-semibold text-neutral-500">Status</label>
+          <select className="h-9 rounded border border-neutral-200 bg-white px-3 text-sm" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+            {STATUS_OPTIONS.map((o) => <option key={o.value || "all"} value={o.value}>{o.label}</option>)}
+          </select>
+        </div>
+        <div className="grid gap-1">
+          <label className="text-xs font-semibold text-neutral-500">State ID</label>
+          <input className="h-9 rounded border border-neutral-200 bg-white px-3 text-sm" placeholder="Optional state id" value={stateFilter} onChange={(e) => setStateFilter(e.target.value)} />
+        </div>
+        <div className="grid gap-1">
+          <label className="text-xs font-semibold text-neutral-500">From</label>
+          <input className="h-9 rounded border border-neutral-200 bg-white px-3 text-sm" type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
+        </div>
+        <div className="grid gap-1">
+          <label className="text-xs font-semibold text-neutral-500">To</label>
+          <input className="h-9 rounded border border-neutral-200 bg-white px-3 text-sm" type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
+        </div>
+        <div className="flex items-end gap-2">
+          <button className="h-9 rounded bg-brand-600 px-3 text-sm font-bold text-white hover:bg-brand-700 disabled:opacity-60" disabled={exporting} onClick={() => runExport("csv")} type="button">CSV</button>
+          <button className="h-9 rounded border border-brand-200 px-3 text-sm font-bold text-brand-700 hover:bg-brand-50 disabled:opacity-60" disabled={exporting} onClick={() => runExport("xlsx")} type="button">Excel</button>
+          <button className="h-9 rounded border border-neutral-200 px-3 text-sm font-bold text-neutral-700 hover:bg-neutral-50 disabled:opacity-60" disabled={exporting} onClick={() => runExport("pdf")} type="button">PDF</button>
+        </div>
+      </div>
+
+      {reportsQuery.isLoading ? (
+        <p className="rounded-lg border border-neutral-200 bg-white p-8 text-center text-sm text-neutral-500">Loading Federal reports...</p>
+      ) : !data ? (
+        <p className="rounded-lg border border-neutral-200 bg-white p-8 text-center text-sm text-neutral-500">Could not load Federal reports.</p>
+      ) : (
+        <>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-6">
+            <DashboardCard icon={FileStack} label="Assigned States" value={data.summary.total_assigned_states} />
+            <DashboardCard icon={ClipboardCheck} label="Submitted States" value={data.summary.submitted_states} />
+            <DashboardCard icon={BarChart3} label="Pending States" value={data.summary.pending_states} />
+            <DashboardCard icon={TrendingUp} label="Overdue States" value={data.summary.overdue_states} />
+            <DashboardCard icon={Percent} label="Response Rate" value={`${data.summary.response_rate}%`} />
+            <DashboardCard icon={ClipboardCheck} label="Returned" value={data.summary.returned_responses} />
+          </div>
+
+          <section className="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm">
+            <h3 className="text-sm font-bold text-neutral-900">Federal Report Catalogue</h3>
+            <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+              {data.reports.map((report) => (
+                <div className="rounded border border-neutral-200 bg-neutral-50 p-3" key={report.key}>
+                  <p className="text-sm font-bold text-neutral-900">{report.title}</p>
+                  <p className="mt-1 text-xs leading-5 text-neutral-500">{report.description}</p>
+                </div>
+              ))}
+            </div>
+          </section>
+
+          <div className="grid gap-5 xl:grid-cols-2">
+            <section className="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm">
+              <h3 className="mb-3 text-sm font-bold text-neutral-900">State-by-State Response Comparison</h3>
+              <div className="overflow-x-auto">
+                <table className="min-w-full text-sm">
+                  <thead className="bg-neutral-50 text-xs uppercase text-neutral-500">
+                    <tr><th className="px-3 py-2 text-left">State</th><th className="px-3 py-2 text-left">Assigned</th><th className="px-3 py-2 text-left">Submitted</th><th className="px-3 py-2 text-left">Pending</th><th className="px-3 py-2 text-left">Overdue</th><th className="px-3 py-2 text-left">Rate</th></tr>
+                  </thead>
+                  <tbody className="divide-y divide-neutral-100">
+                    {data.state_response_comparison.map((row) => (
+                      <tr key={row.state_id}><td className="px-3 py-2 font-semibold text-neutral-900">{row.state_name}</td><td className="px-3 py-2">{row.assigned_forms}</td><td className="px-3 py-2">{row.submitted}</td><td className="px-3 py-2">{row.pending}</td><td className="px-3 py-2">{row.overdue}</td><td className="px-3 py-2">{row.response_rate}%</td></tr>
+                    ))}
+                    {!data.state_response_comparison.length ? <tr><td className="px-3 py-6 text-center text-neutral-500" colSpan={6}>No state response data yet.</td></tr> : null}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+
+            <section className="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm">
+              <h3 className="mb-3 text-sm font-bold text-neutral-900">Template Adoption by State</h3>
+              <div className="overflow-x-auto">
+                <table className="min-w-full text-sm">
+                  <thead className="bg-neutral-50 text-xs uppercase text-neutral-500">
+                    <tr><th className="px-3 py-2 text-left">State</th><th className="px-3 py-2 text-left">Template</th><th className="px-3 py-2 text-left">Source</th><th className="px-3 py-2 text-left">Type</th><th className="px-3 py-2 text-left">Status</th></tr>
+                  </thead>
+                  <tbody className="divide-y divide-neutral-100">
+                    {data.template_adoption_by_state.map((row) => (
+                      <tr key={`${row.state_id}-${row.template_id}`}><td className="px-3 py-2 font-semibold text-neutral-900">{String(row.state_name || "")}</td><td className="px-3 py-2">{String(row.template_title || "")}</td><td className="px-3 py-2">{String(row.source_template_title || "")}</td><td className="px-3 py-2">{formatLabel(String(row.adoption_type || "derived"))}</td><td className="px-3 py-2"><StatusBadge status={String(row.status || "draft")} /></td></tr>
+                    ))}
+                    {!data.template_adoption_by_state.length ? <tr><td className="px-3 py-6 text-center text-neutral-500" colSpan={5}>No state adoptions yet.</td></tr> : null}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+function StateFormsReportsTab() {
   const [templateFilter, setTemplateFilter] = useState("");
   const [assignmentFilter, setAssignmentFilter] = useState("");
   const [purposeFilter, setPurposeFilter] = useState("");
@@ -431,4 +604,8 @@ export function FormsReportsTab() {
       )}
     </div>
   );
+}
+
+export function FormsReportsTab({ accountScope = "state" }: { accountScope?: "state" | "federal" }) {
+  return accountScope === "federal" ? <FederalFormsReportsTab /> : <StateFormsReportsTab />;
 }

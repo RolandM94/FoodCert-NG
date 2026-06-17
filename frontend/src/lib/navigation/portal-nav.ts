@@ -16,13 +16,15 @@ import {
   HeartPulse,
   IdCard,
   Landmark,
-  ReceiptText,
   MapPin,
+  ReceiptText,
   QrCode,
+  Scale,
   Settings,
   ShieldCheck,
   Stethoscope,
   Syringe,
+  TrendingUp,
   UsersRound
 } from "lucide-react";
 import type { UserRole } from "@/types/auth";
@@ -105,6 +107,7 @@ export const PORTAL_NAV: Record<UserRole, PortalNavItem[]> = {
   ],
   state_admin: [
     { label: "Dashboard", href: "/state/dashboard", icon: Activity },
+    { label: "KPI Dashboard", href: "/state/kpi-dashboard", icon: TrendingUp },
     { label: "Directory & Registry", href: "/state/directory", icon: BookOpen },
     { label: "Medical Facilities", href: "/state/medical-facilities", icon: Building2 },
 
@@ -117,20 +120,12 @@ export const PORTAL_NAV: Record<UserRole, PortalNavItem[]> = {
   ],
   federal_admin: [
     { label: "Dashboard", href: "/federal/dashboard", icon: Activity },
+    { label: "KPI Dashboard", href: "/federal/standards/kpi-dashboard", icon: TrendingUp },
+    { label: "States Overview", href: "/federal/states", icon: MapPin },
+    { label: "Standards & Policy", href: "/federal/standards-policy", icon: Scale },
     { label: "Directory & Registry", href: "/federal/directory", icon: BookOpen },
-    { label: "States", href: "/federal/states", icon: MapPin },
-    { label: "Certificates", href: "/federal/certificates", icon: BadgeCheck },
-    { label: "Facilities", href: "/federal/facilities", icon: Building2 },
-    { label: "Forms", href: "/federal/forms", icon: FileStack },
-    { label: "Analytics", href: "/federal/analytics", icon: BarChart3 },
-    { label: "Data Quality", href: "/federal/data-quality", icon: ShieldCheck },
-    { label: "Enforcement", href: "/federal/enforcement/dashboard", icon: AlertTriangle },
-    { label: "Audit", href: "/federal/audit", icon: ClipboardCheck },
-    { label: "Queries", href: "/federal/queries", icon: Bell },
-    { label: "Reports", href: "/federal/reports", icon: ClipboardList },
-    { label: "Stakeholder Management", href: "/federal/stakeholder-management", icon: UsersRound },
-    { label: "Policy Config", href: "/federal/policy-config", icon: Landmark },
-    { label: "Templates", href: "/admin/certificate-templates", icon: Settings },
+    { label: "Reports & Analytics", href: "/federal/reports", icon: BarChart3 },
+    { label: "Account Settings", href: "/federal/account-settings", icon: Settings },
   ],
   inspector: [
     { label: "Dashboard", href: "/inspector/dashboard", icon: Activity },
@@ -144,14 +139,13 @@ export const PORTAL_NAV: Record<UserRole, PortalNavItem[]> = {
     { label: "Dashboard", href: "/federal/dashboard", icon: Activity },
     { label: "Directory & Registry", href: "/admin/directory", icon: BookOpen },
     { label: "States", href: "/federal/states", icon: MapPin },
+    { label: "Standards & Policy", href: "/federal/standards-policy", icon: Scale },
     { label: "Certificates", href: "/federal/certificates", icon: BadgeCheck },
     { label: "Facilities", href: "/federal/facilities", icon: Building2 },
-    { label: "Analytics", href: "/federal/analytics", icon: BarChart3 },
     { label: "Data Quality", href: "/federal/data-quality", icon: ShieldCheck },
-    { label: "Audit", href: "/federal/audit", icon: ClipboardCheck },
     { label: "Queries", href: "/federal/queries", icon: Bell },
     { label: "Reports", href: "/federal/reports", icon: ClipboardList },
     { label: "Stakeholder Management", href: "/admin/stakeholder-management", icon: UsersRound },
-    { label: "Policy Config", href: "/federal/policy-config", icon: Landmark }
+    { label: "Account Settings", href: "/federal/account-settings", icon: Settings }
   ]
 };

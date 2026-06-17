@@ -14,10 +14,11 @@ from apps.forms.models import (
 
 @admin.register(FormTemplate)
 class FormTemplateAdmin(admin.ModelAdmin):
-    list_display = ("title", "purpose", "primary_module", "status", "current_version", "owner_organization", "updated_at")
-    list_filter = ("purpose", "primary_module", "status", "language")
+    list_display = ("title", "purpose", "primary_module", "visibility", "status", "current_version", "owner_organization", "updated_at")
+    list_filter = ("purpose", "primary_module", "visibility", "status", "language")
     search_fields = ("title", "description", "owner_organization__name")
     readonly_fields = ("created_at", "updated_at", "archived_at")
+    filter_horizontal = ("shared_with_states",)
 
 
 @admin.register(FormTemplateVersion)

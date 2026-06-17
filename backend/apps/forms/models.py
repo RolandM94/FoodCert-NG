@@ -19,6 +19,16 @@ class FormTemplatePurpose(models.TextChoices):
     INCIDENT_REPORT = "incident_report", "Incident Report"
     TRAINING_FEEDBACK = "training_feedback", "Training Feedback"
     GENERAL_DATA_COLLECTION = "general_data_collection", "General Data Collection"
+    NATIONAL_POLICY_TEMPLATE = "national_policy_template", "National Policy Template"
+    STATE_REPORTING_FORM = "state_reporting_form", "State Reporting Form"
+    FEDERAL_ME_DATA_COLLECTION = "federal_me_data_collection", "Federal M&E Data Collection"
+    FEDERAL_COMPLIANCE_REVIEW = "federal_compliance_review", "Federal Compliance Review"
+    NATIONAL_INCIDENT_REPORTING = "national_incident_reporting", "National Incident Reporting"
+    PROGRAMME_MONITORING_FORM = "programme_monitoring_form", "Programme Monitoring Form"
+    GUIDELINE_IMPLEMENTATION_SURVEY = "guideline_implementation_survey", "Guideline Implementation Survey"
+    CROSS_STATE_SURVEY = "cross_state_survey", "Cross-State Survey"
+    NATIONAL_FACILITY_REPORTING_TEMPLATE = "national_facility_reporting_template", "National Facility Reporting Template"
+    INSPECTION_PERFORMANCE_REPORTING_TEMPLATE = "inspection_performance_reporting_template", "Inspection Performance Reporting Template"
 
 
 class FormPrimaryModule(models.TextChoices):
@@ -39,6 +49,13 @@ class FormTemplateStatus(models.TextChoices):
     PUBLISHED = "published", "Published"
     ARCHIVED = "archived", "Archived"
     DEPRECATED = "deprecated", "Deprecated"
+
+
+class FormTemplateVisibility(models.TextChoices):
+    STATE_OWNED = "state_owned", "State Owned"
+    FEDERAL_PRIVATE = "federal_private", "Federal Private"
+    FEDERAL_SHARED = "federal_shared", "Federal Shared"
+    FEDERAL_STANDARD = "federal_standard", "Federal Standard"
 
 
 class FormVersionStatus(models.TextChoices):
@@ -78,6 +95,31 @@ class FormTemplate(UUIDModel, TimestampedModel):
     default_context_type = models.CharField(max_length=50, blank=True)
     language = models.CharField(max_length=16, default="en")
     settings_json = models.JSONField(default=dict, blank=True)
+    visibility = models.CharField(
+        max_length=32,
+        choices=FormTemplateVisibility.choices,
+        default=FormTemplateVisibility.STATE_OWNED,
+        db_index=True,
+    )
+    shared_with_states = models.ManyToManyField(
+        "locations.State",
+        blank=True,
+        related_name="shared_form_templates",
+    )
+    source_template = models.ForeignKey(
+        "self",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="derived_templates",
+    )
+    source_version = models.ForeignKey(
+        "FormTemplateVersion",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="derived_templates",
+    )
     status = models.CharField(max_length=20, choices=FormTemplateStatus.choices, default=FormTemplateStatus.DRAFT, db_index=True)
     current_version = models.PositiveIntegerField(default=1)
     created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name="form_templates_created")
@@ -90,6 +132,7 @@ class FormTemplate(UUIDModel, TimestampedModel):
             models.Index(fields=["status"]),
             models.Index(fields=["owner_organization"]),
             models.Index(fields=["primary_module", "status"]),
+            models.Index(fields=["visibility", "status"]),
         ]
 
     def __str__(self):

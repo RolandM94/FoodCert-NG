@@ -1,6 +1,7 @@
 from django.urls import path
 
 from apps.ministries.views import (
+    FederalAccountAuditLogView,
     FederalDashboardView,
     FederalAuditLogView,
     FederalCertificateDetailView,
@@ -146,6 +147,7 @@ urlpatterns = [
     path("federal/state-overrides/", FederalStateOverrideView.as_view(), name="federal-state-overrides"),
     path("federal/m-and-e/indicators/", FederalIndicatorsView.as_view(), name="federal-indicators"),
     path("federal/data-quality/", FederalDataQualityView.as_view(), name="federal-data-quality"),
+    path("federal/account-audit-logs/", FederalAccountAuditLogView.as_view(), name="federal-account-audit-logs"),
     path("federal/audit-logs/", FederalAuditLogView.as_view(), name="federal-audit-logs"),
     path("federal/queries/", FederalQueryListCreateView.as_view(), name="federal-queries"),
     path("federal/queries/<uuid:pk>/respond/", FederalQueryRespondView.as_view(), name="federal-query-respond"),

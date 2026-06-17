@@ -14,9 +14,11 @@ import { DashboardCard } from "@/components/ui/dashboard-card";
 import { KoboFormRenderer, type KoboQuestionType } from "@/components/forms/kobo-form-renderer";
 import type { KoboLogicRule } from "@/lib/forms/kobo-logic";
 import {
-  fetchFormTemplates, createFormTemplate, updateFormTemplate, saveFormTemplateDraft, publishFormTemplate, archiveFormTemplate, fetchFormTemplateVersions,
+  fetchFormTemplates, createFormTemplate, updateFormTemplate, saveFormTemplateDraft, publishFormTemplate, shareFormTemplateToStates, markFormTemplateStandard, archiveFormTemplate, deleteFormTemplate, fetchFormTemplateVersions,
+  fetchStateFederalFormTemplates, adoptStateFederalFormTemplate, cloneStateFederalFormTemplate,
   fetchFormAssignments, createFormAssignment, cancelFormAssignment, fetchFormAssignmentSummary, sendFormAssignmentReminder,
   fetchFormResponses, reviewFormResponse, returnFormResponse, fetchFormResponseActivity,
+  fetchFederalFormAssignments, createFederalFormAssignment, fetchFederalFormAssignmentResponseSummary, fetchFederalFormAssignmentStateResponseMatrix, fetchFederalFormResponses,
   downloadFormAttachmentsExport, downloadFormResponsesExport, fetchFormsPermissions,
 } from "@/lib/api/forms";
 import { getApiErrorMessage } from "@/lib/api/client";
@@ -27,6 +29,12 @@ const FormsPermsCtx = createContext<Set<string>>(new Set());
 function useFormsPerms() { return useContext(FormsPermsCtx); }
 
 type TabKey = "overview" | "templates" | "assignments" | "responses" | "exports" | "reports" | "settings";
+type FormsToolContentProps = {
+  basePath?: string;
+  tabParamName?: string;
+  visibleTabs?: TabKey[];
+  accountScope?: "state" | "federal";
+};
 type BuilderQuestion = {
   key: string;
   label: string;
@@ -65,6 +73,36 @@ const PURPOSE_LABELS: Record<string, string> = {
   incident_report: "Incident Report",
   training_feedback: "Training Feedback",
   general_data_collection: "General Data Collection",
+  national_policy_template: "National Policy Template",
+  state_reporting_form: "State Reporting Form",
+  federal_me_data_collection: "Federal M&E Data Collection",
+  federal_compliance_review: "Federal Compliance Review",
+  national_incident_reporting: "National Incident Reporting",
+  programme_monitoring_form: "Programme Monitoring Form",
+  guideline_implementation_survey: "Guideline Implementation Survey",
+  cross_state_survey: "Cross-State Survey",
+  national_facility_reporting_template: "National Facility Reporting Template",
+  inspection_performance_reporting_template: "Inspection Performance Reporting Template",
+};
+
+const FEDERAL_PURPOSE_KEYS = [
+  "national_policy_template",
+  "state_reporting_form",
+  "federal_me_data_collection",
+  "federal_compliance_review",
+  "national_incident_reporting",
+  "programme_monitoring_form",
+  "guideline_implementation_survey",
+  "cross_state_survey",
+  "national_facility_reporting_template",
+  "inspection_performance_reporting_template",
+];
+
+const VISIBILITY_LABELS: Record<string, string> = {
+  state_owned: "State Owned",
+  federal_private: "Federal Private",
+  federal_shared: "Shared with States",
+  federal_standard: "Federal Standard",
 };
 
 const MODULE_LABELS: Record<string, string> = {
@@ -172,10 +210,16 @@ function schemaFromVersion(value?: Record<string, unknown>): BuilderSchema {
 }
 
 // ── Overview Tab ──
-function OverviewTab() {
+function OverviewTab({ accountScope = "state" }: { accountScope?: "state" | "federal" }) {
   const { data: templates } = useQuery({ queryKey: ["form-templates"], queryFn: async () => fetchFormTemplates() });
-  const { data: assignments } = useQuery({ queryKey: ["form-assignments"], queryFn: async () => fetchFormAssignments() });
-  const { data: responses } = useQuery({ queryKey: ["form-responses"], queryFn: async () => fetchFormResponses() });
+  const { data: assignments } = useQuery({
+    queryKey: ["form-assignments", accountScope],
+    queryFn: async () => accountScope === "federal" ? fetchFederalFormAssignments() : fetchFormAssignments(),
+  });
+  const { data: responses } = useQuery({
+    queryKey: ["form-responses", accountScope],
+    queryFn: async () => accountScope === "federal" ? fetchFederalFormResponses() : fetchFormResponses(),
+  });
   const tl = Array.isArray(templates) ? templates : [];
   const al = Array.isArray(assignments) ? assignments : [];
   const rl = Array.isArray(responses) ? responses : [];
@@ -219,12 +263,15 @@ function OverviewTab() {
 }
 
 // ── Templates Tab ──
-function TemplatesTab() {
+function TemplatesTab({ accountScope = "state" }: { accountScope?: "state" | "federal" }) {
   const perms = useFormsPerms();
+  const searchParams = useSearchParams();
   const queryClient = useQueryClient();
   const [showForm, setShowForm] = useState(false);
+  const [createIntentHandled, setCreateIntentHandled] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [visibilityFilter, setVisibilityFilter] = useState("all");
   const [activeSectionKey, setActiveSectionKey] = useState<string>("");
   const [schema, setSchema] = useState<BuilderSchema>(emptySchema());
   const [questionLogicDrafts, setQuestionLogicDrafts] = useState<Record<string, { value: string; target_key: string; action: KoboLogicRule["action"] }>>({});
@@ -238,10 +285,20 @@ function TemplatesTab() {
     default_context_type: "",
     language: "en",
     allow_offline: false,
+    visibility: accountScope === "federal" ? "federal_private" : "state_owned",
   });
 
-  const { data: templates, isLoading } = useQuery({ queryKey: ["form-templates"], queryFn: async () => fetchFormTemplates() });
+  const { data: templates, isLoading } = useQuery({
+    queryKey: ["form-templates", accountScope, visibilityFilter],
+    queryFn: async () => fetchFormTemplates(visibilityFilter === "all" ? undefined : { visibility: visibilityFilter }),
+  });
+  const { data: federalTemplates } = useQuery({
+    queryKey: ["state-federal-form-templates"],
+    queryFn: fetchStateFederalFormTemplates,
+    enabled: accountScope === "state",
+  });
   const items = Array.isArray(templates) ? templates : [];
+  const availableFederalTemplates = Array.isArray(federalTemplates) ? federalTemplates : [];
   const selected = items.find((item) => item.id === selectedId) ?? null;
   const { data: versions } = useQuery({
     queryKey: ["form-template-versions", selectedId],
@@ -250,6 +307,21 @@ function TemplatesTab() {
   });
   const latestVersion = Array.isArray(versions) && versions.length > 0 ? versions[0] : null;
   const activeSection = schema.sections.find((section) => section.key === activeSectionKey) ?? schema.sections[0] ?? null;
+
+  useEffect(() => {
+    if (accountScope !== "federal" || createIntentHandled || searchParams.get("create") !== "reporting-template") return;
+    setForm((current) => ({
+      ...current,
+      title: current.title || "State Reporting Template",
+      purpose: "state_reporting_form",
+      target_respondent_type: "state_user",
+      primary_module: "reports",
+      default_context_type: "federal_reporting_template",
+      visibility: "federal_private",
+    }));
+    setShowForm(true);
+    setCreateIntentHandled(true);
+  }, [accountScope, createIntentHandled, searchParams]);
 
   useEffect(() => {
     if (!selectedId) return;
@@ -268,6 +340,7 @@ function TemplatesTab() {
       primary_module: form.primary_module,
       default_context_type: form.default_context_type,
       language: form.language,
+      visibility: form.visibility as FormTemplate["visibility"],
       settings_json: { allow_offline: form.allow_offline },
     }),
     onSuccess: (created) => {
@@ -289,6 +362,7 @@ function TemplatesTab() {
       primary_module: form.primary_module,
       default_context_type: form.default_context_type,
       language: form.language,
+      visibility: form.visibility as FormTemplate["visibility"],
       settings_json: { allow_offline: form.allow_offline },
     }) : Promise.reject(new Error("Select a template first.")),
     onSuccess: () => {
@@ -324,7 +398,61 @@ function TemplatesTab() {
   });
   const archiveMut = useMutation({
     mutationFn: (id: string) => archiveFormTemplate(id),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["form-templates"] }),
+    onSuccess: () => {
+      setSelectedId(null);
+      setSchema(emptySchema());
+      setActiveSectionKey("");
+      setError(null);
+      queryClient.invalidateQueries({ queryKey: ["form-templates"] });
+    },
+    onError: (err) => setError(getApiErrorMessage(err, "Failed to archive template.")),
+  });
+  const deleteMut = useMutation({
+    mutationFn: (id: string) => deleteFormTemplate(id),
+    onSuccess: () => {
+      setSelectedId(null);
+      setSchema(emptySchema());
+      setActiveSectionKey("");
+      setError(null);
+      queryClient.invalidateQueries({ queryKey: ["form-templates"] });
+    },
+    onError: (err) => setError(getApiErrorMessage(err, "Failed to delete template.")),
+  });
+  const shareAllMut = useMutation({
+    mutationFn: (id: string) => shareFormTemplateToStates(id, { all_states: true }),
+    onSuccess: () => {
+      setError(null);
+      queryClient.invalidateQueries({ queryKey: ["form-templates"] });
+    },
+    onError: (err) => setError(getApiErrorMessage(err, "Failed to share template with states.")),
+  });
+  const standardMut = useMutation({
+    mutationFn: (id: string) => markFormTemplateStandard(id),
+    onSuccess: () => {
+      setError(null);
+      queryClient.invalidateQueries({ queryKey: ["form-templates"] });
+    },
+    onError: (err) => setError(getApiErrorMessage(err, "Failed to mark template as Federal Standard.")),
+  });
+  const adoptFederalMut = useMutation({
+    mutationFn: (id: string) => adoptStateFederalFormTemplate(id),
+    onSuccess: (adopted) => {
+      setSelectedId(adopted.id);
+      setError(null);
+      queryClient.invalidateQueries({ queryKey: ["form-templates"] });
+      queryClient.invalidateQueries({ queryKey: ["state-federal-form-templates"] });
+    },
+    onError: (err) => setError(getApiErrorMessage(err, "Failed to adopt Federal template.")),
+  });
+  const cloneFederalMut = useMutation({
+    mutationFn: (template: FormTemplate) => cloneStateFederalFormTemplate(template.id, { title: `${template.title} (State copy)` }),
+    onSuccess: (cloned) => {
+      setSelectedId(cloned.id);
+      setError(null);
+      queryClient.invalidateQueries({ queryKey: ["form-templates"] });
+      queryClient.invalidateQueries({ queryKey: ["state-federal-form-templates"] });
+    },
+    onError: (err) => setError(getApiErrorMessage(err, "Failed to clone Federal template.")),
   });
 
   function selectTemplate(template: FormTemplate) {
@@ -338,6 +466,7 @@ function TemplatesTab() {
       default_context_type: template.default_context_type || "",
       language: template.language || "en",
       allow_offline: Boolean(template.settings_json?.allow_offline),
+      visibility: template.visibility || (accountScope === "federal" ? "federal_private" : "state_owned"),
     });
     setSchema(emptySchema());
     setActiveSectionKey("");
@@ -351,7 +480,26 @@ function TemplatesTab() {
     setActiveSectionKey(next.sections[0]?.key || "");
   }
 
+  function deleteSelectedTemplate() {
+    if (!selected) return;
+    const confirmed = window.confirm(`Delete "${selected.title}"? This permanently removes the draft template.`);
+    if (confirmed) deleteMut.mutate(selected.id);
+  }
+
+  function archiveSelectedTemplate() {
+    if (!selected) return;
+    const confirmed = window.confirm(`Archive "${selected.title}"? Published templates are retained for reporting history.`);
+    if (confirmed) archiveMut.mutate(selected.id);
+  }
+
   const questionOptions = schema.sections.flatMap((section) => section.questions.map((question) => ({ key: question.key, label: `${section.title}: ${question.label}` })));
+  const purposeOptions = accountScope === "federal"
+    ? FEDERAL_PURPOSE_KEYS.map((key) => [key, PURPOSE_LABELS[key]] as const)
+    : Object.entries(PURPOSE_LABELS).filter(([key]) => !FEDERAL_PURPOSE_KEYS.includes(key));
+  const sourceMeta = selected?.settings_json?.federal_source as { adoption_type?: string } | undefined;
+  const canEditSelected = !selected
+    || (accountScope === "federal" && selected.visibility !== "state_owned")
+    || (accountScope === "state" && selected.visibility === "state_owned" && sourceMeta?.adoption_type !== "adopted");
 
   function addCanvasSection() {
     const sectionNumber = schema.sections.length + 1;
@@ -574,11 +722,64 @@ function TemplatesTab() {
           </div>
           <div className="flex flex-wrap items-center gap-2">
             {perms.has("forms.template.create") ? <button className="inline-flex h-10 items-center gap-2 rounded-full border border-neutral-200 bg-white px-4 text-sm font-semibold text-neutral-700 shadow-sm hover:bg-neutral-50" onClick={() => setShowForm(true)} type="button"><Plus size={16} />New</button> : null}
-            <button className="inline-flex h-10 items-center gap-2 rounded-full border border-neutral-200 bg-white px-4 text-sm font-semibold text-brand-700 shadow-sm hover:bg-brand-50 disabled:opacity-50" disabled={!selected || updateMut.isPending || saveDraftMut.isPending} onClick={() => { updateMut.mutate(); saveDraftMut.mutate(); }} type="button"><Save size={16} />Save</button>
-            {perms.has("forms.template.publish") ? <button className="inline-flex h-10 items-center gap-2 rounded-full bg-brand-600 px-5 text-sm font-semibold text-white shadow-sm hover:bg-brand-700 disabled:opacity-50" disabled={!selected || selected.status !== "draft" || !schema.sections.length || publishMut.isPending} onClick={() => selected && publishMut.mutate(selected.id)} type="button"><BadgeCheck size={16} />Publish</button> : null}
+            <button className="inline-flex h-10 items-center gap-2 rounded-full border border-neutral-200 bg-white px-4 text-sm font-semibold text-brand-700 shadow-sm hover:bg-brand-50 disabled:opacity-50" disabled={!selected || !canEditSelected || updateMut.isPending || saveDraftMut.isPending} onClick={() => { updateMut.mutate(); saveDraftMut.mutate(); }} type="button"><Save size={16} />Save</button>
+            {accountScope === "federal" && selected && selected.status === "published" && selected.visibility !== "federal_standard" && perms.has("forms.template.mark_as_standard") ? <button className="inline-flex h-10 items-center gap-2 rounded-full border border-brand-200 bg-white px-4 text-sm font-semibold text-brand-700 shadow-sm hover:bg-brand-50" disabled={standardMut.isPending || !canEditSelected} onClick={() => standardMut.mutate(selected.id)} type="button"><BadgeCheck size={16} />Mark Standard</button> : null}
+            {accountScope === "federal" && selected && selected.status === "published" && selected.visibility !== "federal_standard" && perms.has("forms.template.share_to_states") ? <button className="inline-flex h-10 items-center gap-2 rounded-full border border-neutral-200 bg-white px-4 text-sm font-semibold text-neutral-700 shadow-sm hover:bg-neutral-50" disabled={shareAllMut.isPending || !canEditSelected} onClick={() => shareAllMut.mutate(selected.id)} type="button">Share with States</button> : null}
+            {perms.has("forms.template.publish") ? <button className="inline-flex h-10 items-center gap-2 rounded-full bg-brand-600 px-5 text-sm font-semibold text-white shadow-sm hover:bg-brand-700 disabled:opacity-50" disabled={!selected || !canEditSelected || selected.status !== "draft" || !schema.sections.length || publishMut.isPending} onClick={() => selected && publishMut.mutate(selected.id)} type="button"><BadgeCheck size={16} />Publish</button> : null}
+            {selected && selected.status === "draft" && perms.has("forms.template.archive") ? <button className="inline-flex h-10 items-center gap-2 rounded-full border border-danger-200 bg-white px-4 text-sm font-semibold text-danger-700 shadow-sm hover:bg-danger-50 disabled:opacity-50" disabled={!canEditSelected || deleteMut.isPending} onClick={deleteSelectedTemplate} type="button"><Trash2 size={16} />Delete</button> : null}
+            {selected && selected.status === "published" && perms.has("forms.template.archive") ? <button className="inline-flex h-10 items-center gap-2 rounded-full border border-neutral-200 bg-white px-4 text-sm font-semibold text-neutral-700 shadow-sm hover:bg-neutral-50 disabled:opacity-50" disabled={!canEditSelected || archiveMut.isPending} onClick={archiveSelectedTemplate} type="button"><Trash2 size={16} />Archive</button> : null}
           </div>
         </div>
       </div>
+
+      {accountScope === "federal" ? (
+        <div className="mt-6 flex flex-wrap items-center gap-2">
+          {[
+            ["all", "All"],
+            ["federal_private", "Federal Private"],
+            ["federal_shared", "Shared with States"],
+            ["federal_standard", "Federal Standard"],
+            ["adopted", "Adopted by States"],
+          ].map(([key, label]) => (
+            <button key={key} className={`h-9 rounded-full px-4 text-xs font-bold ${visibilityFilter === key ? "bg-brand-600 text-white" : "border border-neutral-200 bg-white text-neutral-600 hover:bg-neutral-50"}`} onClick={() => setVisibilityFilter(key)} type="button">{label}</button>
+          ))}
+        </div>
+      ) : null}
+
+      {accountScope === "state" && availableFederalTemplates.length > 0 ? (
+        <section className="mt-6 rounded-lg border border-brand-100 bg-white p-5 shadow-sm">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <p className="text-xs font-bold uppercase tracking-wide text-brand-700">Federal Templates</p>
+              <h3 className="mt-1 text-base font-bold text-neutral-950">Available for your State</h3>
+              <p className="mt-1 text-sm text-neutral-500">Adopt a Federal template as read-only or clone it into an editable State-owned version.</p>
+            </div>
+          </div>
+          <div className="mt-4 grid gap-3 lg:grid-cols-2 xl:grid-cols-3">
+            {availableFederalTemplates.map((template) => (
+              <article className="rounded-lg border border-neutral-200 p-4" key={template.id}>
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <h4 className="truncate text-sm font-bold text-neutral-900">{template.title}</h4>
+                    <p className="mt-1 text-xs text-neutral-500">{PURPOSE_LABELS[template.purpose] ?? template.purpose}</p>
+                  </div>
+                  <span className="shrink-0 rounded-full bg-brand-50 px-2 py-1 text-[11px] font-bold text-brand-700">{VISIBILITY_LABELS[template.visibility] ?? template.visibility}</span>
+                </div>
+                <div className="mt-3 grid grid-cols-3 divide-x divide-neutral-100 rounded bg-neutral-50 py-2 text-center text-xs">
+                  <div><p className="text-neutral-400">Version</p><p className="font-bold text-neutral-800">v{template.current_version}</p></div>
+                  <div><p className="text-neutral-400">Adopted</p><p className="font-bold text-neutral-800">{template.adoption_count || 0}</p></div>
+                  <div><p className="text-neutral-400">Status</p><p className="font-bold text-neutral-800">{template.status}</p></div>
+                </div>
+                <div className="mt-4 flex flex-wrap gap-2">
+                  <button className="h-9 rounded-full border border-neutral-200 px-3 text-xs font-bold text-neutral-700 hover:bg-neutral-50" onClick={() => selectTemplate(template)} type="button">Preview</button>
+                  {perms.has("forms.template.adopt_federal") ? <button className="h-9 rounded-full bg-brand-600 px-3 text-xs font-bold text-white hover:bg-brand-700 disabled:opacity-50" disabled={adoptFederalMut.isPending} onClick={() => adoptFederalMut.mutate(template.id)} type="button">Adopt</button> : null}
+                  {perms.has("forms.template.clone_federal") ? <button className="h-9 rounded-full border border-brand-200 px-3 text-xs font-bold text-brand-700 hover:bg-brand-50 disabled:opacity-50" disabled={cloneFederalMut.isPending} onClick={() => cloneFederalMut.mutate(template)} type="button">Clone</button> : null}
+                </div>
+              </article>
+            ))}
+          </div>
+        </section>
+      ) : null}
 
       {showForm && (
         <div className="mt-6 space-y-3 rounded-lg border border-neutral-200 bg-white p-5 shadow-sm">
@@ -586,9 +787,10 @@ function TemplatesTab() {
           {error && <p className="rounded bg-danger-50 px-3 py-2 text-sm font-semibold text-danger-700">{error}</p>}
           <div className="grid gap-3 lg:grid-cols-2">
             <input className="h-10 w-full rounded border border-neutral-200 px-3 text-sm" placeholder="Template title" value={form.title} onChange={e => setForm(p => ({...p, title: e.target.value}))} />
-            <select className="h-10 w-full rounded border border-neutral-200 px-3 text-sm" value={form.purpose} onChange={e => setForm(p => ({...p, purpose: e.target.value}))}>{Object.entries(PURPOSE_LABELS).map(([k,v]) => <option key={k} value={k}>{v}</option>)}</select>
+            <select className="h-10 w-full rounded border border-neutral-200 px-3 text-sm" value={form.purpose} onChange={e => setForm(p => ({...p, purpose: e.target.value}))}>{purposeOptions.map(([k,v]) => <option key={k} value={k}>{v}</option>)}</select>
             <select className="h-10 w-full rounded border border-neutral-200 px-3 text-sm" value={form.primary_module} onChange={e => setForm(p => ({...p, primary_module: e.target.value}))}>{Object.entries(MODULE_LABELS).map(([k,v]) => <option key={k} value={k}>{v}</option>)}</select>
             <select className="h-10 w-full rounded border border-neutral-200 px-3 text-sm" value={form.target_respondent_type} onChange={e => setForm(p => ({...p, target_respondent_type: e.target.value}))}>{Object.entries(RESPONDENT_LABELS).map(([k,v]) => <option key={k} value={k}>{v}</option>)}</select>
+            {accountScope === "federal" ? <select className="h-10 w-full rounded border border-neutral-200 px-3 text-sm" value={form.visibility} onChange={e => setForm(p => ({...p, visibility: e.target.value}))}><option value="federal_private">Federal Private</option><option value="federal_shared">Shared with States</option><option value="federal_standard">Federal Standard</option></select> : null}
           </div>
           <textarea className="w-full rounded border border-neutral-200 px-3 py-2 text-sm" rows={2} placeholder="Description" value={form.description} onChange={e => setForm(p => ({...p, description: e.target.value}))} />
           <div className="flex gap-2">
@@ -609,6 +811,7 @@ function TemplatesTab() {
               <button className="rounded border border-neutral-200 p-4 text-left hover:border-brand-200 hover:bg-brand-50" key={template.id} onClick={() => selectTemplate(template)} type="button">
                 <span className="block font-bold text-neutral-900">{template.title}</span>
                 <span className="mt-1 block text-xs text-neutral-500">{PURPOSE_LABELS[template.purpose] ?? template.purpose}</span>
+                <span className="mt-3 inline-flex rounded-full bg-neutral-100 px-2 py-1 text-[11px] font-bold text-neutral-600">{VISIBILITY_LABELS[template.visibility] ?? template.visibility}</span>
               </button>
             ))}
           </div>
@@ -779,7 +982,13 @@ function TemplatesTab() {
                 <input className="w-full border-0 bg-transparent p-0 text-base font-bold text-neutral-900 outline-none" value={form.title} onChange={(event) => setForm((current) => ({ ...current, title: event.target.value }))} />
                 <textarea className="w-full resize-none rounded border border-neutral-200 px-3 py-2 text-sm text-neutral-700" rows={2} value={form.description} onChange={(event) => setForm((current) => ({ ...current, description: event.target.value }))} />
                 <div className="rounded-lg bg-neutral-50 p-3">
-                  <p className="font-medium text-neutral-900">{PURPOSE_LABELS[form.purpose] ?? form.purpose}</p>
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <p className="font-medium text-neutral-900">{PURPOSE_LABELS[form.purpose] ?? form.purpose}</p>
+                    <span className="rounded-full bg-white px-2 py-1 text-[11px] font-bold text-neutral-600">{VISIBILITY_LABELS[selected.visibility] ?? selected.visibility}</span>
+                  </div>
+                  {selected.shared_state_names?.length ? <p className="mt-2 text-xs text-neutral-500">Shared with {selected.shared_state_names.join(", ")}</p> : null}
+                  {selected.visibility === "federal_standard" ? <p className="mt-2 text-xs font-semibold text-brand-700">Available to all State Ministries as a Federal Standard Template.</p> : null}
+                  {selected.source_template_title ? <p className="mt-2 text-xs text-neutral-500">Derived from {selected.source_template_title}</p> : null}
                   <div className="mt-4 grid grid-cols-3 divide-x divide-neutral-200 text-center">
                     <div><p className="text-xs text-slate-400">Sections</p><p className="mt-1 font-bold text-neutral-900">{schema.sections.length}</p></div>
                     <div><p className="text-xs text-slate-400">Questions</p><p className="mt-1 font-bold text-neutral-900">{schema.sections.reduce((sum, section) => sum + section.questions.length, 0)}</p></div>
@@ -787,15 +996,15 @@ function TemplatesTab() {
                   </div>
                 </div>
                 <div className="grid gap-2">
-                  <select className="h-10 rounded border border-neutral-200 px-3 text-sm" value={form.purpose} onChange={(event) => setForm((current) => ({ ...current, purpose: event.target.value }))}>{Object.entries(PURPOSE_LABELS).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select>
+                  <select className="h-10 rounded border border-neutral-200 px-3 text-sm" disabled={!canEditSelected} value={form.purpose} onChange={(event) => setForm((current) => ({ ...current, purpose: event.target.value }))}>{purposeOptions.map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select>
                   <select className="h-10 rounded border border-neutral-200 px-3 text-sm" value={form.primary_module} onChange={(event) => setForm((current) => ({ ...current, primary_module: event.target.value }))}>{Object.entries(MODULE_LABELS).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select>
                   <select className="h-10 rounded border border-neutral-200 px-3 text-sm" value={form.target_respondent_type} onChange={(event) => setForm((current) => ({ ...current, target_respondent_type: event.target.value }))}>{Object.entries(RESPONDENT_LABELS).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select>
+                  {accountScope === "federal" ? <select className="h-10 rounded border border-neutral-200 px-3 text-sm" disabled={!canEditSelected} value={form.visibility} onChange={(event) => setForm((current) => ({ ...current, visibility: event.target.value }))}><option value="federal_private">Federal Private</option><option value="federal_shared">Shared with States</option><option value="federal_standard">Federal Standard</option></select> : null}
                   <input className="h-10 rounded border border-neutral-200 px-3 text-sm" placeholder="Context type" value={form.default_context_type} onChange={(event) => setForm((current) => ({ ...current, default_context_type: event.target.value }))} />
                   <label className="inline-flex items-center gap-2 text-sm font-medium text-neutral-700"><input checked={form.allow_offline} onChange={(event) => setForm((current) => ({ ...current, allow_offline: event.target.checked }))} type="checkbox" /> Offline response support</label>
                 </div>
                 <div className="flex justify-end gap-2 pt-2">
                   {latestVersion ? <button className="h-9 rounded-full border border-neutral-200 px-4 text-xs font-bold text-neutral-700 hover:bg-neutral-50" onClick={loadLatestVersion} type="button">Load saved</button> : null}
-                  {selected.status === "published" ? <button className="h-9 rounded-full border border-neutral-200 px-4 text-xs font-bold text-neutral-700 hover:bg-neutral-50" disabled={archiveMut.isPending} onClick={() => archiveMut.mutate(selected.id)} type="button">Archive</button> : null}
                 </div>
               </div>
             </section>
@@ -812,7 +1021,7 @@ function TemplatesTab() {
 }
 
 // ── Assignments Tab ──
-function AssignmentsTab() {
+function AssignmentsTab({ accountScope = "state" }: { accountScope?: "state" | "federal" }) {
   const perms = useFormsPerms();
   const queryClient = useQueryClient();
   const [showForm, setShowForm] = useState(false);
@@ -821,19 +1030,39 @@ function AssignmentsTab() {
   const [form, setForm] = useState({ title: "", template: "", purpose: "general_data_collection", assigned_to_type: "organization", due_date: "" });
 
   const { data: templates } = useQuery({ queryKey: ["form-templates"], queryFn: async () => fetchFormTemplates() });
-  const { data: assignments, isLoading } = useQuery({ queryKey: ["form-assignments"], queryFn: async () => fetchFormAssignments() });
+  const { data: assignments, isLoading } = useQuery({
+    queryKey: ["form-assignments", accountScope],
+    queryFn: async () => accountScope === "federal" ? fetchFederalFormAssignments() : fetchFormAssignments(),
+  });
   const tl = Array.isArray(templates) ? templates : [];
   const al = Array.isArray(assignments) ? assignments : [];
   const selectedAssignment = selectedAssignmentId ? al.find((assignment) => assignment.id === selectedAssignmentId) ?? null : null;
   const { data: assignmentSummary } = useQuery({
-    queryKey: ["form-assignment-summary", selectedAssignmentId],
-    queryFn: async () => selectedAssignmentId ? fetchFormAssignmentSummary(selectedAssignmentId) : Promise.reject(new Error("Select an assignment.")),
-    enabled: Boolean(selectedAssignmentId),
+    queryKey: ["form-assignment-summary", accountScope, selectedAssignmentId],
+    queryFn: async () => selectedAssignmentId && accountScope === "state" ? fetchFormAssignmentSummary(selectedAssignmentId) : Promise.reject(new Error("Select a state assignment.")),
+    enabled: Boolean(selectedAssignmentId) && accountScope === "state",
+  });
+  const { data: federalSummary } = useQuery({
+    queryKey: ["federal-form-assignment-summary", selectedAssignmentId],
+    queryFn: async () => selectedAssignmentId ? fetchFederalFormAssignmentResponseSummary(selectedAssignmentId) : Promise.reject(new Error("Select a Federal assignment.")),
+    enabled: Boolean(selectedAssignmentId) && accountScope === "federal",
+  });
+  const { data: federalMatrix } = useQuery({
+    queryKey: ["federal-form-assignment-matrix", selectedAssignmentId],
+    queryFn: async () => selectedAssignmentId ? fetchFederalFormAssignmentStateResponseMatrix(selectedAssignmentId) : Promise.reject(new Error("Select a Federal assignment.")),
+    enabled: Boolean(selectedAssignmentId) && accountScope === "federal",
   });
 
   const createMut = useMutation({
-    mutationFn: () => createFormAssignment({ ...form, assigned_to_id: "0" }),
-    onSuccess: () => { setShowForm(false); setForm({ title: "", template: "", purpose: "general_data_collection", assigned_to_type: "organization", due_date: "" }); setError(null); queryClient.invalidateQueries({ queryKey: ["form-assignments"] }); },
+    mutationFn: () => accountScope === "federal"
+      ? createFederalFormAssignment({ title: form.title, template: form.template, purpose: form.purpose, due_date: form.due_date || undefined, recipient_scope: "all_states" })
+      : createFormAssignment({ ...form, assigned_to_id: "0" }),
+    onSuccess: () => {
+      setShowForm(false);
+      setForm({ title: "", template: "", purpose: "general_data_collection", assigned_to_type: "organization", due_date: "" });
+      setError(null);
+      queryClient.invalidateQueries({ queryKey: ["form-assignments"] });
+    },
     onError: (err) => setError(getApiErrorMessage(err, "Failed to create assignment.")),
   });
   const cancelMut = useMutation({
@@ -854,7 +1083,7 @@ function AssignmentsTab() {
   return (
     <div className="space-y-4">
       <div className="flex justify-end">
-        {perms.has("forms.assignment.create") ? <button className="inline-flex h-10 items-center gap-2 rounded-lg bg-brand-600 px-4 text-sm font-medium text-white hover:bg-brand-700" onClick={() => setShowForm(true)} type="button"><Plus size={16} />Create Assignment</button> : null}
+        {perms.has(accountScope === "federal" ? "forms.assignment.create_federal" : "forms.assignment.create") ? <button className="inline-flex h-10 items-center gap-2 rounded-lg bg-brand-600 px-4 text-sm font-medium text-white hover:bg-brand-700" onClick={() => setShowForm(true)} type="button"><Plus size={16} />Create Assignment</button> : null}
       </div>
 
       {showForm && (
@@ -912,21 +1141,21 @@ function AssignmentsTab() {
         </table>
       </section>
 
-      {(assignmentSummary || selectedAssignment) ? (
+      {(assignmentSummary || federalSummary || selectedAssignment) ? (
         <section className="rounded-xl border border-neutral-200 bg-white p-5 shadow-sm">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <p className="text-xs font-bold uppercase text-neutral-500">Assignment Dashboard</p>
-              <h3 className="mt-1 text-base font-bold text-neutral-900">{assignmentSummary?.title || selectedAssignment?.title}</h3>
+              <h3 className="mt-1 text-base font-bold text-neutral-900">{assignmentSummary?.title || federalSummary?.assignment_title || selectedAssignment?.title}</h3>
             </div>
             <StatusBadge status={assignmentSummary?.status || selectedAssignment?.status || "loading"} />
           </div>
           <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             {[
-              ["Recipients", assignmentSummary?.status_summary?.total_recipients ?? selectedAssignment?.total_recipients ?? 0],
-              ["Submitted", assignmentSummary?.status_summary?.submitted ?? selectedAssignment?.status_summary?.submitted ?? 0],
-              ["Reviewed", assignmentSummary?.status_summary?.reviewed ?? selectedAssignment?.status_summary?.reviewed ?? 0],
-              ["Overdue", assignmentSummary?.status_summary?.overdue ?? selectedAssignment?.status_summary?.overdue ?? 0],
+              ["Recipients", federalSummary?.total_assigned_states ?? assignmentSummary?.status_summary?.total_recipients ?? selectedAssignment?.total_recipients ?? 0],
+              ["Submitted", federalSummary?.submitted_states ?? assignmentSummary?.status_summary?.submitted ?? selectedAssignment?.status_summary?.submitted ?? 0],
+              [accountScope === "federal" ? "Pending" : "Reviewed", federalSummary?.pending_states ?? assignmentSummary?.status_summary?.reviewed ?? selectedAssignment?.status_summary?.reviewed ?? 0],
+              ["Overdue", federalSummary?.overdue_states ?? assignmentSummary?.status_summary?.overdue ?? selectedAssignment?.status_summary?.overdue ?? 0],
             ].map(([label, value]) => (
               <div className="rounded border border-neutral-200 bg-neutral-50 p-3" key={label}>
                 <p className="text-xs font-bold uppercase text-neutral-500">{label}</p>
@@ -936,9 +1165,17 @@ function AssignmentsTab() {
           </div>
           <div className="mt-4 grid gap-4 lg:grid-cols-2">
             <div>
-              <p className="text-xs font-bold uppercase text-neutral-500">Recipients</p>
+              <p className="text-xs font-bold uppercase text-neutral-500">{accountScope === "federal" ? "State Response Matrix" : "Recipients"}</p>
               <div className="mt-2 max-h-56 overflow-auto rounded border border-neutral-200">
-                {(assignmentSummary?.recipients || []).length ? assignmentSummary?.recipients.map((recipient) => (
+                {accountScope === "federal" && (federalMatrix || []).length ? federalMatrix?.map((row) => (
+                  <div className="flex items-center justify-between border-b border-neutral-100 px-3 py-2 text-sm last:border-0" key={row.recipient_id}>
+                    <span>
+                      <span className="block font-medium text-neutral-800">{row.state_name}</span>
+                      <span className="text-xs text-neutral-500">{row.submitted} submitted · {row.pending} pending · {row.response_rate}%</span>
+                    </span>
+                    <StatusBadge status={row.status} />
+                  </div>
+                )) : (assignmentSummary?.recipients || []).length ? assignmentSummary?.recipients.map((recipient) => (
                   <div className="flex items-center justify-between border-b border-neutral-100 px-3 py-2 text-sm last:border-0" key={recipient.id}>
                     <span className="font-medium text-neutral-800">{recipient.organization_name || recipient.recipient_id}</span>
                     <StatusBadge status={recipient.status} />
@@ -968,11 +1205,14 @@ function AssignmentsTab() {
 }
 
 // ── Responses Tab ──
-function ResponsesTab() {
+function ResponsesTab({ accountScope = "state" }: { accountScope?: "state" | "federal" }) {
   const perms = useFormsPerms();
   const queryClient = useQueryClient();
   const [selectedResponseId, setSelectedResponseId] = useState<string | null>(null);
-  const { data: responses, isLoading } = useQuery({ queryKey: ["form-responses"], queryFn: async () => fetchFormResponses() });
+  const { data: responses, isLoading } = useQuery({
+    queryKey: ["form-responses", accountScope],
+    queryFn: async () => accountScope === "federal" ? fetchFederalFormResponses() : fetchFormResponses(),
+  });
   const items = Array.isArray(responses) ? responses : [];
   const { data: activity } = useQuery({
     queryKey: ["form-response-activity", selectedResponseId],
@@ -1196,11 +1436,12 @@ function SettingsTab() {
 }
 
 // ── Form Builder Content (embeddable) ──
-export function FormBuilderContent({ basePath = "/state/forms", tabParamName = "tab" }: { basePath?: string; tabParamName?: string }) {
+export function FormBuilderContent({ basePath = "/state/forms", tabParamName = "tab", visibleTabs, accountScope = "state" }: FormsToolContentProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const tabParam = (searchParams.get(tabParamName) ?? "overview") as TabKey;
-  const activeTab = TABS[tabParam] ? tabParam : "overview";
+  const enabledTabs = visibleTabs ?? (Object.keys(TABS) as TabKey[]);
+  const activeTab = TABS[tabParam] && enabledTabs.includes(tabParam) ? tabParam : "overview";
   const permsQuery = useQuery({ queryKey: ["forms-permissions"], queryFn: fetchFormsPermissions, staleTime: 60_000 });
   const permsSet = new Set(permsQuery.data?.permissions || []);
 
@@ -1213,16 +1454,17 @@ export function FormBuilderContent({ basePath = "/state/forms", tabParamName = "
   return (
     <FormsPermsCtx.Provider value={permsSet}>
       <nav className="mb-6 flex gap-0 overflow-x-auto border-b border-neutral-200">
-        {(Object.entries(TABS) as [TabKey, string][]).map(([key, label]) => (
-          <button key={key} className={`shrink-0 border-b-2 px-4 py-3 text-sm font-medium ${activeTab===key?"border-brand-600 text-brand-700":"border-transparent text-neutral-500 hover:text-neutral-800"}`} onClick={() => setTab(key)} type="button">{label}</button>
+        {enabledTabs.map((key) => (
+          <button key={key} className={`shrink-0 border-b-2 px-4 py-3 text-sm font-medium ${activeTab===key?"border-brand-600 text-brand-700":"border-transparent text-neutral-500 hover:text-neutral-800"}`} onClick={() => setTab(key)} type="button">{TABS[key]}</button>
         ))}
       </nav>
-      {activeTab === "overview" && <OverviewTab />}
-      {activeTab === "templates" && <TemplatesTab />}
-      {activeTab === "assignments" && <AssignmentsTab />}
-      {activeTab === "responses" && <ResponsesTab />}
-      {activeTab === "exports" && <ExportsTab />}
-      {activeTab === "reports" && <FormsReportsTab />}
+      {permsQuery.isLoading ? <p className="mb-4 rounded-lg border border-neutral-200 bg-white px-4 py-3 text-sm font-semibold text-neutral-600">Loading form permissions...</p> : null}
+      {activeTab === "overview" && <OverviewTab accountScope={accountScope} />}
+      {activeTab === "templates" && <TemplatesTab accountScope={accountScope} />}
+      {activeTab === "assignments" && <AssignmentsTab accountScope={accountScope} />}
+      {activeTab === "responses" && <ResponsesTab accountScope={accountScope} />}
+      {activeTab === "exports" && enabledTabs.includes("exports") && <ExportsTab />}
+      {activeTab === "reports" && <FormsReportsTab accountScope={accountScope} />}
       {activeTab === "settings" && <SettingsTab />}
     </FormsPermsCtx.Provider>
   );

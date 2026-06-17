@@ -446,6 +446,47 @@ class FederalOversightService:
         return rows
 
     @classmethod
+    def account_audit_logs(cls, *, user, action="", search=""):
+        queryset = AuditLog.objects.select_related("actor", "organization", "state").order_by("-created_at")
+        if user.organization_id:
+            queryset = queryset.filter(organization_id=user.organization_id)
+        else:
+            queryset = queryset.filter(organization__isnull=True, state__isnull=True)
+        if action:
+            queryset = queryset.filter(action=action)
+        if search:
+            queryset = queryset.filter(
+                Q(actor__email__icontains=search)
+                | Q(actor__first_name__icontains=search)
+                | Q(actor__last_name__icontains=search)
+                | Q(target_type__icontains=search)
+                | Q(target_id__icontains=search)
+                | Q(metadata__icontains=search)
+            )
+        rows = []
+        for log in queryset[:100]:
+            risk_level = "low"
+            if log.action in {AuditAction.SECURITY_EVENT, AuditAction.MEDICAL_RECORD_ACCESS}:
+                risk_level = "high"
+            elif log.action in {AuditAction.DELETE, AuditAction.ROLE_CHANGE, AuditAction.PAYMENT_EVENT}:
+                risk_level = "medium"
+            rows.append(
+                {
+                    "id": str(log.id),
+                    "actor_name": log.actor.get_full_name() if log.actor else "",
+                    "actor_email": log.actor.email if log.actor else "",
+                    "action": log.action,
+                    "target_type": log.target_type,
+                    "target_id": log.target_id,
+                    "state_name": log.state.name if log.state else "",
+                    "metadata": log.metadata,
+                    "risk_level": risk_level,
+                    "created_at": log.created_at.isoformat(),
+                }
+            )
+        return rows
+
+    @classmethod
     def respond_query(cls, *, query, actor, response):
         query.response = response
         query.responded_by = actor
