@@ -7,7 +7,9 @@ import type {
   FoodHandlerCategory,
   IndicatorEvidence,
   MEIndicator,
+  MEIndicatorCalculationView,
   MEIndicatorDataSource,
+  MEIndicatorSourceRecordsResponse,
   MEIndicatorValue,
   MedicalTestRule,
   PhysicalExaminationRule,
@@ -407,6 +409,26 @@ export async function calculateMEIndicator(id: string, data: {
 
 export async function recalculateMEIndicator(id: string, data: { period_start: string; period_end: string }) {
   const res = await apiClient.post<ApiEnvelope<MEIndicatorValue>>(`${BASE}/me-indicators/${id}/recalculate/`, data);
+  return unwrap(res.data);
+}
+
+export async function overrideMEIndicator(id: string, data: {
+  period_start: string;
+  period_end: string;
+  override_value: string;
+  reason: string;
+}) {
+  const res = await apiClient.post<ApiEnvelope<MEIndicatorValue>>(`${BASE}/me-indicators/${id}/override/`, data);
+  return unwrap(res.data);
+}
+
+export async function getMEIndicatorCalculation(id: string) {
+  const res = await apiClient.get<ApiEnvelope<MEIndicatorCalculationView>>(`${BASE}/me-indicators/${id}/calculation/`);
+  return unwrap(res.data);
+}
+
+export async function getMEIndicatorSourceRecords(id: string, params?: Record<string, string>) {
+  const res = await apiClient.get<ApiEnvelope<MEIndicatorSourceRecordsResponse>>(`${BASE}/me-indicators/${id}/source-records/`, { params });
   return unwrap(res.data);
 }
 

@@ -1,9 +1,24 @@
 from django.contrib.auth import get_user_model
 from django.core.cache import cache
+from django.utils import timezone
 from rest_framework.test import APITestCase
 
 from apps.accounts.models import UserRole
 from apps.audit.models import AuditAction, AuditLog
+from apps.certificates.models import (
+    Certificate,
+    CertificateStatus,
+    CertificateTemplate as RuntimeCertificateTemplate,
+    CertificateVerificationLog,
+    VerificationResult,
+)
+from apps.employers.models import Employer, EstablishmentCategory
+from apps.facilities.models import AccreditationStatus, FacilityType, MedicalFacility, OwnershipType
+from apps.food_handlers.models import FoodHandlerProfile, FoodHandlerStatus, Gender
+from apps.illness.models import ClearanceStatus, IllnessReport, SuspectedCondition
+from apps.locations.models import LGA, State
+from apps.organizations.models import Organization, OrganizationType
+from apps.assessments.models import MedicalAssessment
 from .models import (
     Approval,
     ApprovalStatus,
@@ -17,6 +32,7 @@ from .models import (
     IndicatorEvidence,
     MEIndicatorDataSource,
     MEIndicator,
+    MEIndicatorCalculationLog,
     MEIndicatorValue,
     MEIndicatorValueHistory,
     MedicalTestRule,
@@ -34,6 +50,7 @@ from .models import (
     TestType,
 )
 from .indicator_calculations import IndicatorCalculationService
+from .kpi_engine import FoodHandlersKpiCalculationService, KPIEngineError
 from .services import (
     ActivePolicyRuleError,
     ActivePolicyRuleService,
@@ -808,6 +825,641 @@ class MEIndicatorCalculationEngineTests(APITestCase):
         self.assertEqual(payload(preview)["summary"]["invalid"], 1)
         self.assertIn("Approved value already exists", payload(preview)["invalid_rows"][0]["errors"][0])
         self.assertEqual(confirmed.status_code, 400)
+
+
+class FoodHandlersAutomaticKpiServiceTests(APITestCase):
+    def setUp(self):
+        cache.clear()
+        self.state = State.objects.create(name="Lagos", code="LA")
+        self.lga = LGA.objects.create(state=self.state, name="Ikeja")
+        self.federal_admin = User.objects.create_user(
+            "federal-kpi-engine",
+            "federal-kpi-engine@example.com",
+            "StrongPass123!",
+            role=UserRole.FEDERAL_ADMIN,
+            state=self.state,
+        )
+        self.doctor = User.objects.create_user(
+            "doctor-kpi-engine",
+            "doctor-kpi-engine@example.com",
+            "StrongPass123!",
+            role=UserRole.DOCTOR,
+            state=self.state,
+        )
+        self.state_admin = User.objects.create_user(
+            "state-kpi-engine",
+            "state-kpi-engine@example.com",
+            "StrongPass123!",
+            role=UserRole.STATE_ADMIN,
+            state=self.state,
+        )
+        self.client.force_authenticate(self.federal_admin)
+        self.employer_org = Organization.objects.create(
+            name="Prime Foods Ltd",
+            organization_type=OrganizationType.EMPLOYER,
+            state=self.state,
+            lga=self.lga,
+        )
+        self.employer = Employer.objects.create(
+            organization=self.employer_org,
+            business_name="Prime Foods Ltd",
+            establishment_category=EstablishmentCategory.RESTAURANT_CAFE,
+            contact_person_name="Ada",
+            contact_person_phone="08000000001",
+            contact_person_email="ada@primefoods.example.com",
+            address="12 Marina",
+            state=self.state,
+            lga=self.lga,
+        )
+        self.facility_org = Organization.objects.create(
+            name="Central Medical Lab",
+            organization_type=OrganizationType.MEDICAL_FACILITY,
+            state=self.state,
+            lga=self.lga,
+        )
+        self.facility = MedicalFacility.objects.create(
+            organization=self.facility_org,
+            facility_name="Central Medical Lab",
+            facility_type=FacilityType.CLINIC,
+            ownership_type=OwnershipType.PRIVATE,
+            license_number="FAC-001",
+            address="34 Broad Street",
+            state=self.state,
+            lga=self.lga,
+            contact_person="Lab Manager",
+            phone="08000000002",
+            email="facility@example.com",
+            accreditation_status=AccreditationStatus.APPROVED,
+            accreditation_start_date=timezone.localdate() - timezone.timedelta(days=90),
+            accreditation_expiry_date=timezone.localdate() + timezone.timedelta(days=180),
+        )
+        self.facility_admin = User.objects.create_user(
+            "facility-kpi-engine",
+            "facility-kpi-engine@example.com",
+            "StrongPass123!",
+            role=UserRole.FACILITY_ADMIN,
+            state=self.state,
+            organization=self.facility_org,
+        )
+        self.expired_facility_org = Organization.objects.create(
+            name="Old Medical Lab",
+            organization_type=OrganizationType.MEDICAL_FACILITY,
+            state=self.state,
+            lga=self.lga,
+        )
+        self.expired_facility = MedicalFacility.objects.create(
+            organization=self.expired_facility_org,
+            facility_name="Old Medical Lab",
+            facility_type=FacilityType.CLINIC,
+            ownership_type=OwnershipType.PRIVATE,
+            license_number="FAC-002",
+            address="5 Allen Avenue",
+            state=self.state,
+            lga=self.lga,
+            contact_person="Legacy Manager",
+            phone="08000000003",
+            email="old-facility@example.com",
+            accreditation_status=AccreditationStatus.EXPIRED,
+            accreditation_start_date=timezone.localdate() - timezone.timedelta(days=500),
+            accreditation_expiry_date=timezone.localdate() - timezone.timedelta(days=5),
+        )
+        self.handler_one_user = User.objects.create_user(
+            "handler-one",
+            "handler-one@example.com",
+            "StrongPass123!",
+            role=UserRole.FOOD_HANDLER,
+            state=self.state,
+        )
+        self.handler_two_user = User.objects.create_user(
+            "handler-two",
+            "handler-two@example.com",
+            "StrongPass123!",
+            role=UserRole.FOOD_HANDLER,
+            state=self.state,
+        )
+        self.handler_one = FoodHandlerProfile.objects.create(
+            user=self.handler_one_user,
+            full_name="Handler One",
+            date_of_birth="1990-01-01",
+            gender=Gender.FEMALE,
+            nin="12345678901",
+            phone="08000000004",
+            email="handler-one@example.com",
+            home_address="1 Food Street",
+            state=self.state,
+            lga=self.lga,
+            employer=self.employer,
+            food_handler_category="food_preparer",
+            system_identifier="FH-001",
+            current_status=FoodHandlerStatus.FIT,
+        )
+        self.handler_two = FoodHandlerProfile.objects.create(
+            user=self.handler_two_user,
+            full_name="Handler Two",
+            date_of_birth="1991-02-02",
+            gender=Gender.MALE,
+            nin="",
+            phone="08000000005",
+            email="handler-two@example.com",
+            home_address="",
+            state=self.state,
+            lga=self.lga,
+            employer=self.employer,
+            food_handler_category="food_preparer",
+            system_identifier="FH-002",
+            current_status=FoodHandlerStatus.TEMPORARILY_EXCLUDED,
+        )
+        self.policy = PolicyVersion.objects.create(
+            version_code="FH-POL-2026-KPI",
+            title="Food handlers KPI policy",
+            description="Active policy for KPI engine tests.",
+            version_type=PolicyVersionType.MAJOR,
+            status=PolicyVersionStatus.ACTIVE,
+            effective_start_date=timezone.now() - timezone.timedelta(days=30),
+            published_at=timezone.now() - timezone.timedelta(days=30),
+            change_summary="KPI engine tests.",
+            created_by=self.federal_admin,
+        )
+        CertificateValidityRule.objects.create(
+            policy_version=self.policy,
+            routine_assessment_interval_days=180,
+            certificate_validity_days=180,
+            renewal_window_days=30,
+            grace_period_days=0,
+            status=TemplateStatus.ACTIVE,
+            created_by=self.federal_admin,
+        )
+        FacilityRequirementRule.objects.create(
+            policy_version=self.policy,
+            requirement_name="Annual Re-Accreditation",
+            requirement_code="FREQ-REACCREDIT-12M",
+            category="reaccreditation",
+            mandatory=True,
+            evidence_type="file",
+            renewal_required=True,
+            renewal_interval_days=365,
+            status=StandardStatus.ACTIVE,
+            created_by=self.federal_admin,
+        )
+        CertificateTemplate.objects.create(
+            policy_version=self.policy,
+            template_name="National Certificate Standard",
+            template_version="2026.1",
+            required_fields=["certificate_id", "qr_code"],
+            qr_payload_config={"verification_enabled": True, "central_database_validation": True},
+            status=TemplateStatus.ACTIVE,
+            created_by=self.federal_admin,
+        )
+        ReturnToWorkRule.objects.create(
+            policy_version=self.policy,
+            condition_name="Default exclusion",
+            condition_code="RTW-EXCLUDE-48H",
+            default_exclusion_hours=48,
+            requires_medical_clearance=True,
+            clearance_document_required=True,
+            status=StandardStatus.ACTIVE,
+            created_by=self.federal_admin,
+        )
+        self.assessment_one = MedicalAssessment.objects.create(
+            food_handler=self.handler_one,
+            employer=self.employer,
+            facility=self.facility,
+            doctor=self.doctor,
+            assessment_date=timezone.now() - timezone.timedelta(days=50),
+            status="validated",
+            final_decision="fit",
+            signed_at=timezone.now() - timezone.timedelta(days=49),
+        )
+        self.assessment_two = MedicalAssessment.objects.create(
+            food_handler=self.handler_two,
+            employer=self.employer,
+            facility=self.facility,
+            doctor=self.doctor,
+            assessment_date=timezone.now() - timezone.timedelta(days=220),
+            status="validated",
+            final_decision="fit",
+            signed_at=timezone.now() - timezone.timedelta(days=219),
+        )
+        self.runtime_certificate_template = RuntimeCertificateTemplate.objects.create(
+            name="Runtime Certificate",
+            scope="national",
+            is_active=True,
+            is_default=True,
+            created_by=self.federal_admin,
+        )
+        self.active_certificate = Certificate.objects.create(
+            certificate_number="CERT-001",
+            verification_token="token-001",
+            food_handler=self.handler_one,
+            assessment=self.assessment_one,
+            employer=self.employer,
+            facility=self.facility,
+            doctor=self.doctor,
+            issuing_state=self.state,
+            template=self.runtime_certificate_template,
+            issue_date=timezone.localdate() - timezone.timedelta(days=20),
+            expiry_date=timezone.localdate() + timezone.timedelta(days=160),
+            status=CertificateStatus.ACTIVE,
+            verification_url="https://example.com/verify/token-001",
+            digital_signature_hash="hash-001",
+        )
+        self.expired_certificate = Certificate.objects.create(
+            certificate_number="CERT-002",
+            verification_token="token-002",
+            food_handler=self.handler_two,
+            assessment=self.assessment_two,
+            employer=self.employer,
+            facility=self.facility,
+            doctor=self.doctor,
+            issuing_state=self.state,
+            template=self.runtime_certificate_template,
+            issue_date=timezone.localdate() - timezone.timedelta(days=220),
+            expiry_date=timezone.localdate() - timezone.timedelta(days=10),
+            status=CertificateStatus.ACTIVE,
+            verification_url="https://example.com/verify/token-002",
+            digital_signature_hash="hash-002",
+        )
+        CertificateVerificationLog.objects.create(
+            certificate=self.active_certificate,
+            certificate_number_submitted=self.active_certificate.certificate_number,
+            verification_token_submitted=self.active_certificate.verification_token,
+            result=VerificationResult.VALID,
+            verifier_type="inspector",
+        )
+        CertificateVerificationLog.objects.create(
+            certificate=self.expired_certificate,
+            certificate_number_submitted=self.expired_certificate.certificate_number,
+            verification_token_submitted=self.expired_certificate.verification_token,
+            result=VerificationResult.INVALID,
+            verifier_type="public",
+        )
+        IllnessReport.objects.create(
+            food_handler=self.handler_one,
+            employer=self.employer,
+            reported_by=self.federal_admin,
+            suspected_condition=SuspectedCondition.CHOLERA,
+            exclusion_start_date=timezone.localdate() - timezone.timedelta(days=10),
+            earliest_return_date=timezone.localdate() - timezone.timedelta(days=2),
+            clearance_required=True,
+            clearance_status=ClearanceStatus.CLEARED,
+            reviewed_by_doctor=self.doctor,
+            cleared_at=timezone.now() - timezone.timedelta(days=1),
+        )
+        IllnessReport.objects.create(
+            food_handler=self.handler_two,
+            employer=self.employer,
+            reported_by=self.federal_admin,
+            suspected_condition=SuspectedCondition.SHIGELLA,
+            exclusion_start_date=timezone.localdate() - timezone.timedelta(days=5),
+            earliest_return_date=timezone.localdate() + timezone.timedelta(days=1),
+            clearance_required=True,
+            clearance_status=ClearanceStatus.PENDING,
+        )
+        self.expired_indicator = self.make_indicator(
+            "Expired Certificate Rate",
+            "ME-EXPIRED-RATE",
+            "automatic",
+            "certificates",
+            "certificate_records",
+            "monthly",
+            policy_standard_code="FH-VALIDITY-2024-001",
+            rule_parameter_key="certificate_validity_months",
+        )
+        self.certification_indicator = self.make_indicator(
+            "Food Handler Certification Rate",
+            "ME-CERT-RATE",
+            "automatic",
+            "certificates",
+            "certificate_records",
+            "quarterly",
+            policy_standard_code="FH-VALIDITY-2024-001",
+        )
+        self.facility_indicator = self.make_indicator(
+            "Facility Accreditation Compliance",
+            "ME-FACILITY-ACCRED",
+            "automatic",
+            "medical_facilities",
+            "facility_records",
+            "quarterly",
+            policy_standard_code="FH-FAC-2024-001",
+            rule_parameter_key="reaccreditation_interval_months",
+        )
+        self.qr_indicator = self.make_indicator(
+            "QR Verification Failure Rate",
+            "ME-QR-FAIL",
+            "automatic",
+            "qr_verification_logs",
+            "inspections",
+            "monthly",
+            policy_standard_code="FH-CERT-2024-001",
+            rule_parameter_key="requires_qr_code",
+        )
+        self.rtw_indicator = self.make_indicator(
+            "Return-to-Work Clearance Rate",
+            "ME-RTW-RATE",
+            "hybrid",
+            "return_to_work_clearances",
+            "medical_test_records",
+            "quarterly",
+            policy_standard_code="FH-RTW-2024-001",
+            rule_parameter_key="standard_exclusion_period_hours_after_symptoms_stop",
+            allow_manual_override=True,
+            override_requires_reason=True,
+        )
+        self.completeness_indicator = self.make_indicator(
+            "Data Completeness Score",
+            "ME-DATA-COMPLETE",
+            "automatic",
+            "system_required_fields",
+            "food_handler_registry",
+            "monthly",
+        )
+        self.manual_indicator = self.make_indicator(
+            "Manual KPI",
+            "ME-MANUAL",
+            "manual",
+            "",
+            "manual",
+            "monthly",
+        )
+
+    def make_indicator(self, name, code, input_mode, calculation_source, data_source, reporting_frequency, **extra):
+        return MEIndicator.objects.create(
+            policy_version=self.policy,
+            indicator_name=name,
+            indicator_code=code,
+            description=f"{name} test indicator.",
+            input_mode=input_mode,
+            calculation_type="percentage" if calculation_source else "",
+            calculation_source=calculation_source,
+            data_source=data_source,
+            reporting_frequency=reporting_frequency,
+            visualization_type="card",
+            status=StandardStatus.ACTIVE,
+            created_by=self.federal_admin,
+            **extra,
+        )
+
+    def test_calculate_kpi_persists_value_and_log(self):
+        result = FoodHandlersKpiCalculationService.calculate_kpi(
+            self.expired_indicator.id,
+            filters={"period_start": str(timezone.localdate() - timezone.timedelta(days=365)), "period_end": str(timezone.localdate())},
+            actor=self.federal_admin,
+        )
+
+        self.expired_indicator.refresh_from_db()
+        self.assertEqual(str(result["value"]), "50.0000")
+        self.assertEqual(str(self.expired_indicator.latest_value), "50.0000")
+        self.assertIsNotNone(self.expired_indicator.last_calculated_at)
+        self.assertTrue(
+            MEIndicatorValue.objects.filter(
+                indicator=self.expired_indicator,
+                value_source="automated",
+                source_reference_id="automatic-kpi-engine",
+            ).exists()
+        )
+        log = MEIndicatorCalculationLog.objects.get(indicator=self.expired_indicator)
+        self.assertEqual(log.calculation_status, "success")
+        self.assertEqual(str(log.calculated_value), "50.0000")
+        self.assertEqual(log.policy_standard_code, "FH-VALIDITY-2024-001")
+
+    def test_specific_kpi_methods_and_source_records_use_real_operational_data(self):
+        common_filters = {"period_start": str(timezone.localdate() - timezone.timedelta(days=365)), "period_end": str(timezone.localdate())}
+        certification = FoodHandlersKpiCalculationService.calculate_food_handler_certification_rate(common_filters, period=FoodHandlersKpiCalculationService.resolve_period("quarterly", common_filters))
+        facility = FoodHandlersKpiCalculationService.calculate_facility_accreditation_compliance(common_filters, period=FoodHandlersKpiCalculationService.resolve_period("quarterly", common_filters))
+        qr = FoodHandlersKpiCalculationService.calculate_qr_verification_failure_rate(
+            common_filters,
+            period=FoodHandlersKpiCalculationService.resolve_period("monthly", common_filters),
+            policy_context=ActivePolicyRuleService.get_active_policy_standard_by_code("FH-CERT-2024-001"),
+        )
+        rtw = FoodHandlersKpiCalculationService.calculate_return_to_work_clearance_rate(common_filters, period=FoodHandlersKpiCalculationService.resolve_period("quarterly", common_filters))
+        records = FoodHandlersKpiCalculationService.get_kpi_source_records(self.qr_indicator.id, common_filters)
+
+        self.assertEqual(str(certification["value"]), "50.0000")
+        self.assertEqual(str(facility["value"]), "50.0000")
+        self.assertEqual(str(qr["value"]), "50.0000")
+        self.assertEqual(str(rtw["value"]), "50.0000")
+        self.assertEqual(len(records["records"]), 2)
+        self.assertIn("invalid", {row["result"] for row in records["records"]})
+
+    def test_recalculate_automatic_kpis_runs_automatic_and_hybrid_only(self):
+        summary = FoodHandlersKpiCalculationService.recalculate_automatic_kpis(
+            filters={"period_start": str(timezone.localdate() - timezone.timedelta(days=365)), "period_end": str(timezone.localdate())},
+            actor=self.federal_admin,
+        )
+
+        success_codes = {row["indicator_code"] for row in summary["success"]}
+        self.assertIn("ME-EXPIRED-RATE", success_codes)
+        self.assertIn("ME-RTW-RATE", success_codes)
+        self.assertIn("ME-DATA-COMPLETE", success_codes)
+        self.assertNotIn("ME-MANUAL", success_codes)
+
+    def test_manual_kpi_is_rejected_and_failed_calculation_creates_log(self):
+        with self.assertRaisesMessage(KPIEngineError, "Only automatic and hybrid KPIs can be auto-calculated."):
+            FoodHandlersKpiCalculationService.calculate_kpi(self.manual_indicator.id, actor=self.federal_admin)
+
+        CertificateTemplate.objects.filter(policy_version=self.policy).delete()
+        with self.assertRaisesMessage(ActivePolicyRuleError, "Active policy rule not found for this KPI calculation."):
+            FoodHandlersKpiCalculationService.calculate_kpi(
+                self.qr_indicator.id,
+                filters={"period_start": str(timezone.localdate() - timezone.timedelta(days=30)), "period_end": str(timezone.localdate())},
+                actor=self.federal_admin,
+            )
+        failed_log = MEIndicatorCalculationLog.objects.filter(indicator=self.qr_indicator, calculation_status="failed").latest("created_at")
+        self.assertIn("Active policy rule not found", failed_log.error_message)
+
+    def test_calculation_and_source_record_endpoints_expose_engine_output(self):
+        FoodHandlersKpiCalculationService.calculate_kpi(
+            self.expired_indicator.id,
+            filters={"period_start": str(timezone.localdate() - timezone.timedelta(days=365)), "period_end": str(timezone.localdate())},
+            actor=self.federal_admin,
+        )
+
+        calculation = self.client.get(f"/api/federal/standards/me-indicators/{self.expired_indicator.id}/calculation/")
+        source_records = self.client.get(
+            f"/api/federal/standards/me-indicators/{self.expired_indicator.id}/source-records/",
+            {"period_start": str(timezone.localdate() - timezone.timedelta(days=365)), "period_end": str(timezone.localdate())},
+        )
+
+        self.assertEqual(calculation.status_code, 200, calculation.data)
+        self.assertEqual(payload(calculation)["linked_policy_standard"], "FH-VALIDITY-2024-001")
+        self.assertEqual(str(payload(calculation)["latest_calculated_value"]), "50.0000")
+        self.assertEqual(source_records.status_code, 200, source_records.data)
+        self.assertEqual(payload(source_records)["count"], 2)
+        self.assertEqual(payload(source_records)["records"][0]["certificate_number"], "CERT-001")
+
+    def test_recalculate_endpoint_uses_food_handler_kpi_engine_for_automatic_indicators(self):
+        response = self.client.post(
+            f"/api/federal/standards/me-indicators/{self.qr_indicator.id}/recalculate/",
+            {
+                "period_start": str(timezone.localdate() - timezone.timedelta(days=365)),
+                "period_end": str(timezone.localdate()),
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 201, response.data)
+        data = payload(response)
+        self.assertEqual(data["value_source"], "automated")
+        self.assertEqual(data["progress_value_numeric"], "50.0000")
+        self.assertTrue(MEIndicatorCalculationLog.objects.filter(indicator=self.qr_indicator, calculation_status="success").exists())
+
+    def test_hybrid_override_requires_reason_and_preserves_original_value(self):
+        FoodHandlersKpiCalculationService.calculate_kpi(
+            self.rtw_indicator.id,
+            filters={"period_start": str(timezone.localdate() - timezone.timedelta(days=365)), "period_end": str(timezone.localdate())},
+            actor=self.federal_admin,
+        )
+
+        missing_reason = self.client.post(
+            f"/api/federal/standards/me-indicators/{self.rtw_indicator.id}/override/",
+            {
+                "period_start": str(timezone.localdate() - timezone.timedelta(days=365)),
+                "period_end": str(timezone.localdate()),
+                "override_value": "75.0000",
+                "reason": "",
+            },
+            format="json",
+        )
+        response = self.client.post(
+            f"/api/federal/standards/me-indicators/{self.rtw_indicator.id}/override/",
+            {
+                "period_start": str(timezone.localdate() - timezone.timedelta(days=365)),
+                "period_end": str(timezone.localdate()),
+                "override_value": "75.0000",
+                "reason": "Included validated offline clearances.",
+            },
+            format="json",
+        )
+
+        self.assertEqual(missing_reason.status_code, 400)
+        self.assertEqual(response.status_code, 201, response.data)
+        data = payload(response)
+        self.assertEqual(data["value_source"], "override")
+        self.assertEqual(data["override_reason"], "Included validated offline clearances.")
+        self.assertEqual(str(data["original_calculated_value"]), "50.0000")
+        self.assertEqual(str(data["overridden_value"]), "75.0000")
+        self.rtw_indicator.refresh_from_db()
+        self.assertEqual(str(self.rtw_indicator.latest_value), "75.0000")
+        self.assertTrue(MEIndicatorCalculationLog.objects.filter(indicator=self.rtw_indicator, calculation_status="overridden").exists())
+
+    def test_unauthorized_user_cannot_override_hybrid_kpi(self):
+        FoodHandlersKpiCalculationService.calculate_kpi(
+            self.rtw_indicator.id,
+            filters={"period_start": str(timezone.localdate() - timezone.timedelta(days=365)), "period_end": str(timezone.localdate())},
+            actor=self.federal_admin,
+        )
+        self.client.force_authenticate(self.state_admin)
+
+        response = self.client.post(
+            f"/api/federal/standards/me-indicators/{self.rtw_indicator.id}/override/",
+            {
+                "period_start": str(timezone.localdate() - timezone.timedelta(days=365)),
+                "period_end": str(timezone.localdate()),
+                "override_value": "75.0000",
+                "reason": "Attempted unauthorized override.",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 403)
+
+    def test_state_admin_source_records_are_scoped_to_their_state(self):
+        other_state = State.objects.create(name="Oyo", code="OY")
+        other_lga = LGA.objects.create(state=other_state, name="Ibadan North")
+        other_org = Organization.objects.create(
+            name="Other Foods Ltd",
+            organization_type=OrganizationType.EMPLOYER,
+            state=other_state,
+            lga=other_lga,
+        )
+        other_employer = Employer.objects.create(
+            organization=other_org,
+            business_name="Other Foods Ltd",
+            establishment_category=EstablishmentCategory.RESTAURANT_CAFE,
+            contact_person_name="Bola",
+            contact_person_phone="08000000009",
+            contact_person_email="bola@otherfoods.example.com",
+            address="Ring Road",
+            state=other_state,
+            lga=other_lga,
+        )
+        other_handler_user = User.objects.create_user(
+            "other-handler",
+            "other-handler@example.com",
+            "StrongPass123!",
+            role=UserRole.FOOD_HANDLER,
+            state=other_state,
+        )
+        other_handler = FoodHandlerProfile.objects.create(
+            user=other_handler_user,
+            full_name="Other Handler",
+            date_of_birth="1992-03-03",
+            gender=Gender.MALE,
+            nin="99887766554",
+            phone="08000000010",
+            email="other-handler@example.com",
+            home_address="Bodija",
+            state=other_state,
+            lga=other_lga,
+            employer=other_employer,
+            food_handler_category="food_preparer",
+            system_identifier="FH-003",
+            current_status=FoodHandlerStatus.FIT,
+        )
+        other_assessment = MedicalAssessment.objects.create(
+            food_handler=other_handler,
+            employer=other_employer,
+            facility=self.facility,
+            doctor=self.doctor,
+            assessment_date=timezone.now() - timezone.timedelta(days=10),
+            status="validated",
+            final_decision="fit",
+            signed_at=timezone.now() - timezone.timedelta(days=9),
+        )
+        Certificate.objects.create(
+            certificate_number="CERT-003",
+            verification_token="token-003",
+            food_handler=other_handler,
+            assessment=other_assessment,
+            employer=other_employer,
+            facility=self.facility,
+            doctor=self.doctor,
+            issuing_state=other_state,
+            template=self.runtime_certificate_template,
+            issue_date=timezone.localdate() - timezone.timedelta(days=5),
+            expiry_date=timezone.localdate() + timezone.timedelta(days=170),
+            status=CertificateStatus.ACTIVE,
+            verification_url="https://example.com/verify/token-003",
+            digital_signature_hash="hash-003",
+        )
+
+        self.client.force_authenticate(self.state_admin)
+        response = self.client.get(
+            f"/api/federal/standards/me-indicators/{self.expired_indicator.id}/source-records/",
+            {"period_start": str(timezone.localdate() - timezone.timedelta(days=365)), "period_end": str(timezone.localdate())},
+        )
+
+        self.assertEqual(response.status_code, 200, response.data)
+        rows = payload(response)["records"]
+        self.assertTrue(rows)
+        self.assertEqual({row["state"] for row in rows}, {"Lagos"})
+
+    def test_facility_admin_source_records_are_scoped_to_their_facility_and_cannot_recalculate(self):
+        self.client.force_authenticate(self.facility_admin)
+        records = self.client.get(
+            f"/api/federal/standards/me-indicators/{self.expired_indicator.id}/source-records/",
+            {"period_start": str(timezone.localdate() - timezone.timedelta(days=365)), "period_end": str(timezone.localdate())},
+        )
+        recalculate = self.client.post(
+            f"/api/federal/standards/me-indicators/{self.expired_indicator.id}/recalculate/",
+            {"period_start": str(timezone.localdate() - timezone.timedelta(days=365)), "period_end": str(timezone.localdate())},
+            format="json",
+        )
+
+        self.assertEqual(records.status_code, 200, records.data)
+        self.assertTrue(all(row["facility"] == "Central Medical Lab" for row in payload(records)["records"]))
+        self.assertEqual(recalculate.status_code, 403)
 
 
 class ActivePolicyRuleServiceTests(APITestCase):

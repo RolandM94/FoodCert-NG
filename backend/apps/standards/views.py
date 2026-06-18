@@ -25,6 +25,7 @@ from .models import (
     EstablishmentCategory,
     FacilityRequirementRule,
     FoodHandlerCategory,
+    IndicatorCalculationStatus,
     IndicatorDisaggregatedValue,
     IndicatorEvidence,
     MEIndicator,
@@ -59,10 +60,12 @@ from .serializers import (
     FoodHandlerCategorySerializer,
     IndicatorDisaggregationSerializer,
     IndicatorEvidenceSerializer,
+    MEIndicatorCalculationLogSerializer,
     MEIndicatorCalculationSerializer,
     MEIndicatorDataSourceSerializer,
     MEIndicatorFormSourceSerializer,
     MEIndicatorIndicatorSourceSerializer,
+    MEIndicatorOverrideSerializer,
     MEIndicatorSerializer,
     MEIndicatorValueSerializer,
     MedicalTestRuleSerializer,
@@ -79,7 +82,8 @@ from .serializers import (
     StandardsAuditLogSerializer,
     VaccinationRuleSerializer,
 )
-from .services import ACTIVE_STANDARDS_CACHE_VERSION_KEY, PolicyVersionService
+from .services import ACTIVE_STANDARDS_CACHE_VERSION_KEY, ActivePolicyRuleError, PolicyVersionService
+from .kpi_engine import FoodHandlersKpiCalculationService, KPIEngineError
 from .indicator_calculations import (
     IndicatorCalculationError,
     IndicatorCalculationService,
@@ -577,6 +581,19 @@ def preview_indicator_import(indicator, csv_text):
     return rows, errors
 
 
+def scoped_kpi_filters_for_user(user):
+    filters = {}
+    if user.role == "state_admin" and user.state_id:
+        filters["state_id"] = str(user.state_id)
+    elif user.role == "facility_admin" and getattr(user, "organization_id", None):
+        facility = getattr(user.organization, "medical_facility", None)
+        if facility:
+            filters["facility_id"] = str(facility.id)
+            if facility.state_id:
+                filters.setdefault("state_id", str(facility.state_id))
+    return filters
+
+
 class MEIndicatorViewSet(StandardsConfigViewSetMixin, viewsets.ModelViewSet):
     queryset = MEIndicator.objects.all()
     serializer_class = MEIndicatorSerializer
@@ -934,6 +951,37 @@ class MEIndicatorViewSet(StandardsConfigViewSetMixin, viewsets.ModelViewSet):
     @action(detail=True, methods=["post"], url_path="calculate")
     def calculate(self, request, pk=None):
         indicator = self.get_object()
+        if indicator.input_mode in {"automatic", "hybrid"}:
+            filters = {
+                "period_start": request.data.get("period_start"),
+                "period_end": request.data.get("period_end"),
+                "state_id": request.data.get("state_id"),
+                "lga_id": request.data.get("lga_id"),
+                "facility_id": request.data.get("facility_id"),
+                "food_handler_category": request.data.get("food_handler_category"),
+                "establishment_type": request.data.get("establishment_type"),
+                "certificate_status": request.data.get("certificate_status"),
+            }
+            try:
+                result = FoodHandlersKpiCalculationService.calculate_kpi(
+                    indicator.id,
+                    filters=filters,
+                    actor=request.user,
+                )
+            except (KPIEngineError, ActivePolicyRuleError) as exc:
+                return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+            value = indicator.values.filter(id=result["value_id"]).first()
+            if value is None:
+                return Response({"detail": "Calculated KPI value could not be loaded."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            log_action(
+                action=AuditAction.CREATE,
+                actor=request.user,
+                target=value,
+                request=request,
+                metadata={"event": "me_indicator_value_calculated", "indicator_id": str(indicator.id), "engine": "food_handlers_kpi"},
+            )
+            return Response(MEIndicatorValueSerializer(value).data, status=status.HTTP_201_CREATED)
+
         serializer = MEIndicatorCalculationSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
@@ -1009,6 +1057,8 @@ class MEIndicatorViewSet(StandardsConfigViewSetMixin, viewsets.ModelViewSet):
     @action(detail=True, methods=["post"], url_path="recalculate")
     def recalculate(self, request, pk=None):
         indicator = self.get_object()
+        if indicator.input_mode in {"automatic", "hybrid"}:
+            return self.calculate(request, pk=pk)
         source = indicator.data_source_configs.exclude(source_type="manual").first()
         if not source:
             return Response({"detail": "No linked Food Handlers KPI data source is configured."}, status=status.HTTP_400_BAD_REQUEST)
@@ -1018,6 +1068,165 @@ class MEIndicatorViewSet(StandardsConfigViewSetMixin, viewsets.ModelViewSet):
         serializer.is_valid(raise_exception=True)
         request._full_data = data
         return self.calculate(request, pk=pk)
+
+    @action(detail=True, methods=["get"], url_path="calculation")
+    def calculation(self, request, pk=None):
+        indicator = self.get_object()
+        latest_log = indicator.calculation_logs.select_related("calculated_by", "policy_version").first()
+        logs = indicator.calculation_logs.select_related("calculated_by", "policy_version")[:10]
+        response = {
+            "indicator_id": str(indicator.id),
+            "indicator_name": indicator.indicator_name,
+            "indicator_code": indicator.indicator_code,
+            "input_mode": indicator.input_mode,
+            "calculation_type": indicator.calculation_type,
+            "calculation_source": indicator.calculation_source,
+            "formula": indicator.calculation_type or indicator.formula_config.get("calculation_method", ""),
+            "numerator_definition": indicator.numerator_definition or indicator.formula_config.get("numerator_definition") or indicator.formula_config.get("numerator") or {},
+            "denominator_definition": indicator.denominator_definition or indicator.formula_config.get("denominator_definition") or indicator.formula_config.get("denominator") or {},
+            "linked_policy_standard": indicator.policy_standard_code,
+            "policy_rule_parameter": indicator.rule_parameter_key,
+            "last_calculated_at": indicator.last_calculated_at,
+            "latest_calculated_value": indicator.latest_value,
+            "achievement_value": indicator.achievement_value,
+            "latest_log": MEIndicatorCalculationLogSerializer(latest_log).data if latest_log else None,
+            "logs": MEIndicatorCalculationLogSerializer(logs, many=True).data,
+        }
+        return Response(response)
+
+    @action(detail=True, methods=["get"], url_path="source-records")
+    def source_records(self, request, pk=None):
+        indicator = self.get_object()
+        filters = {
+            "period_start": request.query_params.get("period_start"),
+            "period_end": request.query_params.get("period_end"),
+            "date_from": request.query_params.get("date_from"),
+            "date_to": request.query_params.get("date_to"),
+            "state_id": request.query_params.get("state_id"),
+            "lga_id": request.query_params.get("lga_id"),
+            "facility_id": request.query_params.get("facility_id"),
+            "food_handler_category": request.query_params.get("food_handler_category"),
+            "establishment_type": request.query_params.get("establishment_type"),
+            "certificate_status": request.query_params.get("certificate_status"),
+        }
+        filters.update({
+            key: value
+            for key, value in scoped_kpi_filters_for_user(request.user).items()
+            if not filters.get(key)
+        })
+        try:
+            payload = FoodHandlersKpiCalculationService.get_kpi_source_records(indicator.id, filters=filters)
+        except (KPIEngineError, ActivePolicyRuleError) as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+        offset = max(int(request.query_params.get("offset", 0) or 0), 0)
+        limit = min(max(int(request.query_params.get("limit", 25) or 25), 1), 200)
+        records = payload["records"]
+        page = records[offset:offset + limit]
+        return Response({
+            **payload,
+            "count": len(records),
+            "offset": offset,
+            "limit": limit,
+            "records": page,
+            "has_next": offset + limit < len(records),
+            "has_previous": offset > 0,
+        })
+
+    @action(detail=True, methods=["post"], url_path="override")
+    def override(self, request, pk=None):
+        indicator = self.get_object()
+        if indicator.input_mode != "hybrid":
+            return Response({"detail": "Only hybrid KPIs support manual override."}, status=status.HTTP_400_BAD_REQUEST)
+        if not indicator.allow_manual_override:
+            return Response({"detail": "Manual override is not enabled for this KPI."}, status=status.HTTP_400_BAD_REQUEST)
+
+        serializer = MEIndicatorOverrideSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+
+        if indicator.override_requires_reason and not data["reason"].strip():
+            return Response({"detail": "Override reason is required."}, status=status.HTTP_400_BAD_REQUEST)
+
+        calculated_value = indicator.values.filter(
+            period_start=data["period_start"],
+            period_end=data["period_end"],
+            value_source="automated",
+        ).order_by("-updated_at").first()
+        if not calculated_value:
+            return Response({"detail": "No calculated KPI value exists for the selected period."}, status=status.HTTP_400_BAD_REQUEST)
+
+        override_value, created = MEIndicatorValue.objects.update_or_create(
+            indicator=indicator,
+            period_start=data["period_start"],
+            period_end=data["period_end"],
+            value_source="override",
+            source_reference_id=str(calculated_value.id),
+            defaults={
+                "progress_value_numeric": data["override_value"],
+                "cumulative_value_numeric": data["override_value"],
+                "calculation_snapshot_json": {
+                    **(calculated_value.calculation_snapshot_json or {}),
+                    "override_applied": True,
+                    "override_reason": data["reason"],
+                    "original_value_id": str(calculated_value.id),
+                    "original_value": str(calculated_value.cumulative_value_numeric or calculated_value.progress_value_numeric or ""),
+                    "overridden_value": str(data["override_value"]),
+                },
+                "original_calculated_value": calculated_value.cumulative_value_numeric or calculated_value.progress_value_numeric,
+                "overridden_value": data["override_value"],
+                "override_reason": data["reason"],
+                "overridden_by": request.user,
+                "overridden_at": timezone.now(),
+                "notes": data["reason"],
+                "created_by": request.user,
+            },
+        )
+        indicator.latest_value = data["override_value"]
+        indicator.achievement_value = FoodHandlersKpiCalculationService.compute_achievement_value(indicator, data["override_value"])
+        indicator.save(update_fields=["latest_value", "achievement_value", "updated_at"])
+        create_indicator_value_history(
+            override_value,
+            request.user,
+            "override",
+            calculated_value.approval_status,
+            override_value.approval_status,
+            data["reason"],
+        )
+        indicator.calculation_logs.create(
+            period_start=data["period_start"],
+            period_end=data["period_end"],
+            calculated_value=data["override_value"],
+            numerator_value=calculated_value.original_calculated_value or calculated_value.cumulative_value_numeric or calculated_value.progress_value_numeric,
+            denominator_value=None,
+            filters_used={},
+            policy_version=indicator.policy_version,
+            policy_standard_code=indicator.policy_standard_code,
+            policy_standard_id="",
+            calculated_by=request.user,
+            calculation_status=IndicatorCalculationStatus.OVERRIDDEN,
+            error_message="",
+            source_record_count=0,
+            snapshot_json={
+                "override_reason": data["reason"],
+                "original_value_id": str(calculated_value.id),
+                "original_value": str(calculated_value.cumulative_value_numeric or calculated_value.progress_value_numeric or ""),
+                "overridden_value": str(data["override_value"]),
+            },
+        )
+        log_action(
+            action=AuditAction.UPDATE if not created else AuditAction.CREATE,
+            actor=request.user,
+            target=override_value,
+            request=request,
+            metadata={
+                "event": "me_indicator_value_overridden",
+                "indicator_id": str(indicator.id),
+                "original_value_id": str(calculated_value.id),
+                "override_reason": data["reason"],
+            },
+        )
+        return Response(MEIndicatorValueSerializer(override_value).data, status=status.HTTP_201_CREATED if created else status.HTTP_200_OK)
 
 
 def indicator_value_snapshot(value):
@@ -1029,6 +1238,9 @@ def indicator_value_snapshot(value):
         "qualitative_value_text": value.qualitative_value_text,
         "qualitative_rating": str(value.qualitative_rating) if value.qualitative_rating is not None else None,
         "approval_status": value.approval_status,
+        "original_calculated_value": str(value.original_calculated_value) if value.original_calculated_value is not None else None,
+        "overridden_value": str(value.overridden_value) if value.overridden_value is not None else None,
+        "override_reason": value.override_reason,
         "notes": value.notes,
         "evidence_json": value.evidence_json,
     }

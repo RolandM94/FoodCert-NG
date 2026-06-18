@@ -12,6 +12,7 @@ from .models import (
     IndicatorDisaggregatedValue,
     IndicatorDisaggregation,
     IndicatorEvidence,
+    MEIndicatorCalculationLog,
     KPIInputMode,
     KPICalculationType,
     KPIProgressRelationship,
@@ -702,6 +703,23 @@ class MEIndicatorValueHistorySerializer(serializers.ModelSerializer):
             "snapshot_json", "comment", "actor", "actor_name",
             "created_at", "updated_at",
         )
+
+
+class MEIndicatorCalculationLogSerializer(serializers.ModelSerializer):
+    calculated_by_name = serializers.CharField(
+        source="calculated_by.get_full_name", read_only=True, default="",
+    )
+
+    class Meta:
+        model = MEIndicatorCalculationLog
+        fields = (
+            "id", "indicator", "period_start", "period_end",
+            "calculated_value", "numerator_value", "denominator_value",
+            "filters_used", "policy_version", "policy_standard_code",
+            "policy_standard_id", "calculated_by", "calculated_by_name",
+            "calculation_status", "error_message", "source_record_count",
+            "snapshot_json", "created_at", "updated_at",
+        )
         read_only_fields = fields
 
 
@@ -721,6 +739,9 @@ class MEIndicatorValueSerializer(serializers.ModelSerializer):
     approved_by_name = serializers.CharField(
         source="approved_by.get_full_name", read_only=True, default="",
     )
+    overridden_by_name = serializers.CharField(
+        source="overridden_by.get_full_name", read_only=True, default="",
+    )
     history = MEIndicatorValueHistorySerializer(many=True, read_only=True)
     disaggregated_values = IndicatorDisaggregatedValueSerializer(many=True, read_only=True)
     evidence_items = IndicatorEvidenceSerializer(many=True, read_only=True)
@@ -734,7 +755,9 @@ class MEIndicatorValueSerializer(serializers.ModelSerializer):
             "qualitative_value_text", "qualitative_rating",
             "qualitative_category",
             "value_source", "source_reference_id", "approval_status",
-            "calculation_snapshot_json", "evidence_json", "notes",
+            "calculation_snapshot_json", "original_calculated_value",
+            "overridden_value", "override_reason", "overridden_by",
+            "overridden_by_name", "overridden_at", "evidence_json", "notes",
             "rejection_comment", "created_by", "created_by_name",
             "submitted_by", "submitted_by_name", "submitted_at",
             "approved_by", "approved_by_name", "approved_at",
@@ -745,7 +768,8 @@ class MEIndicatorValueSerializer(serializers.ModelSerializer):
             "id", "indicator_name", "indicator_code", "approval_status",
             "created_by", "created_by_name", "submitted_by",
             "submitted_by_name", "submitted_at", "approved_by",
-            "approved_by_name", "approved_at", "rejection_comment",
+            "approved_by_name", "approved_at", "overridden_by",
+            "overridden_by_name", "overridden_at", "rejection_comment",
             "history", "disaggregated_values", "evidence_items",
             "created_at", "updated_at",
         )
@@ -844,6 +868,20 @@ class MEIndicatorCalculationSerializer(serializers.Serializer):
             raise serializers.ValidationError("KPI data sources must be Food Handlers operational modules, manual, or KPI dependencies.")
         if attrs.get("calculation_method") in {"percentage", "ratio"} and not (attrs.get("numerator_config_json") and attrs.get("denominator_config_json")):
             raise serializers.ValidationError("Percentage and ratio calculations require numerator and denominator configuration.")
+        return attrs
+
+
+class MEIndicatorOverrideSerializer(serializers.Serializer):
+    period_start = serializers.DateField()
+    period_end = serializers.DateField()
+    override_value = serializers.DecimalField(max_digits=18, decimal_places=4)
+    reason = serializers.CharField()
+
+    def validate(self, attrs):
+        if attrs["period_start"] > attrs["period_end"]:
+            raise serializers.ValidationError("Period start cannot be after period end.")
+        if not attrs["reason"].strip():
+            raise serializers.ValidationError("Override reason is required.")
         return attrs
 
 

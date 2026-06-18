@@ -461,6 +461,12 @@ export interface MEIndicatorValue {
   source_reference_id: string;
   approval_status: IndicatorValueApprovalStatus;
   calculation_snapshot_json: Record<string, unknown>;
+  original_calculated_value: string | number | null;
+  overridden_value: string | number | null;
+  override_reason: string;
+  overridden_by: string | null;
+  overridden_by_name: string;
+  overridden_at: string | null;
   evidence_json: Array<Record<string, unknown>>;
   notes: string;
   rejection_comment: string;
@@ -527,6 +533,63 @@ export interface MEIndicatorDataSource {
   period_filter_mode: IndicatorPeriodFilterMode;
   created_at: string;
   updated_at: string;
+}
+
+export interface MEIndicatorCalculationLog {
+  id: string;
+  indicator: string;
+  period_start: string;
+  period_end: string;
+  calculated_value: string | number | null;
+  numerator_value: string | number | null;
+  denominator_value: string | number | null;
+  filters_used: Record<string, unknown>;
+  policy_version: string | null;
+  policy_standard_code: string;
+  policy_standard_id: string;
+  calculated_by: string | null;
+  calculated_by_name: string;
+  calculation_status: "success" | "failed" | "overridden";
+  error_message: string;
+  source_record_count: number;
+  snapshot_json: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface MEIndicatorCalculationView {
+  indicator_id: string;
+  indicator_name: string;
+  indicator_code: string;
+  input_mode: string;
+  calculation_type: string;
+  calculation_source: string;
+  formula: string;
+  numerator_definition: Record<string, unknown>;
+  denominator_definition: Record<string, unknown>;
+  linked_policy_standard: string;
+  policy_rule_parameter: string;
+  last_calculated_at: string | null;
+  latest_calculated_value: string | number | null;
+  achievement_value: string | number | null;
+  latest_log: MEIndicatorCalculationLog | null;
+  logs: MEIndicatorCalculationLog[];
+}
+
+export interface MEIndicatorSourceRecordsResponse {
+  indicator_id: string;
+  indicator_code: string;
+  period_start: string;
+  period_end: string;
+  records: Array<Record<string, unknown>>;
+  value: string;
+  numerator: string | null;
+  denominator: string | null;
+  count: number;
+  offset: number;
+  limit: number;
+  has_next: boolean;
+  has_previous: boolean;
 }
 
 export interface PolicyDocument {

@@ -119,6 +119,18 @@ export type StateLga = {
   state: string;
 };
 
+export type StateOption = {
+  id: string;
+  name: string;
+  code: string;
+  is_fct: boolean;
+};
+
+export async function fetchStates(): Promise<StateOption[]> {
+  const response = await apiClient.get<ApiEnvelope<StateOption[]>>("/states/");
+  return unwrap(response.data);
+}
+
 export async function fetchStateLgas(stateId: string): Promise<StateLga[]> {
   const response = await apiClient.get<ApiEnvelope<StateLga[]>>(`/states/${stateId}/lgas/`);
   return unwrap(response.data);

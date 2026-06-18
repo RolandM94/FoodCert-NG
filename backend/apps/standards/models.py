@@ -262,6 +262,12 @@ class EvidenceType(models.TextChoices):
     INSPECTION = "inspection", "Inspection"
 
 
+class IndicatorCalculationStatus(models.TextChoices):
+    SUCCESS = "success", "Success"
+    FAILED = "failed", "Failed"
+    OVERRIDDEN = "overridden", "Overridden"
+
+
 class PolicyVersion(BaseModel):
     version_code = models.CharField(max_length=64, unique=True)
     title = models.CharField(max_length=255)
@@ -925,6 +931,18 @@ class MEIndicatorValue(BaseModel):
         default=IndicatorValueStatus.DRAFT, db_index=True,
     )
     calculation_snapshot_json = models.JSONField(default=dict, blank=True)
+    original_calculated_value = models.DecimalField(
+        max_digits=18, decimal_places=4, null=True, blank=True,
+    )
+    overridden_value = models.DecimalField(
+        max_digits=18, decimal_places=4, null=True, blank=True,
+    )
+    override_reason = models.TextField(blank=True, default="")
+    overridden_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL,
+        null=True, blank=True, related_name="overridden_me_indicator_values",
+    )
+    overridden_at = models.DateTimeField(null=True, blank=True)
     evidence_json = models.JSONField(default=list, blank=True)
     notes = models.TextField(blank=True, default="")
     rejection_comment = models.TextField(blank=True, default="")
@@ -1055,6 +1073,53 @@ class MEIndicatorValueHistory(BaseModel):
 
     def __str__(self) -> str:
         return f"{self.value_id} {self.action}"
+
+
+class MEIndicatorCalculationLog(BaseModel):
+    indicator = models.ForeignKey(
+        MEIndicator, on_delete=models.CASCADE,
+        related_name="calculation_logs",
+    )
+    period_start = models.DateField()
+    period_end = models.DateField()
+    calculated_value = models.DecimalField(
+        max_digits=18, decimal_places=4, null=True, blank=True,
+    )
+    numerator_value = models.DecimalField(
+        max_digits=18, decimal_places=4, null=True, blank=True,
+    )
+    denominator_value = models.DecimalField(
+        max_digits=18, decimal_places=4, null=True, blank=True,
+    )
+    filters_used = models.JSONField(default=dict, blank=True)
+    policy_version = models.ForeignKey(
+        PolicyVersion, on_delete=models.SET_NULL,
+        null=True, blank=True, related_name="indicator_calculation_logs",
+    )
+    policy_standard_code = models.CharField(max_length=64, blank=True, default="")
+    policy_standard_id = models.CharField(max_length=128, blank=True, default="")
+    calculated_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL,
+        null=True, blank=True, related_name="me_indicator_calculation_logs",
+    )
+    calculation_status = models.CharField(
+        max_length=16, choices=IndicatorCalculationStatus.choices,
+        default=IndicatorCalculationStatus.SUCCESS, db_index=True,
+    )
+    error_message = models.TextField(blank=True, default="")
+    source_record_count = models.PositiveIntegerField(default=0)
+    snapshot_json = models.JSONField(default=dict, blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["indicator", "period_start", "period_end"]),
+            models.Index(fields=["calculation_status"]),
+            models.Index(fields=["policy_version"]),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.indicator.indicator_code} {self.period_start} - {self.period_end}"
 
 
 class PolicyDocument(BaseModel):

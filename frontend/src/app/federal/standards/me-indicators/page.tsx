@@ -17,6 +17,7 @@ import {
   listMEIndicators,
   listMEIndicatorValues,
   listPolicyVersions,
+  overrideMEIndicator,
   previewMEIndicatorImport,
   rejectMEIndicatorValue,
   submitMEIndicatorValue,
@@ -229,8 +230,10 @@ function IndicatorDataEntryModal({
     qualitative_rating: "",
     qualitative_category: "",
     notes: "",
+    override_reason: "",
   });
   const indicatorType = String(indicator.formula_config?.indicator_type || "quantitative");
+  const inputMode = normalizeInputMode(indicator.input_mode);
   const qualitativeConfig = indicator.qualitative_config;
   const qualitativeInputType = qualitativeConfig?.input_type ?? "text";
   const qualitativeOptions = qualitativeConfig?.category_options_json ?? [];
@@ -243,9 +246,18 @@ function IndicatorDataEntryModal({
     queryFn: () => listMEIndicatorValues(indicator.id),
   });
   const values = Array.isArray(valuesQuery.data) ? valuesQuery.data : [];
+  const latestAutomatedValue = values.find((value) => value.value_source === "automated");
 
   const saveValueMutation = useMutation({
     mutationFn: async () => {
+      if (inputMode === "hybrid") {
+        return overrideMEIndicator(indicator.id, {
+          period_start: form.period_start,
+          period_end: form.period_end,
+          override_value: form.cumulative_value_numeric || form.progress_value_numeric,
+          reason: form.override_reason,
+        });
+      }
       const payload: Partial<MEIndicatorValue> = {
         period_start: form.period_start,
         period_end: form.period_end,
@@ -272,8 +284,10 @@ function IndicatorDataEntryModal({
         qualitative_rating: "",
         qualitative_category: "",
         notes: "",
+        override_reason: "",
       });
       queryClient.invalidateQueries({ queryKey: ["standards-me-indicator-values", indicator.id] });
+      queryClient.invalidateQueries({ queryKey: ["standards-me-indicator", indicator.id] });
     },
     onError: (err) => setError(getApiErrorMessage(err, "Failed to save indicator value.")),
   });
@@ -308,6 +322,7 @@ function IndicatorDataEntryModal({
       qualitative_rating: value.qualitative_rating == null ? "" : String(value.qualitative_rating),
       qualitative_category: value.qualitative_category || "",
       notes: value.notes || "",
+      override_reason: value.override_reason || "",
     });
   }
 
@@ -317,7 +332,7 @@ function IndicatorDataEntryModal({
       <div className="fixed inset-x-0 bottom-0 top-12 z-50 mx-auto flex w-[min(1120px,100vw)] flex-col overflow-hidden rounded-t-2xl bg-white shadow-2xl lg:bottom-8 lg:top-8 lg:rounded-2xl">
         <header className="flex items-center justify-between border-b border-neutral-200 px-5 py-4">
           <div>
-            <h2 className="text-lg font-semibold text-neutral-950">Data Entry</h2>
+            <h2 className="text-lg font-semibold text-neutral-950">{inputMode === "hybrid" ? "Override KPI Value" : "Data Entry"}</h2>
             <p className="text-sm text-slate-400">{indicator.indicator_name}</p>
           </div>
           <button onClick={onClose} type="button" className="rounded-full bg-neutral-50 px-3 py-1.5 text-sm font-semibold text-neutral-500 hover:text-neutral-900">Close</button>
@@ -327,6 +342,13 @@ function IndicatorDataEntryModal({
             <p className="text-xs font-bold uppercase text-neutral-500">KPI</p>
             <h3 className="mt-2 text-base font-bold text-neutral-950">{indicator.indicator_name}</h3>
             <p className="mt-2 text-sm text-neutral-500">{indicator.description || "No description available"}</p>
+            {inputMode === "hybrid" ? (
+              <div className="mt-4 rounded-lg border border-warning-200 bg-warning-50 p-3 text-sm text-warning-900">
+                <p className="font-semibold">Hybrid override workflow</p>
+                <p className="mt-1">The system-calculated value is preserved. Your override will be stored separately and must include a reason.</p>
+                <p className="mt-2 text-xs">Latest calculated value: {latestAutomatedValue?.cumulative_value_numeric ?? latestAutomatedValue?.progress_value_numeric ?? indicator.latest_value ?? "-"}</p>
+              </div>
+            ) : null}
             <div className="mt-5 grid grid-cols-2 overflow-hidden rounded-lg border border-neutral-200 bg-neutral-50 text-center">
               {[
                 ["Type", indicatorType],
@@ -344,7 +366,9 @@ function IndicatorDataEntryModal({
           <main className="min-h-0 overflow-y-auto p-5">
             {error ? <div className="mb-4 rounded bg-danger-50 px-3 py-2 text-sm font-semibold text-danger-700">{error}</div> : null}
             <section className="rounded-lg border border-neutral-200 bg-white p-4">
-              <h3 className="text-sm font-semibold text-neutral-950">{selectedValue ? "Revise value" : "Enter current period value"}</h3>
+              <h3 className="text-sm font-semibold text-neutral-950">
+                {inputMode === "hybrid" ? "Override current period value" : selectedValue ? "Revise value" : "Enter current period value"}
+              </h3>
               <div className="mt-4 grid gap-3 md:grid-cols-2">
                 <label className="text-sm font-medium text-neutral-700">Period start<input type="date" className="mt-1 h-10 w-full rounded border border-neutral-200 px-3" value={form.period_start} onChange={(event) => setForm((current) => ({ ...current, period_start: event.target.value }))} /></label>
                 <label className="text-sm font-medium text-neutral-700">Period end<input type="date" className="mt-1 h-10 w-full rounded border border-neutral-200 px-3" value={form.period_end} onChange={(event) => setForm((current) => ({ ...current, period_end: event.target.value }))} /></label>
@@ -365,14 +389,19 @@ function IndicatorDataEntryModal({
                     </select>
                   </label>
                 ) : null}
+                {inputMode === "hybrid" ? (
+                  <label className="text-sm font-medium text-neutral-700 md:col-span-2">Override reason
+                    <input className="mt-1 h-10 w-full rounded border border-neutral-200 px-3" value={form.override_reason} onChange={(event) => setForm((current) => ({ ...current, override_reason: event.target.value }))} />
+                  </label>
+                ) : null}
                 <label className="text-sm font-medium text-neutral-700">Notes<input className="mt-1 h-10 w-full rounded border border-neutral-200 px-3" value={form.notes} onChange={(event) => setForm((current) => ({ ...current, notes: event.target.value }))} /></label>
               </div>
               {isQualitative ? (
                 <textarea className="mt-3 min-h-20 w-full rounded border border-neutral-200 px-3 py-2 text-sm" placeholder={qualitativeConfig?.requires_narrative ? "Narrative required" : "Narrative or qualitative notes"} value={form.qualitative_value_text} onChange={(event) => setForm((current) => ({ ...current, qualitative_value_text: event.target.value }))} />
               ) : null}
               <div className="mt-4 flex justify-end gap-2">
-                {selectedValue ? <button type="button" className="h-10 rounded border border-neutral-200 px-4 text-sm font-semibold text-neutral-700" onClick={() => setSelectedValue(null)}>Cancel revision</button> : null}
-                <button type="button" onClick={() => saveValueMutation.mutate()} disabled={saveValueMutation.isPending} className="h-10 rounded bg-brand-600 px-4 text-sm font-semibold text-white disabled:opacity-60">{saveValueMutation.isPending ? "Saving..." : "Save Draft"}</button>
+                {selectedValue && inputMode !== "hybrid" ? <button type="button" className="h-10 rounded border border-neutral-200 px-4 text-sm font-semibold text-neutral-700" onClick={() => setSelectedValue(null)}>Cancel revision</button> : null}
+                <button type="button" onClick={() => saveValueMutation.mutate()} disabled={saveValueMutation.isPending} className="h-10 rounded bg-brand-600 px-4 text-sm font-semibold text-white disabled:opacity-60">{saveValueMutation.isPending ? "Saving..." : inputMode === "hybrid" ? "Apply Override" : "Save Draft"}</button>
               </div>
             </section>
 
@@ -390,11 +419,12 @@ function IndicatorDataEntryModal({
                         <td className="py-3 pr-4"><span className={`rounded-full px-2 py-1 text-xs font-semibold ${statusClass(value.approval_status)}`}>{formatStatus(value.approval_status)}</span></td>
                         <td className="py-3 pr-4">
                           <div className="flex flex-wrap gap-2">
-                            {["draft", "rejected"].includes(value.approval_status) ? <button className="rounded border border-neutral-200 px-2 py-1 text-xs font-bold" onClick={() => editValue(value)} type="button">Edit</button> : null}
-                            {["draft", "rejected"].includes(value.approval_status) ? <button className="rounded border border-brand-200 px-2 py-1 text-xs font-bold text-brand-700" onClick={() => submitMutation.mutate(value.id)} type="button">Submit</button> : null}
+                            {inputMode !== "hybrid" && ["draft", "rejected"].includes(value.approval_status) ? <button className="rounded border border-neutral-200 px-2 py-1 text-xs font-bold" onClick={() => editValue(value)} type="button">Edit</button> : null}
+                            {inputMode !== "hybrid" && ["draft", "rejected"].includes(value.approval_status) ? <button className="rounded border border-brand-200 px-2 py-1 text-xs font-bold text-brand-700" onClick={() => submitMutation.mutate(value.id)} type="button">Submit</button> : null}
                             {value.approval_status === "submitted" ? <button className="rounded bg-brand-600 px-2 py-1 text-xs font-bold text-white" onClick={() => approveMutation.mutate(value.id)} type="button">Approve</button> : null}
                             {value.approval_status === "submitted" ? <button className="rounded border border-danger-100 px-2 py-1 text-xs font-bold text-danger-700" onClick={() => setRejecting(value)} type="button">Reject</button> : null}
                           </div>
+                          {value.value_source === "override" && value.override_reason ? <p className="mt-2 text-xs text-warning-700">Reason: {value.override_reason}</p> : null}
                         </td>
                       </tr>
                     ))}
