@@ -328,23 +328,29 @@ class Command(BaseCommand):
         self.stdout.write("  Seeded reporting template")
 
         me_indicators = [
-            ("Food Handler Certification Rate", "ME-CERT-RATE", "certificate_records", "quarterly", "card", True, "automatic"),
-            ("Vaccination Compliance Rate", "ME-VAX-RATE", "medical_test_records", "quarterly", "bar", True, "manual"),
-            ("Expired Certificate Rate", "ME-EXPIRED-RATE", "certificate_records", "monthly", "line", True, "automatic"),
-            ("Facility Accreditation Compliance", "ME-FACILITY-ACCRED", "facility_records", "quarterly", "bar", True, "automatic"),
-            ("State Reporting Compliance", "ME-STATE-REPORT", "manual", "quarterly", "table", True, "manual"),
-            ("QR Verification Failure Rate", "ME-QR-FAIL", "inspections", "monthly", "line", False, "automatic"),
-            ("Unfit Detection Rate", "ME-UNFIT-RATE", "test_results", "quarterly", "card", True, "manual"),
-            ("Return-to-Work Clearance Rate", "ME-RTW-RATE", "medical_test_records", "quarterly", "card", False, "hybrid"),
-            ("Data Completeness Score", "ME-DATA-COMPLETE", "food_handler_registry", "quarterly", "card", True, "automatic"),
+            ("Food Handler Certification Rate", "ME-CERT-RATE", "certificate_records", "quarterly", "card", True, "automatic", "percentage", "certificates", "FH-VALIDITY-2024-001", ""),
+            ("Vaccination Compliance Rate", "ME-VAX-RATE", "medical_test_records", "quarterly", "bar", True, "manual", "", "", "", ""),
+            ("Expired Certificate Rate", "ME-EXPIRED-RATE", "certificate_records", "monthly", "line", True, "automatic", "percentage", "certificates", "FH-VALIDITY-2024-001", "certificate_validity_months"),
+            ("Facility Accreditation Compliance", "ME-FACILITY-ACCRED", "facility_records", "quarterly", "bar", True, "automatic", "percentage", "medical_facilities", "FH-FAC-2024-001", "reaccreditation_interval_months"),
+            ("State Reporting Compliance", "ME-STATE-REPORT", "manual", "quarterly", "table", True, "manual", "", "", "", ""),
+            ("QR Verification Failure Rate", "ME-QR-FAIL", "inspections", "monthly", "line", False, "automatic", "percentage", "qr_verification_logs", "FH-CERT-2024-001", "requires_qr_code"),
+            ("Unfit Detection Rate", "ME-UNFIT-RATE", "test_results", "quarterly", "card", True, "manual", "", "", "", ""),
+            ("Return-to-Work Clearance Rate", "ME-RTW-RATE", "medical_test_records", "quarterly", "card", False, "hybrid", "percentage", "return_to_work_clearances", "FH-RTW-2024-001", "standard_exclusion_period_hours_after_symptoms_stop"),
+            ("Data Completeness Score", "ME-DATA-COMPLETE", "food_handler_registry", "quarterly", "card", True, "automatic", "percentage", "system_required_fields", "", ""),
         ]
-        for name, code, source, freq, viz, mandatory, input_mode in me_indicators:
+        for name, code, source, freq, viz, mandatory, input_mode, calculation_type, calculation_source, policy_standard_code, rule_parameter_key in me_indicators:
             MEIndicator.objects.create(
                 policy_version=pv,
                 indicator_name=name, indicator_code=code,
                 data_source=source, reporting_frequency=freq,
                 visualization_type=viz, mandatory=mandatory,
                 input_mode=input_mode,
+                calculation_type=calculation_type,
+                calculation_source=calculation_source,
+                policy_standard_code=policy_standard_code,
+                rule_parameter_key=rule_parameter_key,
+                allow_manual_override=input_mode == "hybrid",
+                override_requires_reason=input_mode == "hybrid",
                 federal_dashboard_visible=True,
                 state_dashboard_visible=True,
                 status="active",

@@ -690,42 +690,42 @@ class Command(BaseCommand):
         indicators = [
             (
                 "Food Handler Certification Rate", "ME-CERT-RATE",
-                "certificate_records", "quarterly", "card", True, "automatic",
+                "certificate_records", "quarterly", "card", True, "automatic", "percentage", "certificates", "FH-VALIDITY-2024-001", "",
             ),
             (
                 "Vaccination Compliance Rate", "ME-VAX-RATE",
-                "medical_test_records", "quarterly", "bar", True, "manual",
+                "medical_test_records", "quarterly", "bar", True, "manual", "", "", "", "",
             ),
             (
                 "Expired Certificate Rate", "ME-EXPIRED-RATE",
-                "certificate_records", "monthly", "line", True, "automatic",
+                "certificate_records", "monthly", "line", True, "automatic", "percentage", "certificates", "FH-VALIDITY-2024-001", "certificate_validity_months",
             ),
             (
                 "Facility Accreditation Compliance", "ME-FACILITY-ACCRED",
-                "facility_records", "quarterly", "bar", True, "automatic",
+                "facility_records", "quarterly", "bar", True, "automatic", "percentage", "medical_facilities", "FH-FAC-2024-001", "reaccreditation_interval_months",
             ),
             (
                 "State Reporting Compliance", "ME-STATE-REPORT",
-                "manual", "quarterly", "table", True, "manual",
+                "manual", "quarterly", "table", True, "manual", "", "", "", "",
             ),
             (
                 "QR Verification Failure Rate", "ME-QR-FAIL",
-                "inspections", "monthly", "line", False, "automatic",
+                "inspections", "monthly", "line", False, "automatic", "percentage", "qr_verification_logs", "FH-CERT-2024-001", "requires_qr_code",
             ),
             (
                 "Unfit Detection Rate", "ME-UNFIT-RATE",
-                "test_results", "quarterly", "card", True, "manual",
+                "test_results", "quarterly", "card", True, "manual", "", "", "", "",
             ),
             (
                 "Return-to-Work Clearance Rate", "ME-RTW-RATE",
-                "medical_test_records", "quarterly", "card", False, "hybrid",
+                "medical_test_records", "quarterly", "card", False, "hybrid", "percentage", "return_to_work_clearances", "FH-RTW-2024-001", "standard_exclusion_period_hours_after_symptoms_stop",
             ),
             (
                 "Data Completeness Score", "ME-DATA-COMPLETE",
-                "food_handler_registry", "quarterly", "card", True, "automatic",
+                "food_handler_registry", "quarterly", "card", True, "automatic", "percentage", "system_required_fields", "", "",
             ),
         ]
-        for name, code, source, freq, viz, mandatory, input_mode in indicators:
+        for name, code, source, freq, viz, mandatory, input_mode, calculation_type, calculation_source, policy_standard_code, rule_parameter_key in indicators:
             MEIndicator.objects.create(
                 policy_version=pv,
                 indicator_name=name,
@@ -734,6 +734,12 @@ class Command(BaseCommand):
                 reporting_frequency=freq,
                 visualization_type=viz,
                 input_mode=input_mode,
+                calculation_type=calculation_type,
+                calculation_source=calculation_source,
+                policy_standard_code=policy_standard_code,
+                rule_parameter_key=rule_parameter_key,
+                allow_manual_override=input_mode == "hybrid",
+                override_requires_reason=input_mode == "hybrid",
                 mandatory=mandatory,
                 federal_dashboard_visible=True,
                 state_dashboard_visible=True,

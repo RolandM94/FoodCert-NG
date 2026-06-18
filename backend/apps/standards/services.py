@@ -1,6 +1,6 @@
 from django.contrib.auth import get_user_model
 from django.core.cache import cache
-from django.db import transaction
+from django.db import models, transaction
 from django.utils import timezone
 
 from apps.audit.models import AuditAction
@@ -16,10 +16,17 @@ from apps.notifications.services import NotificationService
 from .models import (
     Approval,
     ApprovalStatus,
+    CertificateTemplate,
+    CertificateValidityRule,
+    FacilityRequirementCategory,
+    FacilityRequirementRule,
     ImpactLevel,
     PolicyVersion,
     PolicyVersionStatus,
+    ReturnToWorkRule,
+    StandardStatus,
     StateAcknowledgement,
+    TemplateStatus,
 )
 
 User = get_user_model()
@@ -27,9 +34,176 @@ User = get_user_model()
 ACTIVE_STANDARDS_CACHE_VERSION_KEY = "standards:active:cache_version"
 
 
+class ActivePolicyRuleError(ValueError):
+    pass
+
+
 def bump_active_standards_cache_version():
     current = cache.get(ACTIVE_STANDARDS_CACHE_VERSION_KEY, 1)
     cache.set(ACTIVE_STANDARDS_CACHE_VERSION_KEY, int(current) + 1, None)
+
+
+class ActivePolicyRuleService:
+    VALIDITY_STANDARD_CODE = "FH-VALIDITY-2024-001"
+    FACILITY_STANDARD_CODE = "FH-FAC-2024-001"
+    CERTIFICATE_STANDARD_CODE = "FH-CERT-2024-001"
+    RETURN_TO_WORK_STANDARD_CODE = "FH-RTW-2024-001"
+
+    STANDARD_RESOLVERS = {
+        VALIDITY_STANDARD_CODE: "_resolve_validity_standard",
+        FACILITY_STANDARD_CODE: "_resolve_facility_standard",
+        CERTIFICATE_STANDARD_CODE: "_resolve_certificate_standard",
+        RETURN_TO_WORK_STANDARD_CODE: "_resolve_return_to_work_standard",
+    }
+
+    @classmethod
+    def get_active_policy_version(cls):
+        now = timezone.now()
+        return PolicyVersion.objects.filter(
+            status=PolicyVersionStatus.ACTIVE,
+        ).filter(
+            models.Q(effective_start_date__isnull=True) | models.Q(effective_start_date__lte=now),
+        ).filter(
+            models.Q(effective_end_date__isnull=True) | models.Q(effective_end_date__gte=now),
+        ).order_by("-effective_start_date", "-published_at", "-created_at").first()
+
+    @classmethod
+    def get_active_policy_standard_by_code(cls, standard_code):
+        policy_version = cls.get_active_policy_version()
+        if not policy_version:
+            raise ActivePolicyRuleError("Active policy rule not found for this KPI calculation.")
+
+        resolver_name = cls.STANDARD_RESOLVERS.get(standard_code)
+        if not resolver_name:
+            raise ActivePolicyRuleError("Active policy rule not found for this KPI calculation.")
+
+        resolver = getattr(cls, resolver_name)
+        return resolver(policy_version)
+
+    @classmethod
+    def get_policy_rule_parameter(cls, standard_code, parameter_key):
+        standard = cls.get_active_policy_standard_by_code(standard_code)
+        parameters = standard.get("parameters", {})
+        if parameter_key not in parameters:
+            raise ActivePolicyRuleError("Active policy rule not found for this KPI calculation.")
+        return parameters[parameter_key]
+
+    @classmethod
+    def _resolve_validity_standard(cls, policy_version):
+        rule = CertificateValidityRule.objects.filter(
+            policy_version=policy_version,
+            status=TemplateStatus.ACTIVE,
+        ).order_by("-created_at").first()
+        if not rule:
+            raise ActivePolicyRuleError("Active policy rule not found for this KPI calculation.")
+        return {
+            "policy_version_id": str(policy_version.id),
+            "policy_standard_code": cls.VALIDITY_STANDARD_CODE,
+            "policy_standard_id": str(rule.id),
+            "parameters": {
+                "certificate_validity_days": rule.certificate_validity_days,
+                "certificate_validity_months": cls._months_from_days(rule.certificate_validity_days),
+                "assessment_validity_days": rule.routine_assessment_interval_days,
+                "assessment_validity_months": cls._months_from_days(rule.routine_assessment_interval_days),
+                "renewal_window_days": rule.renewal_window_days,
+                "grace_period_days": rule.grace_period_days,
+                "illness_suspension_enabled": rule.illness_suspension_enabled,
+                "emergency_revalidation_enabled": rule.emergency_revalidation_enabled,
+            },
+        }
+
+    @classmethod
+    def _resolve_facility_standard(cls, policy_version):
+        rules = FacilityRequirementRule.objects.filter(
+            policy_version=policy_version,
+            status=StandardStatus.ACTIVE,
+        ).order_by("requirement_name")
+        if not rules.exists():
+            raise ActivePolicyRuleError("Active policy rule not found for this KPI calculation.")
+        reaccreditation_rule = rules.filter(
+            category=FacilityRequirementCategory.REACCREDITATION,
+            renewal_required=True,
+            renewal_interval_days__isnull=False,
+        ).order_by("-renewal_interval_days", "-created_at").first()
+        if not reaccreditation_rule:
+            raise ActivePolicyRuleError("Active policy rule not found for this KPI calculation.")
+        return {
+            "policy_version_id": str(policy_version.id),
+            "policy_standard_code": cls.FACILITY_STANDARD_CODE,
+            "policy_standard_id": str(reaccreditation_rule.id),
+            "parameters": {
+                "reaccreditation_interval_days": reaccreditation_rule.renewal_interval_days,
+                "reaccreditation_interval_months": cls._months_from_days(reaccreditation_rule.renewal_interval_days),
+                "mandatory_requirement_count": rules.filter(mandatory=True).count(),
+            },
+        }
+
+    @classmethod
+    def _resolve_certificate_standard(cls, policy_version):
+        template = CertificateTemplate.objects.filter(
+            policy_version=policy_version,
+            status=TemplateStatus.ACTIVE,
+        ).order_by("-created_at").first()
+        if not template:
+            raise ActivePolicyRuleError("Active policy rule not found for this KPI calculation.")
+        qr_config = template.qr_payload_config or {}
+        required_fields = template.required_fields or []
+        requires_qr_code = "qr_code" in required_fields or bool(qr_config.get("verification_enabled"))
+        digitally_verifiable = bool(qr_config.get("verification_enabled")) and bool(qr_config.get("central_database_validation"))
+        return {
+            "policy_version_id": str(policy_version.id),
+            "policy_standard_code": cls.CERTIFICATE_STANDARD_CODE,
+            "policy_standard_id": str(template.id),
+            "parameters": {
+                "requires_qr_code": requires_qr_code,
+                "certificate_must_be_digitally_verifiable": digitally_verifiable,
+                "verification_enabled": bool(qr_config.get("verification_enabled")),
+                "central_database_validation": bool(qr_config.get("central_database_validation")),
+            },
+        }
+
+    @classmethod
+    def _resolve_return_to_work_standard(cls, policy_version):
+        rules = ReturnToWorkRule.objects.filter(
+            policy_version=policy_version,
+            status=StandardStatus.ACTIVE,
+        ).order_by("condition_name")
+        if not rules.exists():
+            raise ActivePolicyRuleError("Active policy rule not found for this KPI calculation.")
+        default_rule = rules.filter(condition_code="RTW-EXCLUDE-48H").first()
+        if not default_rule:
+            default_rule = rules.filter(default_exclusion_hours__gt=0).order_by("default_exclusion_hours").first()
+        if not default_rule:
+            raise ActivePolicyRuleError("Active policy rule not found for this KPI calculation.")
+        return {
+            "policy_version_id": str(policy_version.id),
+            "policy_standard_code": cls.RETURN_TO_WORK_STANDARD_CODE,
+            "policy_standard_id": str(default_rule.id),
+            "parameters": {
+                "standard_exclusion_period_hours_after_symptoms_stop": default_rule.default_exclusion_hours,
+                "specific_infection_clearance_rules": [
+                    {
+                        "condition_code": rule.condition_code,
+                        "condition_name": rule.condition_name,
+                        "default_exclusion_hours": rule.default_exclusion_hours,
+                        "requires_medical_clearance": rule.requires_medical_clearance,
+                        "requires_lab_clearance": rule.requires_lab_clearance,
+                        "negative_samples_required": rule.negative_samples_required,
+                        "sample_interval_hours": rule.sample_interval_hours,
+                        "requires_health_authority_approval": rule.requires_health_authority_approval,
+                        "employer_acknowledgement_required": rule.employer_acknowledgement_required,
+                        "clearance_document_required": rule.clearance_document_required,
+                    }
+                    for rule in rules
+                ],
+            },
+        }
+
+    @staticmethod
+    def _months_from_days(days):
+        if days in (None, ""):
+            return None
+        return int(round(int(days) / 30))
 
 
 def _recipient_for_user(user):

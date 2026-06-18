@@ -201,6 +201,17 @@ class KPIInputMode(models.TextChoices):
     HYBRID = "hybrid", "Hybrid"
 
 
+class KPICalculationType(models.TextChoices):
+    PERCENTAGE = "percentage", "Percentage"
+    COUNT = "count", "Count"
+    UNIQUE_COUNT = "unique_count", "Unique Count"
+    RATIO = "ratio", "Ratio"
+    AVERAGE = "average", "Average"
+    SUM = "sum", "Sum"
+    SCORE = "score", "Score"
+    FORMULA = "formula", "Formula"
+
+
 class KPIRecordInputType(models.TextChoices):
     PROGRESS_ONLY = "progress_only", "Progress Only"
     CUMULATIVE_ONLY = "cumulative_only", "Cumulative Only"
@@ -730,6 +741,24 @@ class MEIndicator(BaseModel):
     target_direction = models.CharField(
         max_length=24, choices=KPITargetDirection.choices,
         default=KPITargetDirection.HIGHER_BETTER,
+    )
+    calculation_type = models.CharField(
+        max_length=16, choices=KPICalculationType.choices,
+        blank=True, default="",
+    )
+    calculation_source = models.CharField(max_length=64, blank=True, default="")
+    numerator_definition = models.JSONField(default=dict, blank=True)
+    denominator_definition = models.JSONField(default=dict, blank=True)
+    policy_standard_code = models.CharField(max_length=64, blank=True, default="")
+    rule_parameter_key = models.CharField(max_length=128, blank=True, default="")
+    allow_manual_override = models.BooleanField(default=False)
+    override_requires_reason = models.BooleanField(default=False)
+    last_calculated_at = models.DateTimeField(null=True, blank=True)
+    latest_value = models.DecimalField(
+        max_digits=18, decimal_places=4, null=True, blank=True,
+    )
+    achievement_value = models.DecimalField(
+        max_digits=10, decimal_places=2, null=True, blank=True,
     )
     visibility_scope = models.JSONField(default=dict, blank=True)
     formula_config = models.JSONField(default=dict, blank=True)

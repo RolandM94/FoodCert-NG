@@ -13,6 +13,7 @@ from .models import (
     IndicatorDisaggregation,
     IndicatorEvidence,
     KPIInputMode,
+    KPICalculationType,
     KPIProgressRelationship,
     KPIRecordInputType,
     KPIType,
@@ -580,7 +581,12 @@ class MEIndicatorSerializer(serializers.ModelSerializer):
             "indicator_name", "indicator_code", "description",
             "kpi_type", "unit_of_measurement", "input_mode",
             "record_input_type", "progress_cumulative_relationship",
-            "target_direction", "visibility_scope",
+            "target_direction", "calculation_type", "calculation_source",
+            "numerator_definition", "denominator_definition",
+            "policy_standard_code", "rule_parameter_key",
+            "allow_manual_override", "override_requires_reason",
+            "last_calculated_at", "latest_value", "achievement_value",
+            "visibility_scope",
             "formula_config", "data_source", "reporting_frequency",
             "target_value", "threshold_config", "visualization_type",
             "federal_dashboard_visible", "state_dashboard_visible",
@@ -602,6 +608,7 @@ class MEIndicatorSerializer(serializers.ModelSerializer):
         relationship = attrs.get("progress_cumulative_relationship", formula_config.get("progress_relationship", getattr(self.instance, "progress_cumulative_relationship", KPIProgressRelationship.DEPENDENT)))
         data_source = attrs.get("data_source", getattr(self.instance, "data_source", "manual"))
         calculation_method = formula_config.get("calculation_method", "")
+        calculation_type = attrs.get("calculation_type", formula_config.get("calculation_type", getattr(self.instance, "calculation_type", "")))
 
         if record_input_type == KPIRecordInputType.PROGRESS_OR_CUMULATIVE and relationship == KPIProgressRelationship.INDEPENDENT:
             raise serializers.ValidationError("Independent relationship is invalid for progress-or-cumulative KPIs.")
@@ -609,7 +616,20 @@ class MEIndicatorSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("Quantitative KPIs require a unit of measurement.")
         if input_mode in {KPIInputMode.AUTOMATIC, KPIInputMode.HYBRID} and data_source not in FOOD_HANDLERS_DATA_SOURCES:
             raise serializers.ValidationError("Automatic and hybrid KPIs must use a Food Handlers operational data source.")
-        if calculation_method == "percentage" and not (formula_config.get("numerator") and formula_config.get("denominator")):
+        if input_mode == KPIInputMode.HYBRID and attrs.get("allow_manual_override", getattr(self.instance, "allow_manual_override", False)) is False:
+            raise serializers.ValidationError("Hybrid KPIs must allow manual override.")
+        if calculation_type == KPICalculationType.PERCENTAGE and not (
+            attrs.get("numerator_definition", getattr(self.instance, "numerator_definition", {}))
+            and attrs.get("denominator_definition", getattr(self.instance, "denominator_definition", {}))
+        ):
+            raise serializers.ValidationError("Percentage KPIs require numerator and denominator definitions.")
+        numerator_definition = attrs.get("numerator_definition", getattr(self.instance, "numerator_definition", {}))
+        denominator_definition = attrs.get("denominator_definition", getattr(self.instance, "denominator_definition", {}))
+        if calculation_method == "percentage" and not (
+            (formula_config.get("numerator") and formula_config.get("denominator"))
+            or (numerator_definition and denominator_definition)
+            or (formula_config.get("numerator_definition") and formula_config.get("denominator_definition"))
+        ):
             raise serializers.ValidationError("Percentage KPIs require numerator and denominator configuration.")
         return attrs
 
@@ -621,6 +641,14 @@ class MEIndicatorSerializer(serializers.ModelSerializer):
         formula_config.setdefault("record_input_mode", validated_data.get("record_input_type", KPIRecordInputType.PROGRESS_ONLY))
         formula_config.setdefault("progress_relationship", validated_data.get("progress_cumulative_relationship", KPIProgressRelationship.DEPENDENT))
         formula_config.setdefault("target_direction", validated_data.get("target_direction", "higher_better"))
+        formula_config.setdefault("calculation_type", validated_data.get("calculation_type", ""))
+        formula_config.setdefault("calculation_source", validated_data.get("calculation_source", ""))
+        formula_config.setdefault("numerator_definition", validated_data.get("numerator_definition", {}))
+        formula_config.setdefault("denominator_definition", validated_data.get("denominator_definition", {}))
+        formula_config.setdefault("policy_standard_code", validated_data.get("policy_standard_code", ""))
+        formula_config.setdefault("rule_parameter_key", validated_data.get("rule_parameter_key", ""))
+        formula_config.setdefault("allow_manual_override", validated_data.get("allow_manual_override", False))
+        formula_config.setdefault("override_requires_reason", validated_data.get("override_requires_reason", False))
         validated_data["formula_config"] = formula_config
         qualitative_config = validated_data.pop("qualitative_config", None)
         indicator = super().create(validated_data)
@@ -637,6 +665,14 @@ class MEIndicatorSerializer(serializers.ModelSerializer):
             ("record_input_type", "record_input_mode"),
             ("progress_cumulative_relationship", "progress_relationship"),
             ("target_direction", "target_direction"),
+            ("calculation_type", "calculation_type"),
+            ("calculation_source", "calculation_source"),
+            ("numerator_definition", "numerator_definition"),
+            ("denominator_definition", "denominator_definition"),
+            ("policy_standard_code", "policy_standard_code"),
+            ("rule_parameter_key", "rule_parameter_key"),
+            ("allow_manual_override", "allow_manual_override"),
+            ("override_requires_reason", "override_requires_reason"),
         ]:
             if field in validated_data:
                 formula_config[key] = validated_data[field]

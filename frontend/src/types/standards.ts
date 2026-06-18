@@ -369,6 +369,17 @@ export interface MEIndicator {
   record_input_type: "progress_only" | "cumulative_only" | "progress_or_cumulative";
   progress_cumulative_relationship: "dependent" | "same" | "independent";
   target_direction: "higher_better" | "lower_better" | "exact" | "range";
+  calculation_type: "" | "percentage" | "count" | "unique_count" | "ratio" | "average" | "sum" | "score" | "formula";
+  calculation_source: string;
+  numerator_definition: Record<string, unknown>;
+  denominator_definition: Record<string, unknown>;
+  policy_standard_code: string;
+  rule_parameter_key: string;
+  allow_manual_override: boolean;
+  override_requires_reason: boolean;
+  last_calculated_at: string | null;
+  latest_value: number | null;
+  achievement_value: number | null;
   visibility_scope: Record<string, unknown>;
   formula_config: Record<string, unknown>;
   data_source: DataSource;

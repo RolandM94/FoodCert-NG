@@ -9,6 +9,7 @@ from .models import (
     ApprovalStatus,
     CertificateTemplate,
     CertificateValidityRule,
+    FacilityRequirementRule,
     FoodHandlerCategory,
     ImpactLevel,
     IndicatorDisaggregatedValue,
@@ -26,13 +27,19 @@ from .models import (
     RiskLevel,
     ReportingFrequency,
     ReportingTemplate,
+    ReturnToWorkRule,
     RuleType,
     StandardStatus,
     TemplateStatus,
     TestType,
 )
 from .indicator_calculations import IndicatorCalculationService
-from .services import PolicyVersionService, bump_active_standards_cache_version
+from .services import (
+    ActivePolicyRuleError,
+    ActivePolicyRuleService,
+    PolicyVersionService,
+    bump_active_standards_cache_version,
+)
 
 
 User = get_user_model()
@@ -576,6 +583,47 @@ class MEIndicatorCalculationEngineTests(APITestCase):
         self.assertEqual(data["qualitative_config"]["input_type"], "rubric")
         self.assertTrue(QualitativeIndicatorConfig.objects.filter(indicator_id=data["id"]).exists())
 
+    def test_kpi_calculation_metadata_fields_are_saved_with_indicator(self):
+        response = self.client.post(
+            "/api/federal/standards/me-indicators/",
+            {
+                "policy_version": str(self.policy.id),
+                "indicator_name": "Expired Certificate Rate",
+                "indicator_code": "ME-EXPIRED-RATE",
+                "description": "Automatically calculated from certificate records.",
+                "kpi_type": "quantitative",
+                "unit_of_measurement": "Percentage",
+                "input_mode": "automatic",
+                "record_input_type": "progress_only",
+                "progress_cumulative_relationship": "dependent",
+                "target_direction": "lower_better",
+                "calculation_type": "percentage",
+                "calculation_source": "certificates",
+                "numerator_definition": {"status": "expired"},
+                "denominator_definition": {"status": "issued"},
+                "policy_standard_code": "FH-VALIDITY-2024-001",
+                "rule_parameter_key": "certificate_validity_months",
+                "allow_manual_override": False,
+                "override_requires_reason": False,
+                "visibility_scope": {"scope_type": "federal_and_state"},
+                "formula_config": {"calculation_method": "percentage"},
+                "data_source": "certificate_records",
+                "reporting_frequency": "monthly",
+                "visualization_type": "line",
+                "mandatory": True,
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 201, response.data)
+        data = payload(response)
+        self.assertEqual(data["input_mode"], "automatic")
+        self.assertEqual(data["calculation_type"], "percentage")
+        self.assertEqual(data["calculation_source"], "certificates")
+        self.assertEqual(data["policy_standard_code"], "FH-VALIDITY-2024-001")
+        self.assertEqual(data["rule_parameter_key"], "certificate_validity_months")
+        self.assertEqual(data["numerator_definition"], {"status": "expired"})
+        self.assertEqual(data["denominator_definition"], {"status": "issued"})
     def test_qualitative_value_preserves_category_rating_and_narrative(self):
         qualitative_indicator = MEIndicator.objects.create(
             policy_version=self.policy,
@@ -760,6 +808,108 @@ class MEIndicatorCalculationEngineTests(APITestCase):
         self.assertEqual(payload(preview)["summary"]["invalid"], 1)
         self.assertIn("Approved value already exists", payload(preview)["invalid_rows"][0]["errors"][0])
         self.assertEqual(confirmed.status_code, 400)
+
+
+class ActivePolicyRuleServiceTests(APITestCase):
+    def setUp(self):
+        cache.clear()
+        self.user = User.objects.create_user(
+            "federal-policy-rule-reader",
+            "federal-policy-rule-reader@example.com",
+            "StrongPass123!",
+            role=UserRole.FEDERAL_ADMIN,
+        )
+        self.policy = PolicyVersion.objects.create(
+            version_code="NG-FHS-2026-RULES",
+            title="Active policy rules",
+            description="Policy with active standards for KPI rule resolution.",
+            version_type=PolicyVersionType.MAJOR,
+            status=PolicyVersionStatus.ACTIVE,
+            change_summary="Testing active KPI policy lookups.",
+            created_by=self.user,
+        )
+        CertificateValidityRule.objects.create(
+            policy_version=self.policy,
+            routine_assessment_interval_days=180,
+            certificate_validity_days=180,
+            renewal_window_days=30,
+            grace_period_days=0,
+            status=TemplateStatus.ACTIVE,
+            created_by=self.user,
+        )
+        FacilityRequirementRule.objects.create(
+            policy_version=self.policy,
+            requirement_name="Annual Re-Accreditation",
+            requirement_code="FREQ-REACCREDIT-12M",
+            category="reaccreditation",
+            mandatory=True,
+            evidence_type="file",
+            renewal_required=True,
+            renewal_interval_days=365,
+            status=StandardStatus.ACTIVE,
+            created_by=self.user,
+        )
+        CertificateTemplate.objects.create(
+            policy_version=self.policy,
+            template_name="National Certificate",
+            template_version="2026.1",
+            required_fields=["certificate_id", "qr_code"],
+            qr_payload_config={"verification_enabled": True, "central_database_validation": True},
+            status=TemplateStatus.ACTIVE,
+            created_by=self.user,
+        )
+        ReturnToWorkRule.objects.create(
+            policy_version=self.policy,
+            condition_name="Default exclusion",
+            condition_code="RTW-EXCLUDE-48H",
+            default_exclusion_hours=48,
+            requires_medical_clearance=True,
+            employer_acknowledgement_required=True,
+            clearance_document_required=True,
+            status=StandardStatus.ACTIVE,
+            created_by=self.user,
+        )
+        ReturnToWorkRule.objects.create(
+            policy_version=self.policy,
+            condition_name="Cholera",
+            condition_code="RTW-CHOLERA",
+            default_exclusion_hours=168,
+            requires_medical_clearance=True,
+            requires_lab_clearance=True,
+            negative_samples_required=2,
+            sample_interval_hours=24,
+            status=StandardStatus.ACTIVE,
+            created_by=self.user,
+        )
+
+    def test_active_policy_rule_service_resolves_required_food_handler_codes(self):
+        validity = ActivePolicyRuleService.get_active_policy_standard_by_code("FH-VALIDITY-2024-001")
+        facility = ActivePolicyRuleService.get_active_policy_standard_by_code("FH-FAC-2024-001")
+        certificate = ActivePolicyRuleService.get_active_policy_standard_by_code("FH-CERT-2024-001")
+        return_to_work = ActivePolicyRuleService.get_active_policy_standard_by_code("FH-RTW-2024-001")
+
+        self.assertEqual(validity["parameters"]["certificate_validity_months"], 6)
+        self.assertEqual(validity["parameters"]["assessment_validity_months"], 6)
+        self.assertEqual(facility["parameters"]["reaccreditation_interval_months"], 12)
+        self.assertTrue(certificate["parameters"]["requires_qr_code"])
+        self.assertTrue(certificate["parameters"]["certificate_must_be_digitally_verifiable"])
+        self.assertEqual(
+            return_to_work["parameters"]["standard_exclusion_period_hours_after_symptoms_stop"],
+            48,
+        )
+        self.assertEqual(len(return_to_work["parameters"]["specific_infection_clearance_rules"]), 2)
+
+    def test_missing_active_policy_rule_returns_clear_error(self):
+        CertificateValidityRule.objects.filter(policy_version=self.policy).delete()
+
+        with self.assertRaisesMessage(
+            ActivePolicyRuleError,
+            "Active policy rule not found for this KPI calculation.",
+        ):
+            ActivePolicyRuleService.get_policy_rule_parameter(
+                "FH-VALIDITY-2024-001",
+                "certificate_validity_months",
+            )
 
 
 class StandardsHardeningTests(APITestCase):
