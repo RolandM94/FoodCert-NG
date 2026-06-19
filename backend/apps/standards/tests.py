@@ -641,6 +641,107 @@ class MEIndicatorCalculationEngineTests(APITestCase):
         self.assertEqual(data["rule_parameter_key"], "certificate_validity_months")
         self.assertEqual(data["numerator_definition"], {"status": "expired"})
         self.assertEqual(data["denominator_definition"], {"status": "issued"})
+
+    def test_builder_style_automatic_kpi_payload_persists_engine_contract_fields(self):
+        response = self.client.post(
+            "/api/federal/standards/me-indicators/",
+            {
+                "policy_version": str(self.policy.id),
+                "indicator_name": "Facility Accreditation Compliance",
+                "indicator_code": "ME-FACILITY-ACCRED",
+                "description": "Tracks compliant accredited facilities.",
+                "kpi_type": "quantitative",
+                "unit_of_measurement": "Percentage",
+                "input_mode": "automatic",
+                "record_input_type": "progress_only",
+                "progress_cumulative_relationship": "dependent",
+                "target_direction": "higher_better",
+                "calculation_type": "percentage",
+                "calculation_source": "medical_facilities",
+                "policy_standard_code": "FH-FAC-2024-001",
+                "rule_parameter_key": "reaccreditation_interval_months",
+                "visibility_scope": {"scope_type": "federal_and_state"},
+                "formula_config": {
+                    "indicator_type": "quantitative",
+                    "calculation_type": "percentage",
+                    "calculation_method": "percentage",
+                    "calculation_source": "medical_facilities",
+                    "policy_standard_code": "FH-FAC-2024-001",
+                    "rule_parameter_key": "reaccreditation_interval_months",
+                    "numerator_definition": {"status": "approved"},
+                    "denominator_definition": {"status": "all"},
+                    "link_data_source": True,
+                },
+                "numerator_definition": {"status": "approved"},
+                "denominator_definition": {"status": "all"},
+                "data_source": "facility_records",
+                "reporting_frequency": "quarterly",
+                "visualization_type": "line",
+                "mandatory": True,
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 201, response.data)
+        data = payload(response)
+        self.assertEqual(data["input_mode"], "automatic")
+        self.assertEqual(data["calculation_source"], "medical_facilities")
+        self.assertEqual(data["policy_standard_code"], "FH-FAC-2024-001")
+        self.assertEqual(data["rule_parameter_key"], "reaccreditation_interval_months")
+        self.assertEqual(data["formula_config"]["calculation_source"], "medical_facilities")
+        self.assertEqual(data["formula_config"]["policy_standard_code"], "FH-FAC-2024-001")
+        self.assertEqual(data["formula_config"]["rule_parameter_key"], "reaccreditation_interval_months")
+
+    def test_hybrid_kpi_requires_manual_override_and_reason_when_builder_payload_sets_it(self):
+        response = self.client.post(
+            "/api/federal/standards/me-indicators/",
+            {
+                "policy_version": str(self.policy.id),
+                "indicator_name": "Return To Work Clearance Rate",
+                "indicator_code": "ME-RTW-RATE",
+                "description": "Tracks timely illness clearance completion.",
+                "kpi_type": "quantitative",
+                "unit_of_measurement": "Percentage",
+                "input_mode": "hybrid",
+                "record_input_type": "progress_only",
+                "progress_cumulative_relationship": "dependent",
+                "target_direction": "higher_better",
+                "calculation_type": "percentage",
+                "calculation_source": "return_to_work_clearances",
+                "policy_standard_code": "FH-RTW-2024-001",
+                "rule_parameter_key": "standard_exclusion_period_hours_after_symptoms_stop",
+                "allow_manual_override": True,
+                "override_requires_reason": True,
+                "visibility_scope": {"scope_type": "federal_and_state"},
+                "formula_config": {
+                    "indicator_type": "quantitative",
+                    "calculation_type": "percentage",
+                    "calculation_method": "percentage",
+                    "calculation_source": "return_to_work_clearances",
+                    "policy_standard_code": "FH-RTW-2024-001",
+                    "rule_parameter_key": "standard_exclusion_period_hours_after_symptoms_stop",
+                    "allow_manual_override": True,
+                    "override_requires_reason": True,
+                    "numerator_definition": {"status": "cleared"},
+                    "denominator_definition": {"status": "required"},
+                    "link_data_source": True,
+                },
+                "numerator_definition": {"status": "cleared"},
+                "denominator_definition": {"status": "required"},
+                "data_source": "medical_test_records",
+                "reporting_frequency": "quarterly",
+                "visualization_type": "line",
+                "mandatory": True,
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 201, response.data)
+        data = payload(response)
+        self.assertTrue(data["allow_manual_override"])
+        self.assertTrue(data["override_requires_reason"])
+        self.assertEqual(data["calculation_source"], "return_to_work_clearances")
+        self.assertEqual(data["formula_config"]["override_requires_reason"], True)
     def test_qualitative_value_preserves_category_rating_and_narrative(self):
         qualitative_indicator = MEIndicator.objects.create(
             policy_version=self.policy,

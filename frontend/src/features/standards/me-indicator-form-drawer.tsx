@@ -8,8 +8,6 @@ import {
   createMEIndicator,
   createMEIndicatorDataSource,
   createMEIndicatorDisaggregation,
-  createMEIndicatorKpiSource,
-  listMEIndicators,
   updateMEIndicator,
 } from "@/lib/api/standards";
 import { getApiErrorMessage } from "@/lib/api/client";
@@ -36,7 +34,13 @@ type RecordInputMode = "progress_only" | "cumulative_only" | "progress_or_cumula
 type ProgressRelationship = "dependent" | "same" | "independent";
 type TargetDirection = "higher_better" | "lower_better" | "exact" | "range";
 type CalculationMethod = "manual" | "sum" | "count" | "unique_count" | "average" | "percentage" | "ratio" | "formula";
-type BuilderDataSource = DataSource | "kpi";
+type BuilderDataSource = DataSource;
+type EnginePreset = {
+  calculation_source: string;
+  policy_standard_code: string;
+  rule_parameter_key: string;
+  helper: string;
+};
 
 type TargetRow = {
   id: string;
@@ -77,6 +81,80 @@ const FREQUENCIES: ReportingFrequency[] = ["daily", "weekly", "monthly", "quarte
 const VISUALIZATIONS: VisualizationType[] = ["card", "line", "bar", "map", "table", "pie"];
 const UNITS = ["Number", "Percentage", "Rate", "Score", "Text", "Yes/No"];
 const today = "2026-06-15";
+const ENGINE_PRESETS: Record<Exclude<BuilderDataSource, "manual">, EnginePreset> = {
+  food_handler_registry: {
+    calculation_source: "system_required_fields",
+    policy_standard_code: "",
+    rule_parameter_key: "",
+    helper: "Use this for completeness and registration-quality KPIs derived from food handler profiles.",
+  },
+  medical_test_records: {
+    calculation_source: "return_to_work_clearances",
+    policy_standard_code: "FH-RTW-2024-001",
+    rule_parameter_key: "standard_exclusion_period_hours_after_symptoms_stop",
+    helper: "Best fit for return-to-work and illness clearance KPIs tied to medical workflows.",
+  },
+  test_results: {
+    calculation_source: "",
+    policy_standard_code: "",
+    rule_parameter_key: "",
+    helper: "Use for custom test-result KPIs when a policy-linked preset is not available yet.",
+  },
+  certificate_records: {
+    calculation_source: "certificates",
+    policy_standard_code: "FH-VALIDITY-2024-001",
+    rule_parameter_key: "certificate_validity_months",
+    helper: "Use for certification coverage, expiry, and certificate lifecycle KPIs.",
+  },
+  facility_records: {
+    calculation_source: "medical_facilities",
+    policy_standard_code: "FH-FAC-2024-001",
+    rule_parameter_key: "reaccreditation_interval_months",
+    helper: "Use for facility compliance and accreditation performance KPIs.",
+  },
+  facility_handler_mapping: {
+    calculation_source: "",
+    policy_standard_code: "",
+    rule_parameter_key: "",
+    helper: "Use for operational mapping KPIs where handlers are linked to specific facilities.",
+  },
+  test_centers_labs: {
+    calculation_source: "",
+    policy_standard_code: "",
+    rule_parameter_key: "",
+    helper: "Use for custom lab throughput or center performance KPIs.",
+  },
+  inspections: {
+    calculation_source: "qr_verification_logs",
+    policy_standard_code: "FH-CERT-2024-001",
+    rule_parameter_key: "requires_qr_code",
+    helper: "Use for QR verification and inspection-linked compliance indicators.",
+  },
+  training_orientation: {
+    calculation_source: "",
+    policy_standard_code: "",
+    rule_parameter_key: "",
+    helper: "Use for training uptake and orientation completion KPIs.",
+  },
+  payments: {
+    calculation_source: "",
+    policy_standard_code: "",
+    rule_parameter_key: "",
+    helper: "Use for revenue, payment completion, and settlement-oriented KPIs.",
+  },
+};
+
+function calculationTypeFromMethod(method: CalculationMethod): MEIndicator["calculation_type"] {
+  if (method === "manual") return "";
+  if (method === "percentage") return "percentage";
+  if (method === "count") return "count";
+  if (method === "unique_count") return "unique_count";
+  if (method === "average") return "average";
+  if (method === "ratio") return "ratio";
+  if (method === "sum") return "sum";
+  if (method === "formula") return "formula";
+  return "";
+}
 
 function valueFromConfig(config: Record<string, unknown> | undefined, key: string, fallback = "") {
   const value = config?.[key];
@@ -123,10 +201,6 @@ export function MEIndicatorFormDrawer({ open, onClose, onSuccess, mode, policyVe
     filter_field: "",
     filter_value: "",
   });
-  const [kpiSource, setKpiSource] = useState({
-    source_kpi_ids: [] as string[],
-    period_filter_mode: "current_period" as "all_time" | "current_period" | "custom_period",
-  });
   const [form, setForm] = useState({
     indicator_name: "",
     indicator_code: "",
@@ -141,7 +215,10 @@ export function MEIndicatorFormDrawer({ open, onClose, onSuccess, mode, policyVe
     target_direction: "higher_better" as TargetDirection,
     visibility_scope: "federal_and_state",
     calculation_method: "manual" as CalculationMethod,
+    calculation_source: "",
     data_source: "manual" as BuilderDataSource,
+    policy_standard_code: "",
+    rule_parameter_key: "",
     formula_expression: "",
     numerator: "",
     denominator: "",
@@ -161,18 +238,11 @@ export function MEIndicatorFormDrawer({ open, onClose, onSuccess, mode, policyVe
     link_data_source: false,
     disaggregation: false,
     allow_negative_progress: false,
+    override_requires_reason: true,
     federal_dashboard_visible: true,
     state_dashboard_visible: true,
     mandatory: true,
   });
-
-  const sourceKpisQuery = useQuery({
-    queryKey: ["kpi-source-options", policyVersionId, initial?.id],
-    queryFn: () => listMEIndicators({ policy_version: policyVersionId }),
-    enabled: open && form.link_data_source && form.data_source === "kpi",
-  });
-  const sourceKpis = (Array.isArray(sourceKpisQuery.data) ? sourceKpisQuery.data : [])
-    .filter((kpi) => kpi.id !== initial?.id);
 
   useEffect(() => {
     if (!open) return;
@@ -196,7 +266,10 @@ export function MEIndicatorFormDrawer({ open, onClose, onSuccess, mode, policyVe
       target_direction: (initial?.target_direction ?? valueFromConfig(formula, "target_direction", "higher_better")) as TargetDirection,
       visibility_scope: valueFromConfig(initial?.visibility_scope as Record<string, unknown> | undefined, "scope_type", valueFromConfig(formula, "visibility_scope", "federal_and_state")),
       calculation_method: valueFromConfig(formula, "calculation_method", "manual") as CalculationMethod,
+      calculation_source: initial?.calculation_source ?? valueFromConfig(formula, "calculation_source"),
       data_source: valueFromConfig(formula, "builder_data_source", initial?.data_source ?? "manual") as BuilderDataSource,
+      policy_standard_code: initial?.policy_standard_code ?? valueFromConfig(formula, "policy_standard_code"),
+      rule_parameter_key: initial?.rule_parameter_key ?? valueFromConfig(formula, "rule_parameter_key"),
       formula_expression: valueFromConfig(formula, "expression"),
       numerator: valueFromConfig(formula, "numerator"),
       denominator: valueFromConfig(formula, "denominator"),
@@ -216,6 +289,7 @@ export function MEIndicatorFormDrawer({ open, onClose, onSuccess, mode, policyVe
       link_data_source: boolFromConfig(formula, "link_data_source"),
       disaggregation: boolFromConfig(formula, "disaggregation"),
       allow_negative_progress: boolFromConfig(formula, "allow_negative_progress"),
+      override_requires_reason: initial?.override_requires_reason ?? boolFromConfig(formula, "override_requires_reason", true),
       federal_dashboard_visible: initial?.federal_dashboard_visible ?? true,
       state_dashboard_visible: initial?.state_dashboard_visible ?? true,
       mandatory: initial?.mandatory ?? true,
@@ -227,14 +301,6 @@ export function MEIndicatorFormDrawer({ open, onClose, onSuccess, mode, policyVe
       scope_field_id: valueFromConfig(formula, "scope_field_id"),
       filter_field: valueFromConfig(formula, "filter_field"),
       filter_value: valueFromConfig(formula, "filter_value"),
-    });
-    setKpiSource({
-      source_kpi_ids: Array.isArray(formula.source_kpi_ids)
-        ? formula.source_kpi_ids.map(String)
-        : Array.isArray(formula.source_indicator_ids)
-          ? formula.source_indicator_ids.map(String)
-          : [],
-      period_filter_mode: valueFromConfig(formula, "kpi_period_filter_mode", valueFromConfig(formula, "indicator_period_filter_mode", "current_period")) as "all_time" | "current_period" | "custom_period",
     });
     setTargets(targetsFromConfig(formula));
     setDisaggregationRows(
@@ -277,13 +343,22 @@ export function MEIndicatorFormDrawer({ open, onClose, onSuccess, mode, policyVe
     }).slice(0, 6);
   }, [form.baseline_date, form.reporting_frequency, form.target_date, targets]);
 
+  const activeEnginePreset = useMemo(() => {
+    if (form.data_source === "manual") return null;
+    return ENGINE_PRESETS[form.data_source];
+  }, [form.data_source]);
+
   const stepValid = useMemo(() => {
     switch (step) {
       case 0: return Boolean(form.indicator_name && form.indicator_code && form.reporting_frequency);
       case 1: return inputModeErrors.length === 0;
       case 2:
         if (form.input_mode === "manual") return true;
-        return form.link_data_source;
+        if (!form.link_data_source) return false;
+        if (form.input_mode === "automatic" || form.input_mode === "hybrid") {
+          return Boolean(form.calculation_source);
+        }
+        return true;
       case 3: return true;
       case 4: return true;
       default: return true;
@@ -304,6 +379,18 @@ export function MEIndicatorFormDrawer({ open, onClose, onSuccess, mode, policyVe
         progress_cumulative_relationship: form.progress_relationship,
         target_direction: form.target_direction,
         visibility_scope: { scope_type: form.visibility_scope },
+        calculation_type: calculationTypeFromMethod(form.calculation_method),
+        calculation_source: form.calculation_source,
+        policy_standard_code: form.policy_standard_code,
+        rule_parameter_key: form.rule_parameter_key,
+        allow_manual_override: form.input_mode === "hybrid",
+        override_requires_reason: form.input_mode === "hybrid" ? form.override_requires_reason : false,
+        numerator_definition: ["percentage", "ratio"].includes(form.calculation_method)
+          ? { expression: form.numerator.trim() }
+          : {},
+        denominator_definition: ["percentage", "ratio"].includes(form.calculation_method)
+          ? { expression: form.denominator.trim() }
+          : {},
         formula_config: {
           indicator_type: form.indicator_type,
           kpi_type: form.indicator_type,
@@ -316,19 +403,23 @@ export function MEIndicatorFormDrawer({ open, onClose, onSuccess, mode, policyVe
           progress_cumulative_relationship: form.progress_relationship,
           target_direction: form.target_direction,
           visibility_scope: form.visibility_scope,
+          calculation_type: calculationTypeFromMethod(form.calculation_method),
           calculation_method: form.calculation_method,
+          calculation_source: form.calculation_source,
           builder_data_source: form.data_source,
+          policy_standard_code: form.policy_standard_code,
+          rule_parameter_key: form.rule_parameter_key,
           value_field_id: operationalSource.value_field_id,
           unicity_field_id: operationalSource.unicity_field_id,
           date_field_id: operationalSource.date_field_id,
           scope_field_id: operationalSource.scope_field_id,
           filter_field: operationalSource.filter_field,
           filter_value: operationalSource.filter_value,
-          source_kpi_ids: kpiSource.source_kpi_ids,
-          kpi_period_filter_mode: kpiSource.period_filter_mode,
           expression: form.formula_expression,
           numerator: form.numerator,
           denominator: form.denominator,
+          numerator_definition: ["percentage", "ratio"].includes(form.calculation_method) ? { expression: form.numerator.trim() } : {},
+          denominator_definition: ["percentage", "ratio"].includes(form.calculation_method) ? { expression: form.denominator.trim() } : {},
           baseline_value: form.baseline_value,
           baseline_date: form.baseline_date,
           target_value: form.target_value,
@@ -338,8 +429,10 @@ export function MEIndicatorFormDrawer({ open, onClose, onSuccess, mode, policyVe
           disaggregation: form.disaggregation,
           disaggregation_dimensions: disaggregationRows,
           allow_negative_progress: form.allow_negative_progress,
+          allow_manual_override: form.input_mode === "hybrid",
+          override_requires_reason: form.input_mode === "hybrid" ? form.override_requires_reason : false,
         },
-        data_source: form.input_mode === "manual" || form.data_source === "kpi" ? "manual" : form.data_source,
+        data_source: form.input_mode === "manual" ? "manual" : form.data_source,
         reporting_frequency: form.reporting_frequency,
         target_value: form.target_value ? Number(form.target_value) : null,
         threshold_config: {
@@ -372,7 +465,7 @@ export function MEIndicatorFormDrawer({ open, onClose, onSuccess, mode, policyVe
       };
       if (mode === "edit" && initial?.id) return updateMEIndicator(initial.id, payload);
       const saved = await createMEIndicator(payload);
-      if (form.link_data_source && form.data_source !== "manual" && form.data_source !== "kpi") {
+      if (form.link_data_source && form.data_source !== "manual") {
         await createMEIndicatorDataSource(saved.id, {
           source_type: form.data_source,
           calculation_method: form.calculation_method === "manual" ? "sum" : form.calculation_method,
@@ -389,19 +482,11 @@ export function MEIndicatorFormDrawer({ open, onClose, onSuccess, mode, policyVe
           },
         });
       }
-      if (form.link_data_source && form.data_source === "kpi" && kpiSource.source_kpi_ids.length) {
-        await createMEIndicatorKpiSource(saved.id, {
-          source_kpi_ids: kpiSource.source_kpi_ids,
-          calculation_method: ["average", "ratio", "formula"].includes(form.calculation_method) ? form.calculation_method as "average" | "ratio" | "formula" : "sum",
-          period_filter_mode: kpiSource.period_filter_mode,
-        });
-      }
       if (form.disaggregation && mode === "create") {
-        const sourceType = form.data_source === "kpi" ? "kpi" : form.data_source;
         await Promise.all(disaggregationRows
           .filter((dimension) => dimension.field_id.trim() && dimension.field_label.trim())
           .map((dimension, index) => createMEIndicatorDisaggregation(saved.id, {
-            source_type: sourceType,
+            source_type: form.data_source,
             field_id: dimension.field_id.trim(),
             field_label: dimension.field_label.trim(),
             level: index + 1,
@@ -427,12 +512,32 @@ export function MEIndicatorFormDrawer({ open, onClose, onSuccess, mode, policyVe
       if (field === "input_mode" && (value === "manual" || value === "imported")) {
         next.data_source = "manual";
         next.link_data_source = false;
+        next.calculation_source = "";
+        next.policy_standard_code = "";
+        next.rule_parameter_key = "";
       }
-      if (field === "data_source" && value === "kpi" && !["sum", "average", "ratio", "formula"].includes(next.calculation_method)) {
-        next.calculation_method = "sum";
+      if (field === "input_mode" && value === "hybrid") {
+        next.override_requires_reason = true;
       }
-      if (field === "data_source" && value !== "kpi" && next.calculation_method === "ratio") {
+      if (field === "data_source" && next.calculation_method === "ratio") {
         next.calculation_method = "percentage";
+      }
+      if (field === "data_source" && value !== "manual") {
+        const preset = ENGINE_PRESETS[value as Exclude<BuilderDataSource, "manual">];
+        if (preset) {
+          next.calculation_source = preset.calculation_source;
+          if (!next.policy_standard_code || next.policy_standard_code === prev.policy_standard_code) {
+            next.policy_standard_code = preset.policy_standard_code;
+          }
+          if (!next.rule_parameter_key || next.rule_parameter_key === prev.rule_parameter_key) {
+            next.rule_parameter_key = preset.rule_parameter_key;
+          }
+        }
+      }
+      if (field === "link_data_source" && value === false) {
+        next.calculation_source = "";
+        next.policy_standard_code = "";
+        next.rule_parameter_key = "";
       }
       return next;
     });
@@ -462,15 +567,6 @@ export function MEIndicatorFormDrawer({ open, onClose, onSuccess, mode, policyVe
 
   function removeDisaggregationRow(id: string) {
     setDisaggregationRows((current) => current.length > 1 ? current.filter((row) => row.id !== id) : current);
-  }
-
-  function toggleSourceKpi(id: string) {
-    setKpiSource((current) => ({
-      ...current,
-      source_kpi_ids: current.source_kpi_ids.includes(id)
-        ? current.source_kpi_ids.filter((sourceId) => sourceId !== id)
-        : [...current.source_kpi_ids, id],
-    }));
   }
 
   function handleSubmit(event: React.FormEvent) {
@@ -682,6 +778,17 @@ export function MEIndicatorFormDrawer({ open, onClose, onSuccess, mode, policyVe
                     </label>
                   </div>
 
+                  {form.input_mode === "hybrid" ? (
+                    <div className="rounded-lg border border-warning-200 bg-warning-50 p-4">
+                      <h4 className="text-sm font-semibold text-warning-900">Hybrid KPI workflow</h4>
+                      <p className="mt-1 text-sm text-warning-800">This KPI will auto-calculate from operational records, but federal users can override a reporting period value when necessary.</p>
+                      <label className="mt-3 inline-flex items-center gap-2 text-sm font-medium text-warning-900">
+                        <input type="checkbox" checked={form.override_requires_reason} onChange={(event) => update("override_requires_reason", event.target.checked)} className="h-4 w-4 accent-brand-600" />
+                        Require a reason whenever an override is applied
+                      </label>
+                    </div>
+                  ) : null}
+
                   {form.indicator_type === "qualitative" ? (
                     <div className="rounded-lg border border-neutral-200 bg-white p-5">
                       <h4 className="text-sm font-semibold text-neutral-950">Qualitative Input Configuration</h4>
@@ -825,29 +932,19 @@ export function MEIndicatorFormDrawer({ open, onClose, onSuccess, mode, policyVe
                             <label className="block text-sm font-semibold text-neutral-700">
                               Data Source
                               <select className="mt-1.5 h-11 w-full rounded-md border border-neutral-200 bg-white px-3 text-sm" value={form.data_source} onChange={(event) => update("data_source", event.target.value)}>
-                                <option value="kpi">KPI Dependency</option>
                                 {DATA_SOURCES.map((source) => <option key={source} value={source}>{nice(source)}</option>)}
                               </select>
                             </label>
                             <label className="block text-sm font-semibold text-neutral-700">
                               Calculation Method
                               <select className="mt-1.5 h-11 w-full rounded-md border border-neutral-200 bg-white px-3 text-sm" value={form.calculation_method} onChange={(event) => update("calculation_method", event.target.value)}>
-                                {form.data_source === "kpi" ? null : <option value="manual">Manual</option>}
+                                <option value="manual">Manual</option>
                                 <option value="sum">Sum</option>
                                 <option value="average">Average</option>
-                                {form.data_source === "kpi" ? (
-                                  <>
-                                    <option value="ratio">Ratio</option>
-                                    <option value="formula">Formula</option>
-                                  </>
-                                ) : (
-                                  <>
-                                    <option value="count">Count</option>
-                                    <option value="unique_count">Unique Count</option>
-                                    <option value="percentage">Percentage</option>
-                                    <option value="formula">Formula</option>
-                                  </>
-                                )}
+                                <option value="count">Count</option>
+                                <option value="unique_count">Unique Count</option>
+                                <option value="percentage">Percentage</option>
+                                <option value="formula">Formula</option>
                               </select>
                             </label>
                             <label className="block text-sm font-semibold text-neutral-700">
@@ -856,94 +953,88 @@ export function MEIndicatorFormDrawer({ open, onClose, onSuccess, mode, policyVe
                             </label>
                           </div>
 
-                          {form.data_source !== "kpi" ? (
-                            <div className="space-y-4 rounded-lg border border-brand-100 bg-brand-50/30 p-5">
-                              <p className="text-sm font-semibold text-brand-800">Operational Data Source Fields</p>
-                              <div className="grid gap-4 sm:grid-cols-2">
-                                <label className="block text-sm font-medium text-neutral-700">
-                                  Value field key
-                                  <input className="mt-1 h-11 w-full rounded-md border border-neutral-200 px-3 text-sm" placeholder="e.g. completed_tests" value={operationalSource.value_field_id} onChange={(event) => setOperationalSource((current) => ({ ...current, value_field_id: event.target.value }))} />
-                                </label>
-                                <label className="block text-sm font-medium text-neutral-700">
-                                  Unicity field key
-                                  <input className="mt-1 h-11 w-full rounded-md border border-neutral-200 px-3 text-sm" placeholder="e.g. handler_id" value={operationalSource.unicity_field_id} onChange={(event) => setOperationalSource((current) => ({ ...current, unicity_field_id: event.target.value }))} />
-                                </label>
-                                <label className="block text-sm font-medium text-neutral-700">
-                                  Date field key
-                                  <input className="mt-1 h-11 w-full rounded-md border border-neutral-200 px-3 text-sm" placeholder="e.g. issued_at" value={operationalSource.date_field_id} onChange={(event) => setOperationalSource((current) => ({ ...current, date_field_id: event.target.value }))} />
-                                </label>
-                                <label className="block text-sm font-medium text-neutral-700">
-                                  Scope field key
-                                  <input className="mt-1 h-11 w-full rounded-md border border-neutral-200 px-3 text-sm" placeholder="e.g. state_code" value={operationalSource.scope_field_id} onChange={(event) => setOperationalSource((current) => ({ ...current, scope_field_id: event.target.value }))} />
-                                </label>
-                              </div>
-                              <div className="grid gap-4 sm:grid-cols-2">
-                                <label className="block text-sm font-medium text-neutral-700">
-                                  Filter field
-                                  <input className="mt-1 h-11 w-full rounded-md border border-neutral-200 px-3 text-sm" placeholder="Field to filter by" value={operationalSource.filter_field} onChange={(event) => setOperationalSource((current) => ({ ...current, filter_field: event.target.value }))} />
-                                </label>
-                                <label className="block text-sm font-medium text-neutral-700">
-                                  Filter value
-                                  <input className="mt-1 h-11 w-full rounded-md border border-neutral-200 px-3 text-sm" placeholder="Expected value" value={operationalSource.filter_value} onChange={(event) => setOperationalSource((current) => ({ ...current, filter_value: event.target.value }))} />
-                                </label>
-                              </div>
-                              {["percentage", "ratio"].includes(form.calculation_method) ? (
-                                <div className="grid gap-4 sm:grid-cols-2">
-                                  <label className="block text-sm font-medium text-neutral-700">
-                                    Numerator
-                                    <input className="mt-1 h-11 w-full rounded-md border border-neutral-200 px-3 text-sm" placeholder="Numerator expression or field" value={form.numerator} onChange={(event) => update("numerator", event.target.value)} />
-                                  </label>
-                                  <label className="block text-sm font-medium text-neutral-700">
-                                    Denominator
-                                    <input className="mt-1 h-11 w-full rounded-md border border-neutral-200 px-3 text-sm" placeholder="Denominator expression or field" value={form.denominator} onChange={(event) => update("denominator", event.target.value)} />
-                                  </label>
-                                </div>
-                              ) : null}
-                              <p className="text-xs text-neutral-500">Use field keys from Food Handler operational records (e.g. handler_id, certificate_status, facility_state, test_result).</p>
+                          <div className="rounded-lg border border-neutral-200 bg-neutral-50 p-4">
+                            <div className="grid gap-4 sm:grid-cols-3">
+                              <label className="block text-sm font-semibold text-neutral-700">
+                                Engine source
+                                <input
+                                  className="mt-1.5 h-11 w-full rounded-md border border-neutral-200 px-3 text-sm"
+                                  placeholder="e.g. certificates"
+                                  value={form.calculation_source}
+                                  onChange={(event) => update("calculation_source", event.target.value)}
+                                />
+                              </label>
+                              <label className="block text-sm font-semibold text-neutral-700">
+                                Policy standard code
+                                <input
+                                  className="mt-1.5 h-11 w-full rounded-md border border-neutral-200 px-3 font-mono text-sm"
+                                  placeholder="e.g. FH-VALIDITY-2024-001"
+                                  value={form.policy_standard_code}
+                                  onChange={(event) => update("policy_standard_code", event.target.value)}
+                                />
+                              </label>
+                              <label className="block text-sm font-semibold text-neutral-700">
+                                Rule parameter key
+                                <input
+                                  className="mt-1.5 h-11 w-full rounded-md border border-neutral-200 px-3 text-sm"
+                                  placeholder="e.g. certificate_validity_months"
+                                  value={form.rule_parameter_key}
+                                  onChange={(event) => update("rule_parameter_key", event.target.value)}
+                                />
+                              </label>
                             </div>
-                          ) : null}
+                            <p className="mt-3 text-xs text-neutral-500">
+                              {activeEnginePreset?.helper || "Use these fields to bind the KPI to an active federal policy rule and to the automatic KPI engine."}
+                            </p>
+                            <p className="mt-1 text-xs text-neutral-500">
+                              Automatic and hybrid KPIs must use a Food Handlers operational source. KPI-to-KPI dependency is not available in this workflow.
+                            </p>
+                          </div>
 
-                          {form.data_source === "kpi" ? (
-                            <div className="rounded-lg border border-brand-100 bg-brand-50/30 p-5">
-                              <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_220px]">
-                                <div>
-                                  <p className="text-sm font-semibold text-brand-800">Source KPIs</p>
-                                  <p className="mt-1 text-xs text-neutral-500">Select one or more KPIs to use as inputs. Only approved source KPI values are included.</p>
-                                  <div className="mt-3 max-h-60 space-y-2 overflow-y-auto rounded-md border border-neutral-200 bg-white p-2">
-                                    {sourceKpisQuery.isLoading ? <p className="px-2 py-3 text-sm text-neutral-500">Loading KPIs...</p> : null}
-                                    {!sourceKpisQuery.isLoading && sourceKpis.length === 0 ? <p className="px-2 py-3 text-sm text-neutral-500">No other KPIs available in this policy version.</p> : null}
-                                    {sourceKpis.map((sourceKpi) => (
-                                      <label key={sourceKpi.id} className="flex items-start gap-3 rounded px-2 py-2 text-sm hover:bg-neutral-50">
-                                        <input
-                                          className="mt-1 h-4 w-4 accent-brand-600"
-                                          type="checkbox"
-                                          checked={kpiSource.source_kpi_ids.includes(sourceKpi.id)}
-                                          onChange={() => toggleSourceKpi(sourceKpi.id)}
-                                        />
-                                        <span className="min-w-0">
-                                          <span className="block font-medium text-neutral-900">{sourceKpi.indicator_name}</span>
-                                          <span className="block truncate text-xs text-slate-400">{sourceKpi.indicator_code}</span>
-                                        </span>
-                                      </label>
-                                    ))}
-                                  </div>
-                                </div>
-                                <label className="block text-sm font-semibold text-neutral-700">
-                                  Period Mode
-                                  <select
-                                    className="mt-1.5 h-11 w-full rounded-md border border-neutral-200 bg-white px-3 text-sm"
-                                    value={kpiSource.period_filter_mode}
-                                    onChange={(event) => setKpiSource((current) => ({ ...current, period_filter_mode: event.target.value as typeof current.period_filter_mode }))}
-                                  >
-                                    <option value="all_time">All approved data</option>
-                                    <option value="current_period">Matching reporting period</option>
-                                    <option value="custom_period">Custom date range</option>
-                                  </select>
+                          <div className="space-y-4 rounded-lg border border-brand-100 bg-brand-50/30 p-5">
+                            <p className="text-sm font-semibold text-brand-800">Operational Data Source Fields</p>
+                            <div className="grid gap-4 sm:grid-cols-2">
+                              <label className="block text-sm font-medium text-neutral-700">
+                                Value field key
+                                <input className="mt-1 h-11 w-full rounded-md border border-neutral-200 px-3 text-sm" placeholder="e.g. completed_tests" value={operationalSource.value_field_id} onChange={(event) => setOperationalSource((current) => ({ ...current, value_field_id: event.target.value }))} />
+                              </label>
+                              <label className="block text-sm font-medium text-neutral-700">
+                                Unicity field key
+                                <input className="mt-1 h-11 w-full rounded-md border border-neutral-200 px-3 text-sm" placeholder="e.g. handler_id" value={operationalSource.unicity_field_id} onChange={(event) => setOperationalSource((current) => ({ ...current, unicity_field_id: event.target.value }))} />
+                              </label>
+                              <label className="block text-sm font-medium text-neutral-700">
+                                Date field key
+                                <input className="mt-1 h-11 w-full rounded-md border border-neutral-200 px-3 text-sm" placeholder="e.g. issued_at" value={operationalSource.date_field_id} onChange={(event) => setOperationalSource((current) => ({ ...current, date_field_id: event.target.value }))} />
+                              </label>
+                              <label className="block text-sm font-medium text-neutral-700">
+                                Scope field key
+                                <input className="mt-1 h-11 w-full rounded-md border border-neutral-200 px-3 text-sm" placeholder="e.g. state_code" value={operationalSource.scope_field_id} onChange={(event) => setOperationalSource((current) => ({ ...current, scope_field_id: event.target.value }))} />
+                              </label>
+                            </div>
+                            <div className="grid gap-4 sm:grid-cols-2">
+                              <label className="block text-sm font-medium text-neutral-700">
+                                Filter field
+                                <input className="mt-1 h-11 w-full rounded-md border border-neutral-200 px-3 text-sm" placeholder="Field to filter by" value={operationalSource.filter_field} onChange={(event) => setOperationalSource((current) => ({ ...current, filter_field: event.target.value }))} />
+                              </label>
+                              <label className="block text-sm font-medium text-neutral-700">
+                                Filter value
+                                <input className="mt-1 h-11 w-full rounded-md border border-neutral-200 px-3 text-sm" placeholder="Expected value" value={operationalSource.filter_value} onChange={(event) => setOperationalSource((current) => ({ ...current, filter_value: event.target.value }))} />
+                              </label>
+                            </div>
+                            {["percentage", "ratio"].includes(form.calculation_method) ? (
+                              <div className="grid gap-4 sm:grid-cols-2">
+                                <label className="block text-sm font-medium text-neutral-700">
+                                  Numerator
+                                  <input className="mt-1 h-11 w-full rounded-md border border-neutral-200 px-3 text-sm" placeholder="Numerator expression or field" value={form.numerator} onChange={(event) => update("numerator", event.target.value)} />
+                                </label>
+                                <label className="block text-sm font-medium text-neutral-700">
+                                  Denominator
+                                  <input className="mt-1 h-11 w-full rounded-md border border-neutral-200 px-3 text-sm" placeholder="Denominator expression or field" value={form.denominator} onChange={(event) => update("denominator", event.target.value)} />
                                 </label>
                               </div>
-                              <p className="mt-3 text-xs text-neutral-500">Circular dependencies are automatically blocked when the link is saved.</p>
-                            </div>
-                          ) : null}
+                            ) : null}
+                            <p className="text-xs text-neutral-500">Use field keys from Food Handler operational records (e.g. handler_id, certificate_status, facility_state, test_result).</p>
+                          </div>
                         </div>
                       ) : (
                         <div className="rounded-lg border border-dashed border-neutral-300 bg-neutral-50 p-8 text-center">
@@ -1125,6 +1216,7 @@ export function MEIndicatorFormDrawer({ open, onClose, onSuccess, mode, policyVe
                           <p><span className="font-medium text-neutral-700">Input Type:</span> {nice(form.record_input_mode)}</p>
                           <p><span className="font-medium text-neutral-700">Relationship:</span> {nice(form.progress_relationship)}</p>
                           <p><span className="font-medium text-neutral-700">Target Direction:</span> {formatStatus(form.target_direction)}</p>
+                          {form.input_mode === "hybrid" ? <p><span className="font-medium text-neutral-700">Override reason required:</span> {form.override_requires_reason ? "Yes" : "No"}</p> : null}
                           {form.indicator_type === "qualitative" ? <p><span className="font-medium text-neutral-700">Format:</span> {nice(form.qualitative_input_type)}</p> : null}
                         </div>
                       </div>
@@ -1133,10 +1225,12 @@ export function MEIndicatorFormDrawer({ open, onClose, onSuccess, mode, policyVe
                         <div className="space-y-1 text-sm">
                           {form.link_data_source ? (
                             <>
-                              <p><span className="font-medium text-neutral-700">Source:</span> {form.data_source === "kpi" ? "KPI Dependency" : nice(form.data_source)}</p>
+                              <p><span className="font-medium text-neutral-700">Source:</span> {nice(form.data_source)}</p>
                               <p><span className="font-medium text-neutral-700">Method:</span> {nice(form.calculation_method)}</p>
-                              {form.data_source !== "kpi" && operationalSource.value_field_id ? <p><span className="font-medium text-neutral-700">Value field:</span> {operationalSource.value_field_id}</p> : null}
-                              {form.data_source === "kpi" && kpiSource.source_kpi_ids.length > 0 ? <p><span className="font-medium text-neutral-700">Source KPIs:</span> {kpiSource.source_kpi_ids.length} selected</p> : null}
+                              {form.calculation_source ? <p><span className="font-medium text-neutral-700">Engine source:</span> {form.calculation_source}</p> : null}
+                              {form.policy_standard_code ? <p><span className="font-medium text-neutral-700">Policy standard:</span> {form.policy_standard_code}</p> : null}
+                              {form.rule_parameter_key ? <p><span className="font-medium text-neutral-700">Rule parameter:</span> {form.rule_parameter_key}</p> : null}
+                              {form.data_source !== "manual" && operationalSource.value_field_id ? <p><span className="font-medium text-neutral-700">Value field:</span> {operationalSource.value_field_id}</p> : null}
                             </>
                           ) : (
                             <p className="text-neutral-400">No data source linked (manual entry)</p>
