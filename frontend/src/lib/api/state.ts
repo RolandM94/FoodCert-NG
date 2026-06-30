@@ -13,9 +13,11 @@ function unwrapMaybe<T>(value: ApiEnvelope<T> | T): T {
 export type StateDashboardParams = {
   state?: string;
   lga?: string;
+  facility?: string;
   date_from?: string;
   date_to?: string;
   employer_category?: string;
+  food_handler_category?: string;
   certificate_status?: string;
 };
 
@@ -283,12 +285,22 @@ export type StateAuditLogItem = {
   created_at: string;
   actor_name?: string;
   actor_email?: string;
+  actor_role?: string;
   action: string;
   module: string;
   event: string;
+  entity: string;
+  entity_label: string;
   target_type: string;
   target_id: string;
   status: string;
+  risk_level: "low" | "medium" | "high";
+  organization_name?: string;
+  state_name?: string;
+  lga_id?: string;
+  lga_name?: string;
+  facility_id?: string;
+  facility_name?: string;
   ip_address?: string | null;
   user_agent: string;
   metadata: Record<string, unknown>;
@@ -775,6 +787,7 @@ export type StateInspectionAuditLog = {
 };
 
 export type StateInspectionItem = Inspection & {
+  reference?: string;
   state_name?: string;
   lga_name?: string;
   responses?: Array<{

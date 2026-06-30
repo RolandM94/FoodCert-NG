@@ -69,6 +69,66 @@ class DataQualityIssueStatus(models.TextChoices):
     ESCALATED = "escalated", "Escalated"
 
 
+class DashboardAccountType(models.TextChoices):
+    FEDERAL = "federal", "Federal Ministry"
+    STATE = "state", "State Ministry"
+    EMPLOYER = "employer", "Employer / Food Business"
+    MEDICAL_FACILITY = "medical_facility", "Medical Facility"
+    PLATFORM_ADMIN = "platform_admin", "Platform Admin"
+
+
+class DashboardScopeType(models.TextChoices):
+    PRIVATE = "private", "Private"
+    ORGANIZATION = "organization", "Organization"
+    ROLE_BASED = "role_based", "Role Based"
+    SELECTED_USERS = "selected_users", "Selected Users"
+    FEDERAL_ONLY = "federal_only", "Federal Only"
+    STATE_ONLY = "state_only", "State Only"
+    PUBLIC = "public", "Public"
+
+
+class DashboardPrivacyLevel(models.TextChoices):
+    PUBLIC = "public", "Public"
+    INTERNAL = "internal", "Internal"
+    CONFIDENTIAL = "confidential", "Confidential"
+    PII = "pii", "PII"
+    MEDICAL = "medical", "Medical"
+    FINANCIAL = "financial", "Financial"
+    SECURITY = "security", "Security"
+
+
+class DashboardBlockType(models.TextChoices):
+    WIDGET = "widget", "Widget Block"
+    TEXT = "text", "Text Block"
+    FILTER = "filter", "Filter Block"
+    AI_INSIGHT = "ai_insight", "AI Insight Block"
+    DATASET_PREVIEW = "dataset_preview", "Dataset Preview Block"
+    QUICK_ACTION = "quick_action", "Quick Action Block"
+    DIVIDER = "divider", "Divider / Section Header"
+
+
+class DashboardAlertOperator(models.TextChoices):
+    GREATER_THAN = "gt", "Greater Than"
+    GREATER_THAN_OR_EQUAL = "gte", "Greater Than or Equal"
+    LESS_THAN = "lt", "Less Than"
+    LESS_THAN_OR_EQUAL = "lte", "Less Than or Equal"
+    EQUAL = "eq", "Equal"
+    NOT_EQUAL = "neq", "Not Equal"
+
+
+class DashboardAlertStatus(models.TextChoices):
+    TRIGGERED = "triggered", "Triggered"
+    RESOLVED = "resolved", "Resolved"
+    NO_DATA = "no_data", "No Data"
+
+
+class DashboardExportJobStatus(models.TextChoices):
+    PENDING = "pending", "Pending"
+    PROCESSING = "processing", "Processing"
+    COMPLETED = "completed", "Completed"
+    FAILED = "failed", "Failed"
+
+
 class ReportTemplate(BaseModel):
     code = models.CharField(max_length=100, unique=True, db_index=True)
     name = models.CharField(max_length=255)
@@ -171,6 +231,290 @@ class DashboardWidget(BaseModel):
 
     def __str__(self) -> str:
         return f"{self.name} ({self.dashboard_scope})"
+
+
+class AnalyticsDataset(BaseModel):
+    code = models.CharField(max_length=100, unique=True, db_index=True)
+    name = models.CharField(max_length=255)
+    description = models.TextField(blank=True)
+    module_source = models.CharField(max_length=100, db_index=True)
+    allowed_account_types = models.JSONField(default=list, blank=True)
+    allowed_roles = models.JSONField(default=list, blank=True)
+    available_fields = models.JSONField(default=list, blank=True)
+    field_labels = models.JSONField(default=dict, blank=True)
+    field_types = models.JSONField(default=dict, blank=True)
+    field_type_metadata = models.JSONField(default=dict, blank=True)
+    sensitive_fields = models.JSONField(default=list, blank=True)
+    default_filters = models.JSONField(default=dict, blank=True)
+    joinable_datasets = models.JSONField(default=list, blank=True)
+    aggregation_rules = models.JSONField(default=dict, blank=True)
+    required_permissions = models.JSONField(default=list, blank=True)
+    privacy_level = models.CharField(max_length=32, choices=DashboardPrivacyLevel.choices, default=DashboardPrivacyLevel.INTERNAL, db_index=True)
+    is_active = models.BooleanField(default=True, db_index=True)
+
+    class Meta:
+        ordering = ["module_source", "name"]
+        indexes = [
+            models.Index(fields=["code"]),
+            models.Index(fields=["module_source", "is_active"]),
+            models.Index(fields=["privacy_level", "is_active"]),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.name} ({self.module_source})"
+
+
+class AnalyticsWorksheet(BaseModel):
+    owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="analytics_worksheets")
+    organization = models.ForeignKey("organizations.Organization", on_delete=models.SET_NULL, null=True, blank=True, related_name="analytics_worksheets")
+    state = models.ForeignKey("locations.State", on_delete=models.SET_NULL, null=True, blank=True, related_name="analytics_worksheets")
+    account_type = models.CharField(max_length=32, choices=DashboardAccountType.choices, db_index=True)
+    scope_type = models.CharField(max_length=32, choices=DashboardScopeType.choices, default=DashboardScopeType.PRIVATE, db_index=True)
+    name = models.CharField(max_length=255)
+    description = models.TextField(blank=True)
+    dataset = models.ForeignKey(AnalyticsDataset, on_delete=models.PROTECT, related_name="worksheets")
+    metrics = models.JSONField(default=list, blank=True)
+    dimensions = models.JSONField(default=list, blank=True)
+    filters = models.JSONField(default=list, blank=True)
+    aggregations = models.JSONField(default=list, blank=True)
+    derived_fields = models.JSONField(default=list, blank=True)
+    query_rules = models.JSONField(default=dict, blank=True)
+    chart_recommendation = models.CharField(max_length=50, blank=True, default="")
+    preview_output = models.JSONField(default=dict, blank=True)
+    required_permissions = models.JSONField(default=list, blank=True)
+    privacy_metadata = models.JSONField(default=dict, blank=True)
+    is_active = models.BooleanField(default=True, db_index=True)
+    is_template = models.BooleanField(default=False, db_index=True)
+
+    class Meta:
+        ordering = ["account_type", "name"]
+        indexes = [
+            models.Index(fields=["owner", "is_active"]),
+            models.Index(fields=["organization", "is_active"]),
+            models.Index(fields=["state", "is_active"]),
+            models.Index(fields=["account_type", "scope_type"]),
+            models.Index(fields=["dataset", "is_active"]),
+        ]
+
+    def __str__(self) -> str:
+        return self.name
+
+
+class AnalyticsWidget(BaseModel):
+    owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="analytics_widgets")
+    organization = models.ForeignKey("organizations.Organization", on_delete=models.SET_NULL, null=True, blank=True, related_name="analytics_widgets")
+    state = models.ForeignKey("locations.State", on_delete=models.SET_NULL, null=True, blank=True, related_name="analytics_widgets")
+    account_type = models.CharField(max_length=32, choices=DashboardAccountType.choices, db_index=True)
+    scope_type = models.CharField(max_length=32, choices=DashboardScopeType.choices, default=DashboardScopeType.PRIVATE, db_index=True)
+    worksheet = models.ForeignKey(AnalyticsWorksheet, on_delete=models.CASCADE, related_name="widgets")
+    title = models.CharField(max_length=255)
+    widget_type = models.CharField(max_length=50, db_index=True)
+    visual_config = models.JSONField(default=dict, blank=True)
+    filter_behavior = models.JSONField(default=dict, blank=True)
+    refresh_behavior = models.JSONField(default=dict, blank=True)
+    export_options = models.JSONField(default=dict, blank=True)
+    required_permissions = models.JSONField(default=list, blank=True)
+    privacy_metadata = models.JSONField(default=dict, blank=True)
+    is_active = models.BooleanField(default=True, db_index=True)
+
+    class Meta:
+        ordering = ["account_type", "title"]
+        indexes = [
+            models.Index(fields=["owner", "is_active"]),
+            models.Index(fields=["organization", "is_active"]),
+            models.Index(fields=["state", "is_active"]),
+            models.Index(fields=["account_type", "scope_type"]),
+            models.Index(fields=["worksheet", "is_active"]),
+        ]
+
+    def __str__(self) -> str:
+        return self.title
+
+
+class DashboardAlertRule(BaseModel):
+    owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="dashboard_alert_rules")
+    organization = models.ForeignKey("organizations.Organization", on_delete=models.SET_NULL, null=True, blank=True, related_name="dashboard_alert_rules")
+    state = models.ForeignKey("locations.State", on_delete=models.SET_NULL, null=True, blank=True, related_name="dashboard_alert_rules")
+    account_type = models.CharField(max_length=32, choices=DashboardAccountType.choices, db_index=True)
+    scope_type = models.CharField(max_length=32, choices=DashboardScopeType.choices, default=DashboardScopeType.PRIVATE, db_index=True)
+    widget = models.ForeignKey(AnalyticsWidget, on_delete=models.CASCADE, related_name="alert_rules")
+    name = models.CharField(max_length=255)
+    description = models.TextField(blank=True)
+    metric_key = models.CharField(max_length=120)
+    metric_label = models.CharField(max_length=255, blank=True)
+    operator = models.CharField(max_length=8, choices=DashboardAlertOperator.choices, default=DashboardAlertOperator.LESS_THAN)
+    threshold_value = models.DecimalField(max_digits=18, decimal_places=4)
+    notification_channels = models.JSONField(default=list, blank=True)
+    recipient_user_ids = models.JSONField(default=list, blank=True)
+    required_permissions = models.JSONField(default=list, blank=True)
+    privacy_metadata = models.JSONField(default=dict, blank=True)
+    last_evaluated_at = models.DateTimeField(null=True, blank=True, db_index=True)
+    last_triggered_at = models.DateTimeField(null=True, blank=True, db_index=True)
+    trigger_count = models.PositiveIntegerField(default=0)
+    is_active = models.BooleanField(default=True, db_index=True)
+
+    class Meta:
+        ordering = ["account_type", "name"]
+        indexes = [
+            models.Index(fields=["owner", "is_active"]),
+            models.Index(fields=["organization", "is_active"]),
+            models.Index(fields=["state", "is_active"]),
+            models.Index(fields=["account_type", "scope_type"]),
+            models.Index(fields=["widget", "is_active"]),
+            models.Index(fields=["last_triggered_at"]),
+        ]
+
+    def __str__(self) -> str:
+        return self.name
+
+
+class DashboardAlertEvent(BaseModel):
+    rule = models.ForeignKey(DashboardAlertRule, on_delete=models.CASCADE, related_name="history")
+    widget = models.ForeignKey(AnalyticsWidget, on_delete=models.CASCADE, related_name="alert_events")
+    status = models.CharField(max_length=24, choices=DashboardAlertStatus.choices, db_index=True)
+    observed_value = models.DecimalField(max_digits=18, decimal_places=4, null=True, blank=True)
+    threshold_value = models.DecimalField(max_digits=18, decimal_places=4, null=True, blank=True)
+    notification_count = models.PositiveIntegerField(default=0)
+    notified_channels = models.JSONField(default=list, blank=True)
+    message = models.TextField(blank=True)
+    metadata = models.JSONField(default=dict, blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["rule", "created_at"]),
+            models.Index(fields=["widget", "created_at"]),
+            models.Index(fields=["status", "created_at"]),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.rule.name} {self.status}"
+
+
+class DashboardCanvas(BaseModel):
+    owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="dashboard_canvases")
+    organization = models.ForeignKey("organizations.Organization", on_delete=models.SET_NULL, null=True, blank=True, related_name="dashboard_canvases")
+    state = models.ForeignKey("locations.State", on_delete=models.SET_NULL, null=True, blank=True, related_name="dashboard_canvases")
+    account_type = models.CharField(max_length=32, choices=DashboardAccountType.choices, db_index=True)
+    scope_type = models.CharField(max_length=32, choices=DashboardScopeType.choices, default=DashboardScopeType.PRIVATE, db_index=True)
+    name = models.CharField(max_length=255)
+    description = models.TextField(blank=True)
+    layout_config = models.JSONField(default=dict, blank=True)
+    global_filters = models.JSONField(default=list, blank=True)
+    required_permissions = models.JSONField(default=list, blank=True)
+    privacy_metadata = models.JSONField(default=dict, blank=True)
+    is_draft = models.BooleanField(default=True, db_index=True)
+    is_active = models.BooleanField(default=True, db_index=True)
+
+    class Meta:
+        ordering = ["account_type", "name"]
+        indexes = [
+            models.Index(fields=["owner", "is_active"]),
+            models.Index(fields=["organization", "is_active"]),
+            models.Index(fields=["state", "is_active"]),
+            models.Index(fields=["account_type", "scope_type"]),
+            models.Index(fields=["is_draft", "is_active"]),
+        ]
+
+    def __str__(self) -> str:
+        return self.name
+
+
+class DashboardCanvasBlock(BaseModel):
+    canvas = models.ForeignKey(DashboardCanvas, on_delete=models.CASCADE, related_name="blocks")
+    widget = models.ForeignKey(AnalyticsWidget, on_delete=models.SET_NULL, null=True, blank=True, related_name="canvas_blocks")
+    block_type = models.CharField(max_length=32, choices=DashboardBlockType.choices, db_index=True)
+    title = models.CharField(max_length=255, blank=True)
+    content = models.JSONField(default=dict, blank=True)
+    position = models.JSONField(default=dict, blank=True)
+    visibility_rules = models.JSONField(default=dict, blank=True)
+    required_permissions = models.JSONField(default=list, blank=True)
+    privacy_metadata = models.JSONField(default=dict, blank=True)
+    sort_order = models.PositiveIntegerField(default=0)
+    is_active = models.BooleanField(default=True, db_index=True)
+
+    class Meta:
+        ordering = ["canvas", "sort_order", "created_at"]
+        indexes = [
+            models.Index(fields=["canvas", "sort_order"]),
+            models.Index(fields=["block_type", "is_active"]),
+            models.Index(fields=["widget", "is_active"]),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.canvas.name} / {self.block_type}"
+
+
+class PublishedDashboard(BaseModel):
+    canvas = models.ForeignKey(DashboardCanvas, on_delete=models.CASCADE, related_name="published_versions")
+    published_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="published_dashboards")
+    version_label = models.CharField(max_length=64, blank=True, default="")
+    visibility_scope = models.CharField(max_length=32, choices=DashboardScopeType.choices, default=DashboardScopeType.PRIVATE, db_index=True)
+    share_settings = models.JSONField(default=dict, blank=True)
+    snapshot = models.JSONField(default=dict, blank=True)
+    published_at = models.DateTimeField(null=True, blank=True, db_index=True)
+    is_active = models.BooleanField(default=True, db_index=True)
+
+    class Meta:
+        ordering = ["-published_at", "-created_at"]
+        indexes = [
+            models.Index(fields=["canvas", "is_active"]),
+            models.Index(fields=["visibility_scope", "is_active"]),
+            models.Index(fields=["published_by", "is_active"]),
+        ]
+
+    def __str__(self) -> str:
+        return self.version_label or f"{self.canvas.name} publication"
+
+
+class DashboardExportJob(BaseModel):
+    owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="dashboard_export_jobs")
+    published_dashboard = models.ForeignKey(PublishedDashboard, on_delete=models.CASCADE, related_name="export_jobs")
+    block_id = models.CharField(max_length=64, blank=True)
+    export_format = models.CharField(max_length=16, db_index=True)
+    status = models.CharField(max_length=24, choices=DashboardExportJobStatus.choices, default=DashboardExportJobStatus.PENDING, db_index=True)
+    payload = models.JSONField(default=dict, blank=True)
+    error_message = models.TextField(blank=True)
+    started_at = models.DateTimeField(null=True, blank=True)
+    completed_at = models.DateTimeField(null=True, blank=True, db_index=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["owner", "status"]),
+            models.Index(fields=["published_dashboard", "status"]),
+            models.Index(fields=["export_format", "status"]),
+            models.Index(fields=["completed_at"]),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.published_dashboard_id}:{self.export_format}:{self.status}"
+
+
+class DashboardTemplate(BaseModel):
+    name = models.CharField(max_length=255)
+    description = models.TextField(blank=True)
+    account_type = models.CharField(max_length=32, choices=DashboardAccountType.choices, db_index=True)
+    scope_type = models.CharField(max_length=32, choices=DashboardScopeType.choices, default=DashboardScopeType.PRIVATE, db_index=True)
+    source_canvas = models.ForeignKey(DashboardCanvas, on_delete=models.SET_NULL, null=True, blank=True, related_name="templates")
+    source_published_dashboard = models.ForeignKey(PublishedDashboard, on_delete=models.SET_NULL, null=True, blank=True, related_name="templates")
+    template_config = models.JSONField(default=dict, blank=True)
+    required_permissions = models.JSONField(default=list, blank=True)
+    privacy_metadata = models.JSONField(default=dict, blank=True)
+    is_system_template = models.BooleanField(default=False, db_index=True)
+    is_active = models.BooleanField(default=True, db_index=True)
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="dashboard_templates")
+
+    class Meta:
+        ordering = ["account_type", "name"]
+        indexes = [
+            models.Index(fields=["account_type", "is_active"]),
+            models.Index(fields=["scope_type", "is_active"]),
+            models.Index(fields=["is_system_template", "is_active"]),
+        ]
+
+    def __str__(self) -> str:
+        return self.name
 
 
 class DataQualityIssue(BaseModel):

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -11,9 +11,12 @@ import { DataTable } from "@/components/ui/data-table";
 import {
   fetchFederalAccountAuditLogs,
   fetchFederalPolicy,
+  fetchFederalProfile,
   fetchFederalStateOverrides,
   updateFederalPolicy,
+  updateFederalProfile,
   type FederalAuditLogItem,
+  type FederalProfile,
   type FederalStateOverrideItem,
 } from "@/lib/api/federal";
 import { getApiErrorMessage } from "@/lib/api/client";
@@ -56,24 +59,85 @@ function ToggleRow({ label, checked, onChange }: { label: string; checked: boole
   );
 }
 
-function FederalProfilePanel() {
+function TextField({ label, value, onChange, placeholder }: { label: string; value: string; onChange: (value: string) => void; placeholder?: string }) {
   return (
-    <div className="grid gap-5 lg:grid-cols-2">
-      <SettingCard title="Federal Profile" description="Official federal identity used across national certificates, reports, receipts, public verification, and oversight notices.">
-        <div className="grid gap-4">
-          <label className="grid gap-1 text-sm font-semibold text-neutral-700">Agency Name<input className="h-11 rounded-lg border border-neutral-200 bg-neutral-50 px-3 text-sm" defaultValue="Federal Ministry of Health" /></label>
-          <label className="grid gap-1 text-sm font-semibold text-neutral-700">Public Display Name<input className="h-11 rounded-lg border border-neutral-200 bg-neutral-50 px-3 text-sm" defaultValue="Federal MOH" /></label>
-          <label className="grid gap-1 text-sm font-semibold text-neutral-700">Official Email<input className="h-11 rounded-lg border border-neutral-200 bg-neutral-50 px-3 text-sm" placeholder="support@health.gov.ng" /></label>
-          <label className="grid gap-1 text-sm font-semibold text-neutral-700">Website<input className="h-11 rounded-lg border border-neutral-200 bg-neutral-50 px-3 text-sm" placeholder="https://health.gov.ng" /></label>
-        </div>
-      </SettingCard>
-      <SettingCard title="Branding & Signatory" description="National branding controls for certificate templates and public-facing documents.">
-        <div className="grid gap-4">
-          <label className="grid gap-1 text-sm font-semibold text-neutral-700">Federal Seal URL<input className="h-11 rounded-lg border border-neutral-200 bg-neutral-50 px-3 text-sm" /></label>
-          <label className="grid gap-1 text-sm font-semibold text-neutral-700">Certificate Logo URL<input className="h-11 rounded-lg border border-neutral-200 bg-neutral-50 px-3 text-sm" /></label>
-          <label className="grid gap-1 text-sm font-semibold text-neutral-700">Authorized Signatory<input className="h-11 rounded-lg border border-neutral-200 bg-neutral-50 px-3 text-sm" placeholder="Name and title" /></label>
-        </div>
-      </SettingCard>
+    <label className="grid gap-1 text-sm font-semibold text-neutral-700">
+      {label}
+      <input className="h-11 rounded-lg border border-neutral-200 bg-neutral-50 px-3 text-sm" value={value} placeholder={placeholder} onChange={(event) => onChange(event.target.value)} />
+    </label>
+  );
+}
+
+const EMPTY_PROFILE: Partial<FederalProfile> = {
+  ministry_name: "",
+  department_name: "",
+  programme_name: "",
+  national_coordinator: "",
+  official_email: "",
+  official_phone: "",
+  logo_url: "",
+  active_guideline_version: "",
+  reporting_cycle: "quarterly",
+  central_portal_status: "active",
+};
+
+function FederalProfilePanel() {
+  const queryClient = useQueryClient();
+  const profileQuery = useQuery({ queryKey: ["federal-profile"], queryFn: fetchFederalProfile });
+  const [form, setForm] = useState<Partial<FederalProfile>>(EMPTY_PROFILE);
+
+  useEffect(() => {
+    if (profileQuery.data) setForm(profileQuery.data);
+  }, [profileQuery.data]);
+
+  const updateMutation = useMutation({
+    mutationFn: () => updateFederalProfile(form),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["federal-profile"] }),
+  });
+
+  const set = (key: keyof FederalProfile) => (value: string) => setForm((prev) => ({ ...prev, [key]: value }));
+
+  return (
+    <div className="grid gap-5">
+      {updateMutation.isError ? <p className="rounded bg-danger-50 px-3 py-2 text-sm font-semibold text-danger-700">{getApiErrorMessage(updateMutation.error, "Could not save federal profile.")}</p> : null}
+      <div className="grid gap-5 lg:grid-cols-2">
+        <SettingCard title="Federal Profile" description="Official federal identity used across national certificates, reports, receipts, public verification, and oversight notices.">
+          <div className="grid gap-4">
+            <TextField label="Ministry Name" value={form.ministry_name ?? ""} onChange={set("ministry_name")} placeholder="Federal Ministry of Health and Social Welfare" />
+            <TextField label="Department" value={form.department_name ?? ""} onChange={set("department_name")} placeholder="Food and Drug Services" />
+            <TextField label="Programme Name" value={form.programme_name ?? ""} onChange={set("programme_name")} placeholder="National Food Handlers Medical Test Programme" />
+            <TextField label="National Coordinator" value={form.national_coordinator ?? ""} onChange={set("national_coordinator")} placeholder="Programme lead" />
+            <TextField label="Official Email" value={form.official_email ?? ""} onChange={set("official_email")} placeholder="support@health.gov.ng" />
+            <TextField label="Official Phone" value={form.official_phone ?? ""} onChange={set("official_phone")} placeholder="+234..." />
+          </div>
+        </SettingCard>
+        <SettingCard title="Programme & Portal" description="Guideline version, branding, reporting cadence, and central portal status.">
+          <div className="grid gap-4">
+            <TextField label="Logo / Seal URL" value={form.logo_url ?? ""} onChange={set("logo_url")} placeholder="https://..." />
+            <TextField label="Active Guideline Version" value={form.active_guideline_version ?? ""} onChange={set("active_guideline_version")} placeholder="National Guidelines for Food Handlers' Medical Test 2024" />
+            <label className="grid gap-1 text-sm font-semibold text-neutral-700">
+              Reporting Cycle
+              <select className="h-11 rounded-lg border border-neutral-200 bg-white px-3 text-sm" value={form.reporting_cycle ?? "quarterly"} onChange={(event) => set("reporting_cycle")(event.target.value)}>
+                <option value="monthly">Monthly</option>
+                <option value="quarterly">Quarterly</option>
+                <option value="annual">Annual</option>
+              </select>
+            </label>
+            <label className="grid gap-1 text-sm font-semibold text-neutral-700">
+              Central Portal Status
+              <select className="h-11 rounded-lg border border-neutral-200 bg-white px-3 text-sm" value={form.central_portal_status ?? "active"} onChange={(event) => set("central_portal_status")(event.target.value)}>
+                <option value="active">Active</option>
+                <option value="inactive">Inactive</option>
+              </select>
+            </label>
+          </div>
+        </SettingCard>
+      </div>
+      <div>
+        <button className="h-11 rounded-lg bg-brand-600 px-5 text-sm font-bold text-white hover:bg-brand-700 disabled:bg-neutral-300" disabled={updateMutation.isPending || profileQuery.isLoading} onClick={() => updateMutation.mutate()} type="button">
+          {updateMutation.isPending ? "Saving..." : "Save federal profile"}
+        </button>
+      </div>
     </div>
   );
 }
@@ -203,7 +267,7 @@ function AuditLogsPanel() {
   );
 }
 
-export default function FederalAccountSettingsPage() {
+function FederalAccountSettingsPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const tabParam = searchParams.get("tab") as TabKey | null;
@@ -230,5 +294,13 @@ export default function FederalAccountSettingsPage() {
       {activeTab === "security-access" ? <SecurityAccessPanel /> : null}
       {activeTab === "audit-logs" ? <AuditLogsPanel /> : null}
     </PortalShell>
+  );
+}
+
+export default function FederalAccountSettingsPage() {
+  return (
+    <Suspense fallback={null}>
+      <FederalAccountSettingsPageContent />
+    </Suspense>
   );
 }

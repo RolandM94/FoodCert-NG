@@ -1,8 +1,19 @@
 from rest_framework import serializers
 
 from apps.accounts.models import UserInvite, UserRole
+from apps.audit.models import AuditLog
 from apps.common.security import validate_uploaded_file_security
-from apps.facilities.models import FacilityAccreditationApplication, FacilityDocument, FacilityStaffProfile, FacilityStaffType, MedicalFacility
+from apps.facilities.models import (
+    FacilityAccreditationApplication,
+    FacilityDocument,
+    FacilityInvitation,
+    FacilityProfessionalProfile,
+    FacilityRole,
+    FacilityRolePermission,
+    FacilityStaffProfile,
+    FacilityStaffType,
+    MedicalFacility,
+)
 
 
 class MedicalFacilitySerializer(serializers.ModelSerializer):
@@ -178,6 +189,8 @@ class FacilityStaffProfileSerializer(serializers.ModelSerializer):
     user_role = serializers.CharField(source="user.role", read_only=True)
     user_status = serializers.CharField(source="user.status", read_only=True)
     department_name = serializers.CharField(source="department.name", read_only=True)
+    role_name = serializers.CharField(source="role.name", read_only=True)
+    invited_by_name = serializers.CharField(source="invited_by.get_full_name", read_only=True)
     last_login = serializers.DateTimeField(source="user.last_login", read_only=True)
 
     class Meta:
@@ -192,7 +205,14 @@ class FacilityStaffProfileSerializer(serializers.ModelSerializer):
             "facility",
             "department",
             "department_name",
+            "role",
+            "role_name",
             "staff_type",
+            "professional_category",
+            "status",
+            "invited_by",
+            "invited_by_name",
+            "accepted_at",
             "professional_registration_number",
             "digital_signature_url",
             "is_active",
@@ -210,6 +230,8 @@ class FacilityStaffProfileSerializer(serializers.ModelSerializer):
             "facility",
             "department_name",
             "last_login",
+            "role_name",
+            "invited_by_name",
             "created_at",
             "updated_at",
         )
@@ -226,8 +248,11 @@ class FacilityStaffInviteSerializer(serializers.Serializer):
     phone = serializers.CharField(required=False, allow_blank=True)
     role = serializers.ChoiceField(choices=[UserRole.FACILITY_ADMIN, UserRole.DOCTOR, UserRole.LAB_STAFF])
     staff_type = serializers.ChoiceField(choices=FacilityStaffType.choices)
+    facility_role = serializers.UUIDField(required=False, allow_null=True)
+    professional_category = serializers.CharField()
     department = serializers.UUIDField(required=False, allow_null=True)
     professional_registration_number = serializers.CharField(required=False, allow_blank=True)
+    license_issuing_body = serializers.CharField(required=False, allow_blank=True)
     message = serializers.CharField(required=False, allow_blank=True)
     expires_at = serializers.DateTimeField(required=False)
 
@@ -258,3 +283,174 @@ class FacilityInviteSerializer(serializers.ModelSerializer):
             "updated_at",
         )
         read_only_fields = fields
+
+
+class FacilityRolePermissionSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = FacilityRolePermission
+        fields = ("id", "permission_key", "allowed", "created_at", "updated_at")
+        read_only_fields = ("id", "created_at", "updated_at")
+
+
+class FacilityRoleSerializer(serializers.ModelSerializer):
+    permissions = FacilityRolePermissionSerializer(many=True, read_only=True)
+    organization_role_code = serializers.CharField(source="organization_role.code", read_only=True)
+    created_by_name = serializers.CharField(source="created_by.get_full_name", read_only=True)
+
+    class Meta:
+        model = FacilityRole
+        fields = (
+            "id",
+            "facility",
+            "organization_role",
+            "organization_role_code",
+            "name",
+            "description",
+            "professional_category",
+            "is_system_default",
+            "is_custom",
+            "created_by",
+            "created_by_name",
+            "permissions",
+            "created_at",
+            "updated_at",
+        )
+        read_only_fields = (
+            "id",
+            "organization_role_code",
+            "created_by_name",
+            "permissions",
+            "created_at",
+            "updated_at",
+        )
+
+
+class FacilityProfessionalProfileSerializer(serializers.ModelSerializer):
+    user_email = serializers.EmailField(source="user.email", read_only=True)
+    user_name = serializers.CharField(source="user.get_full_name", read_only=True)
+
+    class Meta:
+        model = FacilityProfessionalProfile
+        fields = (
+            "id",
+            "user",
+            "user_email",
+            "user_name",
+            "facility",
+            "team_member",
+            "professional_category",
+            "license_number",
+            "license_issuing_body",
+            "license_document_url",
+            "verification_status",
+            "created_at",
+            "updated_at",
+        )
+        read_only_fields = ("id", "user_email", "user_name", "created_at", "updated_at")
+
+
+class FacilityTeamInvitationSerializer(serializers.ModelSerializer):
+    invite_id = serializers.UUIDField(source="invite.id", read_only=True)
+    invite_email = serializers.EmailField(source="invite.email", read_only=True)
+    invite_phone = serializers.CharField(source="invite.phone", read_only=True)
+    invite_status = serializers.CharField(source="invite.status", read_only=True)
+    role_name = serializers.CharField(source="role.name", read_only=True)
+
+    class Meta:
+        model = FacilityInvitation
+        fields = (
+            "id",
+            "facility",
+            "invite",
+            "invite_id",
+            "invite_email",
+            "invite_phone",
+            "invite_status",
+            "role",
+            "role_name",
+            "professional_category",
+            "status",
+            "created_at",
+            "updated_at",
+        )
+        read_only_fields = fields
+
+
+class FacilityAuditLogSerializer(serializers.ModelSerializer):
+    actor_name = serializers.CharField(source="actor.get_full_name", read_only=True)
+    actor_email = serializers.EmailField(source="actor.email", read_only=True)
+    actor_role = serializers.SerializerMethodField()
+    module = serializers.SerializerMethodField()
+    event = serializers.SerializerMethodField()
+    status = serializers.SerializerMethodField()
+
+    class Meta:
+        model = AuditLog
+        fields = (
+            "id",
+            "created_at",
+            "actor_name",
+            "actor_email",
+            "actor_role",
+            "action",
+            "module",
+            "event",
+            "target_type",
+            "target_id",
+            "status",
+            "ip_address",
+            "user_agent",
+            "metadata",
+        )
+        read_only_fields = fields
+
+    def get_actor_role(self, obj):
+        actor = getattr(obj, "actor", None)
+        if not actor:
+            return "System"
+        staff_profile = getattr(actor, "facility_staff_profile", None)
+        if staff_profile and getattr(staff_profile, "role", None):
+            return staff_profile.role.name
+        return actor.get_role_display() if hasattr(actor, "get_role_display") else actor.role
+
+    def get_module(self, obj):
+        return obj.metadata.get("module") or obj.target_type or "Facility"
+
+    def get_event(self, obj):
+        return obj.metadata.get("event") or obj.get_action_display()
+
+    def get_status(self, obj):
+        return obj.metadata.get("status") or "success"
+
+
+class FacilityRoleWriteSerializer(serializers.Serializer):
+    name = serializers.CharField(max_length=255)
+    description = serializers.CharField(required=False, allow_blank=True)
+    professional_category = serializers.CharField()
+    permission_keys = serializers.ListField(
+        child=serializers.CharField(max_length=150),
+        allow_empty=True,
+        required=False,
+    )
+
+
+class FacilityStaffUpdateSerializer(serializers.Serializer):
+    role = serializers.UUIDField(required=False)
+    department = serializers.UUIDField(required=False, allow_null=True)
+    professional_category = serializers.CharField(required=False)
+    status = serializers.CharField(required=False)
+    professional_registration_number = serializers.CharField(required=False, allow_blank=True)
+    digital_signature_url = serializers.CharField(required=False, allow_blank=True)
+    is_active = serializers.BooleanField(required=False)
+
+
+class FacilityTemporaryUnfitReportSerializer(serializers.Serializer):
+    assessment_id = serializers.UUIDField()
+    food_handler_name = serializers.CharField()
+    employer_name = serializers.CharField(allow_blank=True)
+    status = serializers.CharField()
+    final_decision = serializers.CharField()
+    return_to_work_date = serializers.CharField(allow_blank=True)
+    signed_at = serializers.CharField(allow_blank=True)
+    report_id = serializers.UUIDField(allow_null=True)
+    report_status = serializers.CharField(allow_blank=True)

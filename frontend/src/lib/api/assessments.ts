@@ -40,8 +40,35 @@ export async function listFacilityAppointments(facilityId: string): Promise<Appo
   return unwrap(response.data);
 }
 
+export async function getFacilityAppointment(facilityId: string, appointmentId: string): Promise<Appointment> {
+  const response = await apiClient.get<ApiEnvelope<Appointment>>(`/facilities/${facilityId}/appointments/${appointmentId}/`);
+  return unwrap(response.data);
+}
+
+export async function checkInFacilityAssessment(facilityId: string, assessmentId: string, payload: Record<string, unknown> = {}): Promise<MedicalAssessment> {
+  const response = await apiClient.patch<ApiEnvelope<MedicalAssessment>>(`/facilities/${facilityId}/assessments/${assessmentId}/check-in/`, payload);
+  return unwrap(response.data);
+}
+
+export async function flagFacilityAssessmentIdentityMismatch(facilityId: string, assessmentId: string, payload: { reason: string }): Promise<MedicalAssessment> {
+  const response = await apiClient.patch<ApiEnvelope<MedicalAssessment>>(`/facilities/${facilityId}/assessments/${assessmentId}/flag-identity-mismatch/`, payload);
+  return unwrap(response.data);
+}
+
 export async function confirmFacilityAppointment(facilityId: string, appointmentId: string, payload: Record<string, unknown> = {}): Promise<Appointment> {
   const response = await apiClient.patch<ApiEnvelope<Appointment>>(`/facilities/${facilityId}/appointments/${appointmentId}/confirm/`, payload);
+  return unwrap(response.data);
+}
+
+export async function confirmFacilityAppointmentPayment(
+  facilityId: string,
+  appointmentId: string,
+  payload: { notes?: string; payment_method?: string } = {}
+): Promise<Appointment> {
+  const response = await apiClient.patch<ApiEnvelope<Appointment>>(
+    `/facilities/${facilityId}/appointments/${appointmentId}/confirm-payment/`,
+    payload
+  );
   return unwrap(response.data);
 }
 
@@ -110,8 +137,22 @@ export async function getFacilityAssessment(facilityId: string, assessmentId: st
   return unwrap(response.data);
 }
 
-export async function assignFacilityAssessmentDoctor(facilityId: string, assessmentId: string, doctorId: string): Promise<MedicalAssessment> {
-  const response = await apiClient.patch<ApiEnvelope<MedicalAssessment>>(`/facilities/${facilityId}/assessments/${assessmentId}/assign-doctor/`, { doctor: doctorId });
+export async function assignFacilityAssessmentDoctor(
+  facilityId: string,
+  assessmentId: string,
+  doctorId: string,
+  reason = ""
+): Promise<MedicalAssessment> {
+  const response = await apiClient.patch<ApiEnvelope<MedicalAssessment>>(`/facilities/${facilityId}/assessments/${assessmentId}/assign-doctor/`, { doctor: doctorId, reason });
+  return unwrap(response.data);
+}
+
+export async function assignFacilityAssessmentLab(
+  facilityId: string,
+  assessmentId: string,
+  payload: { lab_staff?: string | null; lab_unit?: string | null; reason?: string }
+): Promise<MedicalAssessment> {
+  const response = await apiClient.patch<ApiEnvelope<MedicalAssessment>>(`/facilities/${facilityId}/assessments/${assessmentId}/assign-lab/`, payload);
   return unwrap(response.data);
 }
 
@@ -253,37 +294,42 @@ export async function setDoctorFitnessDecision(
 }
 
 export async function listAssessmentFormTemplates(params?: Record<string, string>): Promise<AssessmentFormTemplate[]> {
-  const response = await apiClient.get<ApiEnvelope<AssessmentFormTemplate[] | { results?: AssessmentFormTemplate[] }>>("/forms/templates/", { params });
+  const response = await apiClient.get<ApiEnvelope<AssessmentFormTemplate[] | { results?: AssessmentFormTemplate[] }>>("/assessment-forms/templates/", { params });
   return normalizeList(unwrap(response.data));
 }
 
 export async function createAssessmentFormTemplate(payload: Record<string, unknown>): Promise<AssessmentFormTemplate> {
-  const response = await apiClient.post<ApiEnvelope<AssessmentFormTemplate>>("/forms/templates/", payload);
+  const response = await apiClient.post<ApiEnvelope<AssessmentFormTemplate>>("/assessment-forms/templates/", payload);
   return unwrap(response.data);
 }
 
 export async function updateAssessmentFormTemplate(id: string, payload: Record<string, unknown>): Promise<AssessmentFormTemplate> {
-  const response = await apiClient.patch<ApiEnvelope<AssessmentFormTemplate>>(`/forms/templates/${id}/`, payload);
+  const response = await apiClient.patch<ApiEnvelope<AssessmentFormTemplate>>(`/assessment-forms/templates/${id}/`, payload);
   return unwrap(response.data);
 }
 
 export async function duplicateAssessmentFormTemplate(id: string): Promise<AssessmentFormTemplate> {
-  const response = await apiClient.post<ApiEnvelope<AssessmentFormTemplate>>(`/forms/templates/${id}/duplicate/`);
+  const response = await apiClient.post<ApiEnvelope<AssessmentFormTemplate>>(`/assessment-forms/templates/${id}/duplicate/`);
   return unwrap(response.data);
 }
 
 export async function transitionAssessmentFormTemplate(id: string, action: "submit-for-approval" | "approve" | "reject" | "request-changes" | "publish" | "activate" | "retire", payload: Record<string, unknown> = {}): Promise<AssessmentFormTemplate> {
-  const response = await apiClient.post<ApiEnvelope<AssessmentFormTemplate>>(`/forms/templates/${id}/${action}/`, payload);
+  const response = await apiClient.post<ApiEnvelope<AssessmentFormTemplate>>(`/assessment-forms/templates/${id}/${action}/`, payload);
+  return unwrap(response.data);
+}
+
+export async function adoptAssessmentFormTemplate(id: string): Promise<AssessmentFormTemplate> {
+  const response = await apiClient.post<ApiEnvelope<AssessmentFormTemplate>>(`/assessment-forms/templates/${id}/adopt/`);
   return unwrap(response.data);
 }
 
 export async function createAssessmentFormSection(payload: Record<string, unknown>): Promise<AssessmentFormSection> {
-  const response = await apiClient.post<ApiEnvelope<AssessmentFormSection>>("/forms/sections/", payload);
+  const response = await apiClient.post<ApiEnvelope<AssessmentFormSection>>("/assessment-forms/sections/", payload);
   return unwrap(response.data);
 }
 
 export async function createAssessmentFormQuestion(payload: Record<string, unknown>): Promise<AssessmentFormQuestion> {
-  const response = await apiClient.post<ApiEnvelope<AssessmentFormQuestion>>("/forms/questions/", payload);
+  const response = await apiClient.post<ApiEnvelope<AssessmentFormQuestion>>("/assessment-forms/questions/", payload);
   return unwrap(response.data);
 }
 
@@ -293,7 +339,7 @@ export async function getAssessmentRequirements(assessmentId: string): Promise<A
 }
 
 export async function listAssessmentFormResponses(params?: Record<string, string>): Promise<AssessmentFormResponse[]> {
-  const response = await apiClient.get<ApiEnvelope<AssessmentFormResponse[] | { results?: AssessmentFormResponse[] }>>("/form-responses/", { params });
+  const response = await apiClient.get<ApiEnvelope<AssessmentFormResponse[] | { results?: AssessmentFormResponse[] }>>("/assessment-form-responses/", { params });
   return normalizeList(unwrap(response.data));
 }
 
@@ -308,26 +354,26 @@ export async function assignAssessmentForms(assessmentId: string): Promise<Asses
 }
 
 export async function saveAssessmentFormResponse(responseId: string, responseData: Record<string, unknown>): Promise<AssessmentFormResponse> {
-  const response = await apiClient.patch<ApiEnvelope<AssessmentFormResponse>>(`/form-responses/${responseId}/`, { response_data: responseData });
+  const response = await apiClient.patch<ApiEnvelope<AssessmentFormResponse>>(`/assessment-form-responses/${responseId}/`, { response_data: responseData });
   return unwrap(response.data);
 }
 
 export async function submitAssessmentFormResponse(responseId: string): Promise<AssessmentFormResponse> {
-  const response = await apiClient.post<ApiEnvelope<AssessmentFormResponse>>(`/form-responses/${responseId}/submit/`);
+  const response = await apiClient.post<ApiEnvelope<AssessmentFormResponse>>(`/assessment-form-responses/${responseId}/submit/`);
   return unwrap(response.data);
 }
 
 export async function reviewAssessmentFormResponse(responseId: string): Promise<AssessmentFormResponse> {
-  const response = await apiClient.post<ApiEnvelope<AssessmentFormResponse>>(`/form-responses/${responseId}/review/`);
+  const response = await apiClient.post<ApiEnvelope<AssessmentFormResponse>>(`/assessment-form-responses/${responseId}/review/`);
   return unwrap(response.data);
 }
 
 export async function validateAssessmentFormResponse(responseId: string): Promise<AssessmentFormResponse> {
-  const response = await apiClient.post<ApiEnvelope<AssessmentFormResponse>>(`/form-responses/${responseId}/validate/`);
+  const response = await apiClient.post<ApiEnvelope<AssessmentFormResponse>>(`/assessment-form-responses/${responseId}/validate/`);
   return unwrap(response.data);
 }
 
 export async function reopenAssessmentFormResponse(responseId: string, reason: string): Promise<AssessmentFormResponse> {
-  const response = await apiClient.post<ApiEnvelope<AssessmentFormResponse>>(`/form-responses/${responseId}/reopen/`, { reason });
+  const response = await apiClient.post<ApiEnvelope<AssessmentFormResponse>>(`/assessment-form-responses/${responseId}/reopen/`, { reason });
   return unwrap(response.data);
 }

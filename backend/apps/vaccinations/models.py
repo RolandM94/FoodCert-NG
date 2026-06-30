@@ -82,6 +82,33 @@ class VaccinationRecord(BaseModel):
         else:
             self.status = VaccinationStatus.VALID
 
+    @staticmethod
+    def policy_validity_params():
+        """Read active national VaccinationRule values, falling back to platform defaults."""
+        params = {"typhoid_validity_years": 3, "hepatitis_a_second_dose_months": 6}
+        try:
+            from apps.standards.services import ActivePolicyRuleService
+
+            policy_version = ActivePolicyRuleService.get_active_policy_version()
+            if not policy_version:
+                return params
+            rules = policy_version.vaccination_rules
+            typhoid = rules.filter(vaccine_code="typhoid").first() or rules.filter(vaccine_name__icontains="typhoid").first()
+            if typhoid and typhoid.validity_months:
+                params["typhoid_validity_years"] = max(round(typhoid.validity_months / 12), 1)
+            hep = rules.filter(vaccine_code="hepatitis_a").first() or rules.filter(vaccine_name__icontains="hepatitis").first()
+            if hep and hep.dose_schedule:
+                for dose in hep.dose_schedule:
+                    if dose.get("dose") == 2 and dose.get("interval_months"):
+                        params["hepatitis_a_second_dose_months"] = dose["interval_months"]
+        except Exception:  # noqa: BLE001 - never let policy lookup break vaccination recording
+            return params
+        return params
+
+    def derive_with_active_policy(self):
+        """Derive dates and status using the active national vaccination standard."""
+        self.derive_dates_and_status(**self.policy_validity_params())
+
     @property
     def compliance_status(self) -> str:
         if self.status in {VaccinationStatus.VALID, VaccinationStatus.DOCTOR_CLEARED, VaccinationStatus.ADMINISTERED}:

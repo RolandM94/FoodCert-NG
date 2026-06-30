@@ -1015,6 +1015,18 @@ class FormTemplateViewSet(viewsets.ModelViewSet):
         template.delete()
         return response.Response(status=status.HTTP_204_NO_CONTENT)
 
+    @staticmethod
+    def _enforce_federal_field_locks(template, schema_json):
+        """For a state/facility-derived template, ensure federal-locked fields are preserved."""
+        if template.owner_organization.organization_type == OrganizationType.FEDERAL_MINISTRY:
+            return
+        source_version = template.source_version or latest_template_version(template.source_template) if template.source_template_id else None
+        if not source_version:
+            return
+        from apps.forms.federal_locks import assert_federal_locks_preserved
+
+        assert_federal_locks_preserved(source_version.schema_json, schema_json)
+
     @action(detail=True, methods=["post"], url_path="save-draft")
     def save_draft(self, request, pk=None):
         template = self.get_object()
@@ -1022,6 +1034,7 @@ class FormTemplateViewSet(viewsets.ModelViewSet):
         if template.status != FormTemplateStatus.DRAFT:
             return response.Response({"error": "Only draft templates can be edited."}, status=400)
         schema_json = request.data.get("schema_json") or request.data.get("schema") or {"sections": []}
+        self._enforce_federal_field_locks(template, schema_json)
         logic_json = request.data.get("logic_json") or request.data.get("conditional_logic_json") or {}
         version, _ = FormTemplateVersion.objects.update_or_create(
             template=template,
@@ -1052,6 +1065,7 @@ class FormTemplateViewSet(viewsets.ModelViewSet):
         if template.status != FormTemplateStatus.DRAFT:
             return response.Response({"error": "Only draft templates can be published."}, status=400)
         schema_json = request.data.get("schema_json") or request.data.get("schema") or {"sections": []}
+        self._enforce_federal_field_locks(template, schema_json)
         logic_json = request.data.get("logic_json") or request.data.get("conditional_logic_json") or {}
         version = FormTemplateVersion.objects.create(
             template=template,

@@ -2382,3 +2382,70 @@ class FormsPermissionsPrivacyAuditTests(APITestCase):
                 metadata__event="form_response_draft_saved",
             ).exists()
         )
+
+
+class FederalFieldLockTests(APITestCase):
+    def setUp(self):
+        from apps.forms.federal_locks import assert_federal_locks_preserved, federal_locked_questions
+        self.assert_locks = assert_federal_locks_preserved
+        self.locked_questions = federal_locked_questions
+        self.source = {
+            "sections": [
+                {
+                    "key": "identity",
+                    "questions": [
+                        {"key": "full_name", "label": "Full name", "type": "text", "required": True, "field_owner": "federal", "locked": True},
+                        {"key": "fever", "label": "Fever", "type": "single_choice", "required": True, "field_owner": "federal", "locked": True, "risk_flag": True},
+                    ],
+                }
+            ]
+        }
+
+    def _derived(self, questions):
+        return {"sections": [{"key": "identity", "questions": questions}]}
+
+    def test_locked_questions_detected(self):
+        self.assertEqual(set(self.locked_questions(self.source)), {"full_name", "fever"})
+
+    def test_adding_state_field_is_allowed(self):
+        derived = self._derived([
+            {"key": "full_name", "label": "Full name", "type": "text", "required": True, "field_owner": "federal", "locked": True},
+            {"key": "fever", "label": "Fever", "type": "single_choice", "required": True, "field_owner": "federal", "locked": True},
+            {"key": "state_extra", "label": "State field", "type": "text", "required": False},
+        ])
+        self.assert_locks(self.source, derived)  # should not raise
+
+    def test_removing_federal_field_blocked(self):
+        from rest_framework.exceptions import ValidationError
+        derived = self._derived([
+            {"key": "full_name", "label": "Full name", "type": "text", "required": True, "field_owner": "federal", "locked": True},
+        ])
+        with self.assertRaises(ValidationError):
+            self.assert_locks(self.source, derived)
+
+    def test_weakening_required_blocked(self):
+        from rest_framework.exceptions import ValidationError
+        derived = self._derived([
+            {"key": "full_name", "label": "Full name", "type": "text", "required": True, "field_owner": "federal", "locked": True},
+            {"key": "fever", "label": "Fever", "type": "single_choice", "required": False, "field_owner": "federal", "locked": True},
+        ])
+        with self.assertRaises(ValidationError):
+            self.assert_locks(self.source, derived)
+
+    def test_renaming_or_hiding_blocked(self):
+        from rest_framework.exceptions import ValidationError
+        renamed = self._derived([
+            {"key": "full_name", "label": "Legal name", "type": "text", "required": True, "field_owner": "federal", "locked": True},
+            {"key": "fever", "label": "Fever", "type": "single_choice", "required": True, "field_owner": "federal", "locked": True},
+        ])
+        with self.assertRaises(ValidationError):
+            self.assert_locks(self.source, renamed)
+
+    def test_seed_creates_locked_national_template(self):
+        from django.core.management import call_command
+        from apps.forms.models import FormTemplate, FormTemplateVisibility
+        call_command("seed_federal_health_declaration", verbosity=0)
+        template = FormTemplate.objects.get(visibility=FormTemplateVisibility.FEDERAL_STANDARD, title="National Food Handler Health Declaration Form")
+        schema = template.versions.first().schema_json
+        self.assertEqual(len(schema["sections"]), 8)
+        self.assertTrue(len(self.locked_questions(schema)) >= 18)

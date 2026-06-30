@@ -12,6 +12,8 @@ class LabTestSerializer(serializers.ModelSerializer):
     assessment_status = serializers.CharField(source="assessment.status", read_only=True)
     food_handler_name = serializers.CharField(source="assessment.food_handler.full_name", read_only=True)
     facility_name = serializers.CharField(source="assessment.facility.facility_name", read_only=True)
+    assigned_lab_staff_name = serializers.CharField(source="assigned_lab_staff.get_full_name", read_only=True)
+    assigned_lab_unit_name = serializers.CharField(source="assigned_lab_unit.name", read_only=True)
 
     class Meta:
         model = LabTest
@@ -35,6 +37,10 @@ class LabTestSerializer(serializers.ModelSerializer):
             "doctor_recommendation",
             "result_document",
             "result_document_url",
+            "assigned_lab_staff",
+            "assigned_lab_staff_name",
+            "assigned_lab_unit",
+            "assigned_lab_unit_name",
             "requested_by",
             "requested_by_name",
             "resulted_by",

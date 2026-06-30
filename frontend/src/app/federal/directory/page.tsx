@@ -1,3 +1,12 @@
 "use client";
+
+import { Suspense } from "react";
 import { DirectoryLayout } from "@/features/organizations/directory-layout";
-export default function Page() { return <DirectoryLayout role="federal_admin" />; }
+
+export default function Page() {
+  return (
+    <Suspense fallback={null}>
+      <DirectoryLayout role="federal_admin" />
+    </Suspense>
+  );
+}

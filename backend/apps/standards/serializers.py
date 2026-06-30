@@ -22,6 +22,8 @@ from .models import (
     MEIndicatorDataSource,
     MEIndicatorValue,
     MEIndicatorValueHistory,
+    MedicalTestPackage,
+    MedicalTestPackageComponent,
     MedicalTestRule,
     PhysicalExaminationRule,
     PolicyDocument,
@@ -71,6 +73,7 @@ class PolicyVersionSerializer(serializers.ModelSerializer):
         model = PolicyVersion
         fields = (
             "id", "version_code", "title", "description", "version_type",
+            "policy_category", "legal_basis", "scope", "affected_entities", "review_date",
             "status", "effective_start_date", "effective_end_date",
             "requires_state_acknowledgement", "change_summary",
             "created_by", "created_by_name",
@@ -94,6 +97,7 @@ class PolicyVersionCreateSerializer(serializers.ModelSerializer):
         model = PolicyVersion
         fields = (
             "version_code", "title", "description", "version_type",
+            "policy_category", "legal_basis", "scope", "affected_entities", "review_date",
             "effective_start_date", "effective_end_date",
             "requires_state_acknowledgement", "change_summary",
         )
@@ -274,6 +278,7 @@ class MedicalTestRuleSerializer(serializers.ModelSerializer):
             "accepted_values", "blocking_values", "blocks_certification",
             "requires_attachment", "requires_doctor_validation",
             "requires_lab_validation", "validity_days",
+            "condition", "action", "severity", "effective_date",
             "applicable_categories", "applicable_establishment_risk_levels",
             "emergency_activation_rule", "status",
             "created_by", "created_by_name",
@@ -441,6 +446,37 @@ class FacilityRequirementRuleSerializer(serializers.ModelSerializer):
             "created_at", "updated_at",
         )
         read_only_fields = ("id", "status", "created_at", "updated_at")
+
+
+class MedicalTestPackageComponentSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = MedicalTestPackageComponent
+        fields = (
+            "id", "package", "component_type", "label",
+            "mandatory", "conditional", "order", "notes",
+            "created_at", "updated_at",
+        )
+        read_only_fields = ("id", "created_at", "updated_at")
+
+
+class MedicalTestPackageSerializer(serializers.ModelSerializer):
+    policy_version_code = serializers.CharField(source="policy_version.version_code", read_only=True)
+    created_by_name = serializers.CharField(source="created_by.get_full_name", read_only=True, default="")
+    components = MedicalTestPackageComponentSerializer(many=True, read_only=True)
+    mandatory_component_count = serializers.SerializerMethodField()
+
+    class Meta:
+        model = MedicalTestPackage
+        fields = (
+            "id", "policy_version", "policy_version_code",
+            "name", "code", "description", "package_version", "status",
+            "components", "mandatory_component_count",
+            "created_by", "created_by_name", "created_at", "updated_at",
+        )
+        read_only_fields = ("id", "status", "components", "mandatory_component_count", "created_by", "created_at", "updated_at")
+
+    def get_mandatory_component_count(self, obj):
+        return sum(1 for component in obj.components.all() if component.mandatory)
 
 
 class ReportingTemplateSerializer(serializers.ModelSerializer):

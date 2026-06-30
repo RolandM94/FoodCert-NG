@@ -281,6 +281,107 @@ class FacilityStaffType(models.TextChoices):
     VIEWER = "viewer", "Viewer"
 
 
+class FacilityProfessionalCategory(models.TextChoices):
+    ADMIN = "admin", "Admin"
+    DOCTOR = "doctor", "Doctor"
+    LAB_TECHNICIAN = "lab_technician", "Lab Technician"
+    LAB_SCIENTIST = "lab_scientist", "Lab Scientist"
+    LAB_SUPERVISOR = "lab_supervisor", "Lab Supervisor"
+    FRONT_DESK = "front_desk", "Front Desk"
+    FINANCE = "finance", "Finance"
+    RECORDS = "records", "Records"
+    COMPLIANCE = "compliance", "Compliance"
+    VIEWER = "viewer", "Viewer / Auditor"
+
+
+class FacilityTeamMemberStatus(models.TextChoices):
+    INVITED = "invited", "Invited"
+    PENDING_PROFILE = "pending_profile", "Pending Profile Completion"
+    PENDING_LICENSE_VERIFICATION = "pending_license_verification", "Pending License Verification"
+    ACTIVE = "active", "Active"
+    SUSPENDED = "suspended", "Suspended"
+    REMOVED = "removed", "Removed"
+
+
+class FacilityProfessionalVerificationStatus(models.TextChoices):
+    NOT_REQUIRED = "not_required", "Not Required"
+    PENDING = "pending", "Pending"
+    VERIFIED = "verified", "Verified"
+    REJECTED = "rejected", "Rejected"
+
+
+class FacilityRole(BaseModel):
+    facility = models.ForeignKey(
+        MedicalFacility,
+        on_delete=models.CASCADE,
+        related_name="facility_roles",
+    )
+    organization_role = models.ForeignKey(
+        "organizations.Role",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="facility_roles",
+    )
+    name = models.CharField(max_length=255)
+    description = models.TextField(blank=True)
+    professional_category = models.CharField(
+        max_length=32,
+        choices=FacilityProfessionalCategory.choices,
+        default=FacilityProfessionalCategory.ADMIN,
+        db_index=True,
+    )
+    is_system_default = models.BooleanField(default=False, db_index=True)
+    is_custom = models.BooleanField(default=False, db_index=True)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="facility_roles_created",
+    )
+
+    class Meta:
+        ordering = ["facility__facility_name", "name"]
+        constraints = [
+            models.UniqueConstraint(fields=["facility", "name"], name="unique_facility_role_name"),
+        ]
+        indexes = [
+            models.Index(fields=["facility"], name="facilities__facilit_fc7708_idx"),
+            models.Index(fields=["professional_category"], name="facilities__profess_69f176_idx"),
+            models.Index(fields=["organization_role"], name="facilities__organiz_16d263_idx"),
+            models.Index(fields=["is_system_default"], name="facilities__is_syst_61ff47_idx"),
+            models.Index(fields=["is_custom"], name="facilities__is_cust_2b444e_idx"),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.facility.facility_name} / {self.name}"
+
+
+class FacilityRolePermission(BaseModel):
+    role = models.ForeignKey(
+        FacilityRole,
+        on_delete=models.CASCADE,
+        related_name="permissions",
+    )
+    permission_key = models.CharField(max_length=150, db_index=True)
+    allowed = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ["role__name", "permission_key"]
+        constraints = [
+            models.UniqueConstraint(fields=["role", "permission_key"], name="unique_facility_role_permission"),
+        ]
+        indexes = [
+            models.Index(fields=["role"], name="facilities__role_id_ce2b6d_idx"),
+            models.Index(fields=["permission_key"], name="facilities__permiss_8f7a6d_idx"),
+            models.Index(fields=["allowed"], name="facilities__allowed_6e752c_idx"),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.role}: {self.permission_key}"
+
+
 class FacilityStaffProfile(BaseModel):
     user = models.OneToOneField(
         settings.AUTH_USER_MODEL,
@@ -299,7 +400,34 @@ class FacilityStaffProfile(BaseModel):
         blank=True,
         related_name="facility_staff_profiles",
     )
+    role = models.ForeignKey(
+        FacilityRole,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="team_members",
+    )
     staff_type = models.CharField(max_length=32, choices=FacilityStaffType.choices, db_index=True)
+    professional_category = models.CharField(
+        max_length=32,
+        choices=FacilityProfessionalCategory.choices,
+        default=FacilityProfessionalCategory.ADMIN,
+        db_index=True,
+    )
+    status = models.CharField(
+        max_length=40,
+        choices=FacilityTeamMemberStatus.choices,
+        default=FacilityTeamMemberStatus.ACTIVE,
+        db_index=True,
+    )
+    invited_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="facility_team_members_invited",
+    )
+    accepted_at = models.DateTimeField(null=True, blank=True)
     professional_registration_number = models.CharField(max_length=120, blank=True)
     digital_signature_url = models.URLField(blank=True)
     is_active = models.BooleanField(default=True, db_index=True)
@@ -309,9 +437,106 @@ class FacilityStaffProfile(BaseModel):
         indexes = [
             models.Index(fields=["facility"], name="facilities__facilit_bc249d_idx"),
             models.Index(fields=["department"], name="facilities__departm_966049_idx"),
+            models.Index(fields=["role"], name="facilities__role_id_bf93ef_idx"),
             models.Index(fields=["staff_type"], name="facilities__staff_t_bcbacd_idx"),
+            models.Index(fields=["professional_category"], name="facilities__profess_27de17_idx"),
+            models.Index(fields=["status"], name="facilities__status_5d4a6c_idx"),
             models.Index(fields=["is_active"], name="facilities__is_acti_834508_idx"),
         ]
 
     def __str__(self) -> str:
         return f"{self.user} - {self.facility.facility_name}"
+
+
+class FacilityInvitation(BaseModel):
+    facility = models.ForeignKey(
+        MedicalFacility,
+        on_delete=models.CASCADE,
+        related_name="team_invitations",
+    )
+    invite = models.OneToOneField(
+        "accounts.UserInvite",
+        on_delete=models.CASCADE,
+        related_name="facility_invitation",
+    )
+    role = models.ForeignKey(
+        FacilityRole,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="invitations",
+    )
+    professional_category = models.CharField(
+        max_length=32,
+        choices=FacilityProfessionalCategory.choices,
+        default=FacilityProfessionalCategory.ADMIN,
+        db_index=True,
+    )
+    status = models.CharField(
+        max_length=40,
+        choices=FacilityTeamMemberStatus.choices,
+        default=FacilityTeamMemberStatus.INVITED,
+        db_index=True,
+    )
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["facility"], name="facilities__facilit_fea6bf_idx"),
+            models.Index(fields=["role"], name="facilities__role_id_99d0c1_idx"),
+            models.Index(fields=["professional_category"], name="facilities__profess_b29385_idx"),
+            models.Index(fields=["status"], name="facilities__status_32ec5d_idx"),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.invite.email} -> {self.facility.facility_name}"
+
+
+class FacilityProfessionalProfile(BaseModel):
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="facility_professional_profiles",
+    )
+    facility = models.ForeignKey(
+        MedicalFacility,
+        on_delete=models.CASCADE,
+        related_name="professional_profiles",
+    )
+    team_member = models.OneToOneField(
+        FacilityStaffProfile,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="professional_profile",
+    )
+    professional_category = models.CharField(
+        max_length=32,
+        choices=FacilityProfessionalCategory.choices,
+        db_index=True,
+    )
+    license_number = models.CharField(max_length=120, blank=True)
+    license_issuing_body = models.CharField(max_length=255, blank=True)
+    license_document_url = models.URLField(blank=True)
+    verification_status = models.CharField(
+        max_length=32,
+        choices=FacilityProfessionalVerificationStatus.choices,
+        default=FacilityProfessionalVerificationStatus.NOT_REQUIRED,
+        db_index=True,
+    )
+
+    class Meta:
+        ordering = ["facility__facility_name", "user__email"]
+        constraints = [
+            models.UniqueConstraint(fields=["user", "facility"], name="unique_facility_professional_profile"),
+        ]
+        indexes = [
+            models.Index(fields=["user"], name="facilities__user_id_1f81a0_idx"),
+            models.Index(fields=["facility"], name="facilities__facilit_5e24b6_idx"),
+            models.Index(fields=["team_member"], name="facilities__team_me_ab8053_idx"),
+            models.Index(fields=["professional_category"], name="facilities__profess_1dcac7_idx"),
+            models.Index(fields=["verification_status"], name="facilities__verific_5b80bd_idx"),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.user} / {self.professional_category}"

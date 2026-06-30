@@ -13,7 +13,7 @@ from apps.forms.models import FormPrimaryModule, FormTemplate, FormTemplatePurpo
 from apps.illness.models import IllnessReport
 from apps.inspections.models import Inspection
 from apps.inspections.serializers import InspectionResponseSerializer, InspectionSerializer
-from apps.ministries.models import FederalStateQuery, MinistryStaffProfile, StateReport
+from apps.ministries.models import ComplianceAlert, FederalProfile, FederalStateQuery, MinistryStaffProfile, PublicNotice, StateReport
 from apps.organizations.models import OrganizationUnit
 from apps.reports.models import GeneratedReport, ReportType
 from apps.organizations.serializers import OrganizationUnitSerializer
@@ -379,6 +379,31 @@ class StateInspectionSerializer(InspectionSerializer):
         ]
 
 
+class FederalProfileSerializer(serializers.ModelSerializer):
+    updated_by_name = serializers.CharField(source="updated_by.get_full_name", read_only=True)
+
+    class Meta:
+        model = FederalProfile
+        fields = (
+            "id",
+            "ministry_name",
+            "department_name",
+            "programme_name",
+            "national_coordinator",
+            "official_email",
+            "official_phone",
+            "logo_url",
+            "active_guideline_version",
+            "reporting_cycle",
+            "central_portal_status",
+            "updated_by",
+            "updated_by_name",
+            "created_at",
+            "updated_at",
+        )
+        read_only_fields = ("id", "updated_by", "updated_by_name", "created_at", "updated_at")
+
+
 class StateReportSerializer(serializers.ModelSerializer):
     state_name = serializers.CharField(source="state.name", read_only=True)
     generated_by_name = serializers.CharField(source="generated_by.get_full_name", read_only=True)
@@ -410,6 +435,68 @@ class StateReportSerializer(serializers.ModelSerializer):
             "updated_at",
         )
         read_only_fields = fields
+
+
+class FederalReportReviewSerializer(serializers.Serializer):
+    comment = serializers.CharField(required=False, allow_blank=True, default="")
+
+
+class ComplianceAlertSerializer(serializers.ModelSerializer):
+    state_name = serializers.CharField(source="state.name", read_only=True, default="")
+    alert_type_display = serializers.CharField(source="get_alert_type_display", read_only=True)
+    created_by_name = serializers.CharField(source="created_by.get_full_name", read_only=True, default="")
+    resolved_by_name = serializers.CharField(source="resolved_by.get_full_name", read_only=True, default="")
+
+    class Meta:
+        model = ComplianceAlert
+        fields = (
+            "id", "alert_type", "alert_type_display", "severity", "status",
+            "title", "description", "state", "state_name",
+            "entity_type", "entity_id", "metric_value", "threshold_value",
+            "auto_generated", "metadata",
+            "created_by", "created_by_name", "acknowledged_by",
+            "resolved_by", "resolved_by_name", "resolved_at", "resolution_note",
+            "last_detected_at", "created_at", "updated_at",
+        )
+        read_only_fields = fields
+
+
+class ComplianceAlertCreateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ComplianceAlert
+        fields = ("alert_type", "severity", "title", "description", "state", "entity_type", "entity_id", "metadata")
+
+    def validate_alert_type(self, value):
+        return value
+
+
+class ComplianceAlertActionSerializer(serializers.Serializer):
+    note = serializers.CharField(required=False, allow_blank=True, default="")
+
+
+class PublicNoticeSerializer(serializers.ModelSerializer):
+    created_by_name = serializers.CharField(source="created_by.get_full_name", read_only=True, default="")
+    published_by_name = serializers.CharField(source="published_by.get_full_name", read_only=True, default="")
+
+    class Meta:
+        model = PublicNotice
+        fields = (
+            "id", "title", "body", "audiences", "attachments",
+            "effective_date", "expiry_date", "status",
+            "created_by", "created_by_name", "submitted_by",
+            "approved_by", "published_by", "published_by_name",
+            "submitted_at", "approved_at", "published_at",
+            "created_at", "updated_at",
+        )
+        read_only_fields = (
+            "id", "status", "created_by", "submitted_by", "approved_by",
+            "published_by", "submitted_at", "approved_at", "published_at",
+            "created_at", "updated_at",
+        )
+
+
+class PublicNoticeActionSerializer(serializers.Serializer):
+    comment = serializers.CharField(required=False, allow_blank=True, default="")
 
 
 class StateReportGenerateSerializer(serializers.Serializer):
@@ -462,6 +549,9 @@ class FederalFacilityRegistrySerializer(serializers.ModelSerializer):
     state_name = serializers.CharField(source="state.name", read_only=True)
     lga_name = serializers.CharField(source="lga.name", read_only=True)
     can_conduct_assessments = serializers.BooleanField(read_only=True)
+    assessments_count = serializers.IntegerField(read_only=True, default=0)
+    certificates_count = serializers.IntegerField(read_only=True, default=0)
+    temporary_unfit_count = serializers.IntegerField(read_only=True, default=0)
 
     class Meta:
         model = MedicalFacility
@@ -480,6 +570,9 @@ class FederalFacilityRegistrySerializer(serializers.ModelSerializer):
             "accreditation_start_date",
             "accreditation_expiry_date",
             "can_conduct_assessments",
+            "assessments_count",
+            "certificates_count",
+            "temporary_unfit_count",
             "created_at",
             "updated_at",
         )

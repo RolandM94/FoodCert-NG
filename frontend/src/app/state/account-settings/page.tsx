@@ -1,18 +1,18 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Bell, Building2, ClipboardCheck, IdCard, Landmark, Pencil, ReceiptText, Settings, ShieldCheck } from "lucide-react";
 import { PortalShell } from "@/components/layout/portal-shell";
 import { CertificateTemplateEditor } from "@/components/certificates/certificate-template-editor";
+import { StateAuditLogsPanel } from "@/components/ui/state-audit-logs-panel";
 import { StateFeesSettingsPanel } from "@/app/state/fees/page";
 import { FormBuilderContent } from "@/features/organizations/forms-tool-layout";
 import { fetchFormTemplates, type FormTemplate } from "@/lib/api/forms";
 import {
   fetchInspectionSettings,
-  fetchStateAuditLogs,
   fetchStateMedicalFacilitySettings,
   fetchStateNotificationSettings,
   fetchStateProfileSettings,
@@ -42,7 +42,7 @@ type TabKey =
   | "audit-logs";
 
 const TABS: { key: TabKey; label: string; icon: typeof Settings }[] = [
-  { key: "state-profile", label: "State Profile", icon: IdCard },
+  { key: "state-profile", label: "State Ministry Profile", icon: IdCard },
   { key: "fees-payments", label: "Fees & Payments", icon: ReceiptText },
   { key: "certificate-settings", label: "Certificate Settings", icon: ShieldCheck },
   { key: "medical-facility-settings", label: "Medical Facility Settings", icon: Building2 },
@@ -52,11 +52,6 @@ const TABS: { key: TabKey; label: string; icon: typeof Settings }[] = [
   { key: "security-access", label: "Security & Access", icon: ShieldCheck },
   { key: "audit-logs", label: "Audit Logs", icon: Landmark },
 ];
-
-type PlaceholderTabKey = Exclude<TabKey, "fees-payments" | "certificate-settings" | "medical-facility-settings" | "form-builder" | "inspection-settings" | "state-profile" | "notification-settings" | "security-access" | "audit-logs">;
-
-const PLACEHOLDERS: Record<PlaceholderTabKey, { title: string; description: string; items: string[] }> = {
-};
 
 type FacilitySettingsState = {
   accreditationTemplate: string;
@@ -621,26 +616,49 @@ function StateProfilePanel() {
     update("signatories", [{ ...current, [key]: value }]);
   }
   const signatory = settings.signatories[0] || {};
+  const readinessChecks = [
+    { label: "Ministry identity", ready: Boolean(settings.ministry_name && settings.public_display_name) },
+    { label: "Official contact", ready: Boolean(settings.official_email && settings.official_phone) },
+    { label: "Working schedule", ready: Boolean(settings.working_hours_start && settings.working_hours_end) },
+    { label: "Branding assets", ready: Boolean(settings.state_logo_url || settings.certificate_logo_url) },
+    { label: "Authorized signatory", ready: Boolean(signatory.name && signatory.title) },
+  ];
+  const completedChecks = readinessChecks.filter((item) => item.ready).length;
   return (
     <div className="grid gap-6">
-      <SettingCard title="State Profile" description="Manage the official identity used on certificates, reports, receipts, notices, and public verification pages.">
+      <SettingCard title="State Ministry Profile" description="Manage the official identity used for state oversight, public notices, certificates, reports, and implementation communications.">
         {settingsQuery.isLoading ? <p className="text-sm font-semibold text-neutral-500">Loading state profile...</p> : null}
         {saveMutation.isError ? <p className="rounded bg-danger-50 px-3 py-2 text-sm font-semibold text-danger-700">{getApiErrorMessage(saveMutation.error, "Could not save state profile.")}</p> : null}
         {saved ? <p className="rounded bg-brand-50 px-3 py-2 text-sm font-semibold text-brand-700">State profile saved.</p> : null}
+        <div className="mt-4 grid gap-3 md:grid-cols-5">
+          {readinessChecks.map((item) => (
+            <div
+              key={item.label}
+              className={`rounded-lg border px-4 py-3 text-sm ${item.ready ? "border-brand-200 bg-brand-50 text-brand-800" : "border-warning-200 bg-warning-50 text-warning-800"}`}
+            >
+              <p className="font-bold">{item.label}</p>
+              <p className="mt-1 text-xs font-semibold uppercase tracking-wide">{item.ready ? "Configured" : "Pending"}</p>
+            </div>
+          ))}
+        </div>
+        <p className="mt-4 text-sm text-neutral-500">
+          Readiness: {completedChecks}/{readinessChecks.length} core profile checkpoints configured. Federal policy linkage, reporting cadence, and implementation activation continue in the relevant policy and reporting workflows.
+        </p>
       </SettingCard>
       <div className="grid gap-5 lg:grid-cols-2">
-        <SettingCard title="State Identity">
+        <SettingCard title="State Identity" description="Use the official State Ministry naming that should appear across oversight surfaces and public-facing artifacts.">
           <div className="grid gap-4">
             <TextField label="Ministry Name" value={settings.ministry_name} onChange={(value) => update("ministry_name", value)} />
             <TextField label="Public Display Name" value={settings.public_display_name} onChange={(value) => update("public_display_name", value)} />
           </div>
         </SettingCard>
-        <SettingCard title="Contact Information">
+        <SettingCard title="Official Contact Information" description="These details are used for programme coordination, notices, and facility-facing communications.">
           <div className="grid gap-4">
             <TextField label="Official Email" value={settings.official_email} onChange={(value) => update("official_email", value)} type="email" />
             <TextField label="Official Phone" value={settings.official_phone} onChange={(value) => update("official_phone", value)} />
             <TextField label="Website" value={settings.website} onChange={(value) => update("website", value)} />
             <TextField label="Address" value={settings.address_line_1} onChange={(value) => update("address_line_1", value)} />
+            <TextField label="Additional Address / Office Detail" value={settings.address_line_2} onChange={(value) => update("address_line_2", value)} />
           </div>
         </SettingCard>
       </div>
@@ -648,14 +666,16 @@ function StateProfilePanel() {
         <SettingCard title="Branding & Logos" description="Use hosted asset URLs for now. File upload can plug into the same fields later.">
           <div className="grid gap-4">
             <TextField label="State Logo URL" value={settings.state_logo_url} onChange={(value) => update("state_logo_url", value)} />
+            <TextField label="State Seal URL" value={settings.state_seal_url} onChange={(value) => update("state_seal_url", value)} />
             <TextField label="Certificate Logo URL" value={settings.certificate_logo_url} onChange={(value) => update("certificate_logo_url", value)} />
+            <TextField label="Receipt Logo URL" value={settings.receipt_logo_url} onChange={(value) => update("receipt_logo_url", value)} />
             <div className="grid gap-4 sm:grid-cols-2">
               <TextField label="Primary Brand Color" value={settings.primary_brand_color} onChange={(value) => update("primary_brand_color", value)} type="color" />
               <TextField label="Secondary Brand Color" value={settings.secondary_brand_color} onChange={(value) => update("secondary_brand_color", value)} type="color" />
             </div>
           </div>
         </SettingCard>
-        <SettingCard title="Authorized Signatory">
+        <SettingCard title="Authorized Signatory" description="Use the current approver or focal signatory whose details should appear on approved state artifacts.">
           <div className="grid gap-4">
             <TextField label="Name" value={String(signatory.name || "")} onChange={(value) => updateSignatory("name", value)} />
             <TextField label="Title" value={String(signatory.title || "")} onChange={(value) => updateSignatory("title", value)} />
@@ -664,10 +684,14 @@ function StateProfilePanel() {
           </div>
         </SettingCard>
       </div>
-      <SettingCard title="Administrative Defaults">
-        <div className="grid gap-4 md:grid-cols-4">
+      <SettingCard title="Administrative Defaults" description="These defaults shape office operations, scheduling, exports, and date handling across the State Ministry account.">
+        <div className="grid gap-4 md:grid-cols-3">
           <TextField label="Timezone" value={settings.timezone} onChange={(value) => update("timezone", value)} />
           <TextField label="Currency" value={settings.currency} onChange={(value) => update("currency", value)} />
+          <TextField label="Postal Code" value={settings.postal_code} onChange={(value) => update("postal_code", value)} />
+          <TextField label="City" value={settings.city} onChange={(value) => update("city", value)} />
+          <TextField label="Country" value={settings.country} onChange={(value) => update("country", value)} />
+          <TextField label="Public Holidays Source" value={settings.public_holidays_source} onChange={(value) => update("public_holidays_source", value)} />
           <TextField label="Working Hours Start" value={settings.working_hours_start} onChange={(value) => update("working_hours_start", value)} type="time" />
           <TextField label="Working Hours End" value={settings.working_hours_end} onChange={(value) => update("working_hours_end", value)} type="time" />
         </div>
@@ -814,82 +838,7 @@ function SecurityAccessPanel() {
   );
 }
 
-function AuditLogsPanel() {
-  const [filters, setFilters] = useState({ action: "", module: "", search: "" });
-  const logsQuery = useQuery({
-    queryKey: ["state-account-settings", "audit-logs", filters],
-    queryFn: () => fetchStateAuditLogs(Object.fromEntries(Object.entries(filters).filter(([, value]) => value))),
-  });
-  const logs = logsQuery.data || [];
-  return (
-    <div className="grid gap-6">
-      <SettingCard title="Audit Logs" description="Review state-scoped activity, security events, settings changes, exports, and workflow actions.">
-        <div className="grid gap-3 md:grid-cols-[1fr_220px_220px]">
-          <TextField label="Search" value={filters.search} onChange={(value) => setFilters((prev) => ({ ...prev, search: value }))} />
-          <label className="grid gap-1 text-sm font-semibold text-neutral-700">
-            Action
-            <select className="h-11 rounded-lg border border-neutral-200 bg-white px-3 text-sm" value={filters.action} onChange={(event) => setFilters((prev) => ({ ...prev, action: event.target.value }))}>
-              <option value="">All actions</option>
-              <option value="create">Create</option>
-              <option value="update">Update</option>
-              <option value="workflow_transition">Workflow transition</option>
-              <option value="security_event">Security event</option>
-              <option value="certificate_event">Certificate event</option>
-              <option value="payment_event">Payment event</option>
-            </select>
-          </label>
-          <TextField label="Module" value={filters.module} onChange={(value) => setFilters((prev) => ({ ...prev, module: value }))} />
-        </div>
-      </SettingCard>
-      <section className="overflow-hidden rounded-lg border border-neutral-200 bg-white shadow-sm">
-        <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-neutral-200 text-sm">
-            <thead className="bg-neutral-50">
-              <tr>
-                {["Date", "Actor", "Action", "Module", "Entity", "Status", "IP Address"].map((header) => <th className="px-4 py-3 text-left text-xs font-bold uppercase tracking-wide text-neutral-500" key={header}>{header}</th>)}
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-neutral-100">
-              {logs.map((log) => (
-                <tr className="bg-white" key={log.id}>
-                  <td className="px-4 py-3 text-neutral-600">{new Date(log.created_at).toLocaleString()}</td>
-                  <td className="px-4 py-3 text-neutral-700">{log.actor_name || log.actor_email || "System"}</td>
-                  <td className="px-4 py-3 font-semibold text-neutral-800">{log.event}</td>
-                  <td className="px-4 py-3 text-neutral-600">{log.module}</td>
-                  <td className="px-4 py-3 text-neutral-600">{log.target_type || "-"} {log.target_id ? `#${log.target_id.slice(0, 8)}` : ""}</td>
-                  <td className="px-4 py-3"><span className="rounded-full bg-brand-50 px-2 py-1 text-xs font-bold text-brand-700">{log.status}</span></td>
-                  <td className="px-4 py-3 text-neutral-600">{log.ip_address || "-"}</td>
-                </tr>
-              ))}
-              {!logsQuery.isLoading && !logs.length ? <tr><td className="px-4 py-6 text-sm text-neutral-500" colSpan={7}>No audit logs match these filters.</td></tr> : null}
-              {logsQuery.isLoading ? <tr><td className="px-4 py-6 text-sm text-neutral-500" colSpan={7}>Loading audit logs...</td></tr> : null}
-            </tbody>
-          </table>
-        </div>
-      </section>
-    </div>
-  );
-}
-
-function PlaceholderSection({ tab }: { tab: PlaceholderTabKey }) {
-  const config = PLACEHOLDERS[tab];
-  return (
-    <section className="rounded-lg border border-neutral-200 bg-white p-6 shadow-sm">
-      <p className="text-xs font-bold uppercase tracking-wide text-brand-700">Account Settings</p>
-      <h2 className="mt-2 text-lg font-bold text-neutral-950">{config.title}</h2>
-      <p className="mt-2 max-w-2xl text-sm leading-6 text-neutral-600">{config.description}</p>
-      <div className="mt-5 grid gap-3 md:grid-cols-3">
-        {config.items.map((item) => (
-          <div className="rounded-lg border border-neutral-100 bg-neutral-50 p-4 text-sm font-semibold text-neutral-700" key={item}>
-            {item}
-          </div>
-        ))}
-      </div>
-    </section>
-  );
-}
-
-export default function StateAccountSettingsPage() {
+function StateAccountSettingsPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const tabParam = searchParams.get("tab") as TabKey | null;
@@ -927,8 +876,15 @@ export default function StateAccountSettingsPage() {
       {activeTab === "state-profile" ? <StateProfilePanel /> : null}
       {activeTab === "notification-settings" ? <NotificationSettingsPanel /> : null}
       {activeTab === "security-access" ? <SecurityAccessPanel /> : null}
-      {activeTab === "audit-logs" ? <AuditLogsPanel /> : null}
-      {activeTab !== "fees-payments" && activeTab !== "certificate-settings" && activeTab !== "medical-facility-settings" && activeTab !== "form-builder" && activeTab !== "inspection-settings" && activeTab !== "state-profile" && activeTab !== "notification-settings" && activeTab !== "security-access" && activeTab !== "audit-logs" ? <PlaceholderSection tab={activeTab} /> : null}
+      {activeTab === "audit-logs" ? <StateAuditLogsPanel compact /> : null}
     </PortalShell>
+  );
+}
+
+export default function StateAccountSettingsPage() {
+  return (
+    <Suspense fallback={null}>
+      <StateAccountSettingsPageContent />
+    </Suspense>
   );
 }

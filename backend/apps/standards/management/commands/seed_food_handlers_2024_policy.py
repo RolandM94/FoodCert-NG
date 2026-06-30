@@ -8,6 +8,9 @@ from apps.standards.models import (
     FacilityRequirementRule,
     FoodHandlerCategory,
     MEIndicator,
+    MedicalTestPackage,
+    MedicalTestPackageComponent,
+    MedicalTestPackageComponentType,
     MedicalTestRule,
     PhysicalExaminationRule,
     PolicyVersion,
@@ -748,4 +751,37 @@ class Command(BaseCommand):
         self.stdout.write(
             f"  FH-ME-2024-001: 1 reporting template + "
             f"{len(indicators)} M&E indicators"
+        )
+
+        package = MedicalTestPackage.objects.create(
+            policy_version=pv,
+            name="Food Handler Medical Test Package",
+            code="FH-PKG-2024-001",
+            description="National minimum medical test package for food handlers (2024 Guidelines).",
+            package_version="1.0",
+            status="active",
+        )
+        T = MedicalTestPackageComponentType
+        package_components = [
+            (T.HEALTH_DECLARATION_FORM, "Health Declaration Form", True, False),
+            (T.DOCTOR_DECLARATION_VALIDATION, "Doctor Declaration Validation", True, False),
+            (T.PHYSICAL_EXAMINATION, "Physical Examination", True, False),
+            (T.VACCINATION_CERTIFICATE_REVIEW, "Vaccination Certificate Review", True, False),
+            (T.STOOL_MICROSCOPY_CULTURE_SENSITIVITY, "Stool microscopy, culture and sensitivity", True, False),
+            (T.HEPATITIS_A_ANTIGEN, "Hepatitis A Antigen", True, False),
+            (T.ADDITIONAL_TESTS, "Additional tests (if clinically indicated)", False, True),
+            (T.DOCTOR_FINAL_REVIEW, "Doctor Final Review", True, False),
+            (T.CERTIFICATE_OF_FITNESS, "Certificate of Fitness / Temporary Unfit Report", True, False),
+        ]
+        for order, (component_type, label, mandatory, conditional) in enumerate(package_components, start=1):
+            MedicalTestPackageComponent.objects.create(
+                package=package,
+                component_type=component_type,
+                label=label,
+                mandatory=mandatory,
+                conditional=conditional,
+                order=order,
+            )
+        self.stdout.write(
+            f"  FH-PKG-2024-001: 1 medical test package + {len(package_components)} components"
         )

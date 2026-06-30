@@ -1,3 +1,12 @@
 "use client";
-import { DirectoryLayout } from "@/features/organizations/directory-layout";
-export default function Page() { return <DirectoryLayout role="facility_admin" />; }
+
+import { useEffect } from "react";
+import { useRouter } from "next/navigation";
+
+export default function Page() {
+  const router = useRouter();
+  useEffect(() => {
+    router.replace("/facility/assessments");
+  });
+  return null;
+}

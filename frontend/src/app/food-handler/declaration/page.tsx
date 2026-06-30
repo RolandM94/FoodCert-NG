@@ -5,7 +5,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { AlertCircle } from "lucide-react";
 
 import { AssessmentStatusBadge } from "@/components/assessments/assessment-status-badge";
-import { HealthDeclarationForm, declarationToForm, EMPTY_DECLARATION_FORM, type DeclarationFormValue } from "@/components/assessments/health-declaration-form";
+import { HealthDeclarationForm, type DeclarationFormValue } from "@/components/assessments/health-declaration-form";
 import { PortalShell } from "@/components/layout/portal-shell";
 import { StatusBadge } from "@/components/status/status-badge";
 import { getAssessmentDeclaration, listAssessments, saveDeclarationDraft, submitDeclarationVersion } from "@/lib/api/assessments";
@@ -19,7 +19,6 @@ export default function Page() {
   const [assessments, setAssessments] = useState<MedicalAssessment[]>([]);
   const [selectedId, setSelectedId] = useState("");
   const [declaration, setDeclaration] = useState<HealthDeclaration | null>(null);
-  const [form, setForm] = useState<DeclarationFormValue>(EMPTY_DECLARATION_FORM);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -46,14 +45,11 @@ export default function Page() {
 
   const loadDeclaration = useCallback(async (assessmentId: string) => {
     setDeclaration(null);
-    setForm(EMPTY_DECLARATION_FORM);
     try {
       const row = await getAssessmentDeclaration(assessmentId);
       setDeclaration(row);
-      setForm(declarationToForm(row));
     } catch {
       setDeclaration(null);
-      setForm(EMPTY_DECLARATION_FORM);
     }
   }, []);
 
@@ -65,13 +61,13 @@ export default function Page() {
     if (selectedAssessment?.id) void loadDeclaration(selectedAssessment.id);
   }, [loadDeclaration, selectedAssessment?.id]);
 
-  async function saveDraft() {
+  async function saveDraft(payload: DeclarationFormValue) {
     if (!selectedAssessment) return;
     setBusy(true);
     setError("");
     setSuccess("");
     try {
-      const row = await saveDeclarationDraft(selectedAssessment.id, form);
+      const row = await saveDeclarationDraft(selectedAssessment.id, payload);
       setDeclaration(row);
       setSuccess("Draft saved.");
       await loadAssessments();
@@ -82,13 +78,13 @@ export default function Page() {
     }
   }
 
-  async function submitForm() {
+  async function submitForm(payload: DeclarationFormValue) {
     if (!selectedAssessment) return;
     setBusy(true);
     setError("");
     setSuccess("");
     try {
-      const row = await submitDeclarationVersion(selectedAssessment.id, form);
+      const row = await submitDeclarationVersion(selectedAssessment.id, payload);
       setDeclaration(row);
       setSuccess("Declaration submitted.");
       await loadAssessments();
@@ -131,13 +127,11 @@ export default function Page() {
           </div>
 
           <HealthDeclarationForm
-            value={form}
             declaration={declaration}
             disabled={locked || !selectedAssessment}
             busy={busy}
-            onChange={setForm}
-            onSaveDraft={() => void saveDraft()}
-            onSubmit={() => void submitForm()}
+            onSaveDraft={(payload) => void saveDraft(payload)}
+            onSubmit={(payload) => void submitForm(payload)}
           />
         </section>
       </div>

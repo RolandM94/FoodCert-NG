@@ -1,3 +1,12 @@
 "use client";
+
+import { Suspense } from "react";
 import { StakeholderManagementLayout } from "@/features/organizations/stakeholder-management-layout";
-export default function Page() { return <StakeholderManagementLayout role="doctor" />; }
+
+export default function Page() {
+  return (
+    <Suspense fallback={null}>
+      <StakeholderManagementLayout role="doctor" />
+    </Suspense>
+  );
+}

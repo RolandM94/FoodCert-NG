@@ -4,6 +4,7 @@ from datetime import date, datetime, time, timedelta
 from decimal import Decimal, InvalidOperation
 
 from django.conf import settings
+from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.core.validators import validate_email
 from django.db import models, transaction
@@ -16,11 +17,14 @@ from apps.assessments.models import (
     AssessmentFormQuestion,
     AssessmentFormResponse,
     AssessmentFormResponseStatus,
+    AssessmentFormTemplateAdoption,
+    AssessmentFormTemplateSnapshot,
     AssessmentFormScope,
     AssessmentFormSection,
     AssessmentFormStatus,
     AssessmentFormTemplate,
     AssessmentFormType,
+    AssessmentOwnerLevel,
     AssessmentPrivacyClassification,
     AssessmentQuestionType,
     AssessmentRespondentRole,
@@ -31,6 +35,7 @@ from apps.assessments.models import (
     AppointmentStatus,
     FitnessDecision,
     HealthDeclaration,
+    IdentityVerificationStatus,
     MedicalAssessment,
     PhysicalExamination,
     StepStatus,
@@ -42,9 +47,97 @@ from apps.food_handlers.models import FoodHandlerStatus
 from apps.illness.models import ClearanceStatus, IllnessReport, SuspectedCondition
 from apps.nin_verification.models import NINVerificationStatus
 from apps.notifications.models import Notification, NotificationCategory
+from apps.notifications.services import NotificationService
+from apps.organizations.models import OrganizationUnitType
 from apps.payments.models import PaymentStatus
 from apps.policy.models import NationalPolicyConfig
 from apps.reports.models import GeneratedReport, GeneratedReportStatus, ReportFormat, ReportType
+
+User = get_user_model()
+
+
+def assessment_audit_metadata(*, event, actor=None, entity=None, owner_level="", reason="", **extra):
+    metadata = {
+        "event": event,
+        "actor_user_id": str(actor.id) if actor and getattr(actor, "id", None) else "",
+        "actor_role": getattr(actor, "role", ""),
+        "owner_level": owner_level or getattr(entity, "owner_level", ""),
+        "entity_type": entity.__class__.__name__ if entity is not None else "",
+        "entity_id": str(getattr(entity, "id", "")) if entity is not None else "",
+        "reason": reason,
+        "timestamp": timezone.now().isoformat(),
+    }
+    metadata.update(extra)
+    return metadata
+
+
+def template_audit_snapshot(template):
+    return {
+        "id": str(template.id),
+        "name": template.name,
+        "form_type": template.form_type,
+        "scope": template.scope,
+        "owner_level": template.owner_level,
+        "owner_id": str(template.owner_id) if template.owner_id else "",
+        "status": template.status,
+        "version": template.version,
+        "parent_template_id": str(template.parent_template_id) if template.parent_template_id else "",
+        "base_template_id": str(template.base_template_id) if template.base_template_id else "",
+    }
+
+
+def section_audit_snapshot(section):
+    return {
+        "id": str(section.id),
+        "template_id": str(section.template_id),
+        "key": section.key,
+        "title": section.title,
+        "owner_level": section.owner_level,
+        "owner_id": str(section.owner_id) if section.owner_id else "",
+        "locked": section.locked,
+    }
+
+
+def question_audit_snapshot(question):
+    return {
+        "id": str(question.id),
+        "section_id": str(question.section_id),
+        "template_id": str(question.section.template_id),
+        "key": question.key,
+        "label": question.label,
+        "owner_level": question.owner_level,
+        "owner_id": str(question.owner_id) if question.owner_id else "",
+        "locked": question.locked,
+    }
+
+
+def declaration_audit_snapshot(declaration):
+    return {
+        "id": str(declaration.id),
+        "assessment_id": str(declaration.assessment_id),
+        "version": declaration.version,
+        "risk_flag": declaration.risk_flag,
+        "is_locked": declaration.is_locked,
+        "submitted_at": declaration.submitted_at.isoformat() if declaration.submitted_at else "",
+        "validated_at": declaration.validated_at.isoformat() if declaration.validated_at else "",
+        "clarification_requested_at": declaration.clarification_requested_at.isoformat() if declaration.clarification_requested_at else "",
+    }
+
+
+def template_creation_event(template):
+    if template.form_type == AssessmentFormType.HEALTH_DECLARATION and template.scope == AssessmentFormScope.NATIONAL:
+        return "federal_template_created"
+    return "assessment_form_created"
+
+
+def field_addition_event(template):
+    if template.form_type != AssessmentFormType.HEALTH_DECLARATION:
+        return ""
+    if template.scope == AssessmentFormScope.STATE:
+        return "state_field_added"
+    if template.scope == AssessmentFormScope.FACILITY:
+        return "facility_field_added"
+    return ""
 
 
 def ensure_approved_facility(facility):
@@ -77,6 +170,26 @@ def ensure_assigned_doctor_for_assessment(user, assessment):
     ensure_doctor_for_facility(user, assessment.facility)
     if assessment.doctor_id != user.id:
         raise PermissionDenied("Doctors can only perform clinical actions on assigned assessments.")
+
+
+def ensure_assigned_or_override_doctor_for_assessment(user, assessment):
+    if user.role == UserRole.FACILITY_ADMIN and user.organization_id == assessment.facility.organization_id:
+        return
+    ensure_assigned_doctor_for_assessment(user, assessment)
+
+
+def ensure_assigned_or_override_lab_staff_for_assessment(user, assessment):
+    if user.role == UserRole.FACILITY_ADMIN and user.organization_id == assessment.facility.organization_id:
+        return
+    if user.role != UserRole.LAB_STAFF or user.organization_id != assessment.facility.organization_id:
+        raise PermissionDenied("Only assigned lab staff can perform this action.")
+    if assessment.assigned_lab_staff_id:
+        if assessment.assigned_lab_staff_id != user.id:
+            raise PermissionDenied("This assessment is assigned to another lab staff member.")
+        return
+    if assessment.assigned_lab_unit_id and getattr(user, "unit_id", None) == assessment.assigned_lab_unit_id:
+        return
+    raise PermissionDenied("This assessment has not been assigned to you or your lab unit.")
 
 
 class AssessmentFormValidationService:
@@ -247,7 +360,7 @@ class AssessmentFormValidationService:
     def validate_facility_template_controls(cls, template):
         if template.scope != AssessmentFormScope.FACILITY:
             return
-        if template.form_type not in cls.FACILITY_ALLOWED_FORM_TYPES:
+        if template.form_type not in {AssessmentFormType.FACILITY_INTAKE, AssessmentFormType.HEALTH_DECLARATION}:
             raise ValidationError({"form_type": "Facility supplementary forms must use the facility intake form type."})
         if not template.facility_id:
             raise ValidationError({"facility": "Facility supplementary forms require a facility."})
@@ -437,6 +550,177 @@ class AssessmentFormTemplateService:
         AssessmentFormStatus.ARCHIVED,
     }
 
+    @staticmethod
+    def owner_level_for_scope(scope):
+        if scope == AssessmentFormScope.STATE:
+            return AssessmentOwnerLevel.STATE
+        if scope == AssessmentFormScope.FACILITY:
+            return AssessmentOwnerLevel.FACILITY
+        return AssessmentOwnerLevel.FEDERAL
+
+    @classmethod
+    def owner_id_for_template(cls, template):
+        if template.scope == AssessmentFormScope.STATE:
+            return template.state_id
+        if template.scope == AssessmentFormScope.FACILITY:
+            return template.facility_id
+        return None
+
+    @classmethod
+    def initialize_template_ownership(cls, template):
+        template.owner_level = cls.owner_level_for_scope(template.scope)
+        template.owner_id = cls.owner_id_for_template(template)
+        if template.base_template_id:
+            return
+        if template.scope == AssessmentFormScope.NATIONAL and template.pk:
+            template.base_template = template
+            return
+        if template.parent_template_id:
+            template.base_template = template.parent_template.base_template or template.parent_template
+
+    @classmethod
+    def sync_template_ownership(cls, *, template):
+        cls.initialize_template_ownership(template)
+        AssessmentFormTemplate.objects.filter(pk=template.pk).update(
+            owner_level=template.owner_level,
+            owner_id=template.owner_id,
+            base_template=template.base_template,
+        )
+        template.refresh_from_db()
+        return template
+
+    @classmethod
+    def ensure_section_editable(cls, *, section, actor):
+        cls.ensure_can_edit(template=section.template, actor=actor)
+        if section.locked and not section.editable_by_child:
+            log_action(
+                action=AuditAction.SECURITY_EVENT,
+                actor=actor,
+                target=section,
+                old_value=section_audit_snapshot(section),
+                metadata=assessment_audit_metadata(
+                    event="locked_inherited_field_modification_blocked",
+                    actor=actor,
+                    entity=section,
+                    attempted_action="section_edit",
+                ),
+            )
+            raise PermissionDenied("Inherited sections are locked and cannot be edited.")
+
+    @classmethod
+    def ensure_question_editable(cls, *, question, actor):
+        cls.ensure_can_edit(template=question.section.template, actor=actor)
+        if question.locked and not question.editable_by_child:
+            log_action(
+                action=AuditAction.SECURITY_EVENT,
+                actor=actor,
+                target=question,
+                old_value=question_audit_snapshot(question),
+                metadata=assessment_audit_metadata(
+                    event="locked_inherited_field_modification_blocked",
+                    actor=actor,
+                    entity=question,
+                    attempted_action="question_edit",
+                ),
+            )
+            raise PermissionDenied("Inherited fields are locked and cannot be edited.")
+
+    @classmethod
+    def ensure_question_deletable(cls, *, question, actor):
+        cls.ensure_can_edit(template=question.section.template, actor=actor)
+        if question.locked and not question.deletable_by_child:
+            log_action(
+                action=AuditAction.SECURITY_EVENT,
+                actor=actor,
+                target=question,
+                old_value=question_audit_snapshot(question),
+                metadata=assessment_audit_metadata(
+                    event="locked_inherited_field_modification_blocked",
+                    actor=actor,
+                    entity=question,
+                    attempted_action="question_delete",
+                ),
+            )
+            raise PermissionDenied("Inherited fields cannot be deleted.")
+
+    @classmethod
+    def ensure_section_deletable(cls, *, section, actor):
+        cls.ensure_can_edit(template=section.template, actor=actor)
+        if section.locked and not section.deletable_by_child:
+            log_action(
+                action=AuditAction.SECURITY_EVENT,
+                actor=actor,
+                target=section,
+                old_value=section_audit_snapshot(section),
+                metadata=assessment_audit_metadata(
+                    event="locked_inherited_field_modification_blocked",
+                    actor=actor,
+                    entity=section,
+                    attempted_action="section_delete",
+                ),
+            )
+            raise PermissionDenied("Inherited sections cannot be deleted.")
+
+    @classmethod
+    def clone_sections_into_template(cls, *, source_template, target_template, lock_inherited):
+        for section in source_template.sections.all():
+            new_section = AssessmentFormSection.objects.create(
+                template=target_template,
+                key=section.key,
+                title=section.title,
+                description=section.description,
+                owner_level=section.owner_level,
+                owner_id=section.owner_id,
+                locked=lock_inherited,
+                inherited_from_section=section if lock_inherited else section.inherited_from_section,
+                editable_by_child=False if lock_inherited else section.editable_by_child,
+                deletable_by_child=False if lock_inherited else section.deletable_by_child,
+                sort_order=section.sort_order,
+                visibility_rules=section.visibility_rules,
+                required_completion=section.required_completion,
+            )
+            AssessmentFormQuestion.objects.bulk_create(
+                [
+                    AssessmentFormQuestion(
+                        section=new_section,
+                        key=question.key,
+                        label=question.label,
+                        help_text=question.help_text,
+                        placeholder=question.placeholder,
+                        owner_level=question.owner_level,
+                        owner_id=question.owner_id,
+                        locked=lock_inherited,
+                        inherited_from_question=question if lock_inherited else question.inherited_from_question,
+                        editable_by_child=False if lock_inherited else question.editable_by_child,
+                        deletable_by_child=False if lock_inherited else question.deletable_by_child,
+                        question_type=question.question_type,
+                        required=question.required,
+                        options=question.options,
+                        validation_rules=question.validation_rules,
+                        conditional_logic=question.conditional_logic,
+                        risk_flag=question.risk_flag,
+                        risk_flag_rules=question.risk_flag_rules,
+                        privacy_classification=question.privacy_classification,
+                        respondent_role=question.respondent_role,
+                        sort_order=question.sort_order,
+                        is_active=question.is_active,
+                    )
+                    for question in section.questions.all()
+                ]
+            )
+
+    @classmethod
+    def initialize_section_ownership(cls, *, section):
+        section.owner_level = section.template.owner_level
+        section.owner_id = section.template.owner_id
+        return section
+
+    @classmethod
+    def initialize_question_ownership(cls, *, question):
+        question.owner_level = question.section.owner_level
+        question.owner_id = question.section.owner_id
+        return question
+
     @classmethod
     def ensure_can_manage(cls, *, template, actor):
         if not can_manage_assessment_form_template(actor, template):
@@ -457,13 +741,25 @@ class AssessmentFormTemplateService:
     @transaction.atomic
     def submit_for_approval(cls, *, template, actor):
         cls.ensure_can_edit(template=template, actor=actor)
+        old_status = template.status
         template.status = AssessmentFormStatus.PENDING_APPROVAL
         template.review_requested_at = timezone.now()
         template.reviewed_by = None
         template.reviewed_at = None
         template.review_comment = ""
         template.save(update_fields=["status", "review_requested_at", "reviewed_by", "reviewed_at", "review_comment", "updated_at"])
-        log_action(action=AuditAction.WORKFLOW_TRANSITION, actor=actor, target=template, metadata={"event": "assessment_form_submitted_for_approval"})
+        log_action(
+            action=AuditAction.WORKFLOW_TRANSITION,
+            actor=actor,
+            target=template,
+            old_value={"status": old_status},
+            new_value={"status": template.status},
+            metadata=assessment_audit_metadata(
+                event="assessment_form_submitted_for_approval",
+                actor=actor,
+                entity=template,
+            ),
+        )
         return template
 
     @classmethod
@@ -474,6 +770,7 @@ class AssessmentFormTemplateService:
             raise ValidationError("Only pending assessment form templates can be approved.")
         if template.scope == AssessmentFormScope.FACILITY:
             AssessmentFormValidationService.validate_template(template)
+        old_status = template.status
         template.status = AssessmentFormStatus.APPROVED
         template.approved_by = actor
         template.approved_at = timezone.now()
@@ -481,7 +778,14 @@ class AssessmentFormTemplateService:
         template.reviewed_at = timezone.now()
         template.review_comment = ""
         template.save(update_fields=["status", "approved_by", "approved_at", "reviewed_by", "reviewed_at", "review_comment", "updated_at"])
-        log_action(action=AuditAction.WORKFLOW_TRANSITION, actor=actor, target=template, metadata={"event": "assessment_form_approved"})
+        log_action(
+            action=AuditAction.WORKFLOW_TRANSITION,
+            actor=actor,
+            target=template,
+            old_value={"status": old_status},
+            new_value={"status": template.status},
+            metadata=assessment_audit_metadata(event="assessment_form_approved", actor=actor, entity=template),
+        )
         AssessmentFormNotificationService.notify_template_review(template=template, event="approved")
         return template
 
@@ -491,6 +795,7 @@ class AssessmentFormTemplateService:
         cls.ensure_can_approve(template=template, actor=actor)
         if template.status != AssessmentFormStatus.PENDING_APPROVAL:
             raise ValidationError("Only pending assessment form templates can be rejected.")
+        old_status = template.status
         template.status = AssessmentFormStatus.REJECTED
         template.approved_by = None
         template.approved_at = None
@@ -498,7 +803,14 @@ class AssessmentFormTemplateService:
         template.reviewed_at = timezone.now()
         template.review_comment = reason
         template.save(update_fields=["status", "approved_by", "approved_at", "reviewed_by", "reviewed_at", "review_comment", "updated_at"])
-        log_action(action=AuditAction.WORKFLOW_TRANSITION, actor=actor, target=template, metadata={"event": "assessment_form_rejected", "reason": reason})
+        log_action(
+            action=AuditAction.WORKFLOW_TRANSITION,
+            actor=actor,
+            target=template,
+            old_value={"status": old_status},
+            new_value={"status": template.status},
+            metadata=assessment_audit_metadata(event="assessment_form_rejected", actor=actor, entity=template, reason=reason),
+        )
         AssessmentFormNotificationService.notify_template_review(template=template, event="rejected", message_suffix=reason)
         return template
 
@@ -508,6 +820,7 @@ class AssessmentFormTemplateService:
         cls.ensure_can_approve(template=template, actor=actor)
         if template.status != AssessmentFormStatus.PENDING_APPROVAL:
             raise ValidationError("Only pending assessment form templates can have changes requested.")
+        old_status = template.status
         template.status = AssessmentFormStatus.CHANGES_REQUESTED
         template.approved_by = None
         template.approved_at = None
@@ -515,7 +828,14 @@ class AssessmentFormTemplateService:
         template.reviewed_at = timezone.now()
         template.review_comment = reason
         template.save(update_fields=["status", "approved_by", "approved_at", "reviewed_by", "reviewed_at", "review_comment", "updated_at"])
-        log_action(action=AuditAction.WORKFLOW_TRANSITION, actor=actor, target=template, metadata={"event": "assessment_form_changes_requested", "reason": reason})
+        log_action(
+            action=AuditAction.WORKFLOW_TRANSITION,
+            actor=actor,
+            target=template,
+            old_value={"status": old_status},
+            new_value={"status": template.status},
+            metadata=assessment_audit_metadata(event="assessment_form_changes_requested", actor=actor, entity=template, reason=reason),
+        )
         AssessmentFormNotificationService.notify_template_review(template=template, event="changes_requested", message_suffix=reason)
         return template
 
@@ -526,10 +846,26 @@ class AssessmentFormTemplateService:
         if template.status != AssessmentFormStatus.APPROVED:
             raise ValidationError("Only approved assessment form templates can be published.")
         AssessmentFormValidationService.validate_template(template)
+        old_status = template.status
         template.status = AssessmentFormStatus.PUBLISHED
         template.published_at = timezone.now()
         template.save(update_fields=["status", "published_at", "updated_at"])
-        log_action(action=AuditAction.WORKFLOW_TRANSITION, actor=actor, target=template, metadata={"event": "assessment_form_published"})
+        publish_event = "assessment_form_published"
+        if template.form_type == AssessmentFormType.HEALTH_DECLARATION and template.scope == AssessmentFormScope.NATIONAL:
+            publish_event = "federal_template_published"
+        elif template.form_type == AssessmentFormType.HEALTH_DECLARATION and template.scope == AssessmentFormScope.STATE:
+            publish_event = "state_template_published"
+        elif template.form_type == AssessmentFormType.HEALTH_DECLARATION and template.scope == AssessmentFormScope.FACILITY:
+            publish_event = "facility_template_published"
+        log_action(
+            action=AuditAction.WORKFLOW_TRANSITION,
+            actor=actor,
+            target=template,
+            old_value={"status": old_status},
+            new_value={"status": template.status},
+            metadata=assessment_audit_metadata(event=publish_event, actor=actor, entity=template),
+        )
+        AssessmentFormNotificationService.notify_declaration_template_published(template=template)
         if template.parent_template_id:
             AssessmentFormNotificationService.notify_template_review(template=template, event="new_version_published")
         return template
@@ -540,9 +876,28 @@ class AssessmentFormTemplateService:
         cls.ensure_can_approve(template=template, actor=actor)
         if template.status != AssessmentFormStatus.PUBLISHED:
             raise ValidationError("Only published assessment form templates can be activated.")
+        old_status = template.status
+        siblings = AssessmentFormTemplate.objects.filter(
+            form_type=template.form_type,
+            scope=template.scope,
+            state_id=template.state_id,
+            facility_id=template.facility_id,
+            status=AssessmentFormStatus.ACTIVE,
+        ).exclude(pk=template.pk)
+        for sibling in siblings:
+            sibling.status = AssessmentFormStatus.RETIRED
+            sibling.superseded_by = template
+            sibling.save(update_fields=["status", "superseded_by", "updated_at"])
         template.status = AssessmentFormStatus.ACTIVE
         template.save(update_fields=["status", "updated_at"])
-        log_action(action=AuditAction.WORKFLOW_TRANSITION, actor=actor, target=template, metadata={"event": "assessment_form_activated"})
+        log_action(
+            action=AuditAction.WORKFLOW_TRANSITION,
+            actor=actor,
+            target=template,
+            old_value={"status": old_status},
+            new_value={"status": template.status},
+            metadata=assessment_audit_metadata(event="assessment_form_activated", actor=actor, entity=template),
+        )
         return template
 
     @classmethod
@@ -551,9 +906,17 @@ class AssessmentFormTemplateService:
         cls.ensure_can_approve(template=template, actor=actor)
         if template.status not in {AssessmentFormStatus.PUBLISHED, AssessmentFormStatus.ACTIVE}:
             raise ValidationError("Only published or active assessment form templates can be retired.")
+        old_status = template.status
         template.status = AssessmentFormStatus.RETIRED
         template.save(update_fields=["status", "updated_at"])
-        log_action(action=AuditAction.WORKFLOW_TRANSITION, actor=actor, target=template, metadata={"event": "assessment_form_retired"})
+        log_action(
+            action=AuditAction.WORKFLOW_TRANSITION,
+            actor=actor,
+            target=template,
+            old_value={"status": old_status},
+            new_value={"status": template.status},
+            metadata=assessment_audit_metadata(event="assessment_form_retired", actor=actor, entity=template),
+        )
         return template
 
     @classmethod
@@ -570,6 +933,9 @@ class AssessmentFormTemplateService:
             state=template.state,
             facility=template.facility,
             owner_organization=template.owner_organization,
+            owner_level=template.owner_level,
+            owner_id=template.owner_id,
+            base_template=template.base_template or (template if template.scope == AssessmentFormScope.NATIONAL else None),
             version=version,
             status=AssessmentFormStatus.DRAFT,
             is_mandatory=template.is_mandatory,
@@ -579,43 +945,134 @@ class AssessmentFormTemplateService:
             created_by=actor,
             parent_template=root,
         )
-        for section in template.sections.all():
-            new_section = AssessmentFormSection.objects.create(
-                template=duplicate,
-                key=section.key,
-                title=section.title,
-                description=section.description,
-                sort_order=section.sort_order,
-                visibility_rules=section.visibility_rules,
-                required_completion=section.required_completion,
-            )
-            AssessmentFormQuestion.objects.bulk_create(
-                [
-                    AssessmentFormQuestion(
-                        section=new_section,
-                        key=question.key,
-                        label=question.label,
-                        help_text=question.help_text,
-                        placeholder=question.placeholder,
-                        question_type=question.question_type,
-                        required=question.required,
-                        options=question.options,
-                        validation_rules=question.validation_rules,
-                        conditional_logic=question.conditional_logic,
-                        risk_flag_rules=question.risk_flag_rules,
-                        privacy_classification=question.privacy_classification,
-                        respondent_role=question.respondent_role,
-                        sort_order=question.sort_order,
-                        is_active=question.is_active,
-                    )
-                    for question in section.questions.all()
-                ]
-            )
-        log_action(action=AuditAction.CREATE, actor=actor, target=duplicate, metadata={"event": "assessment_form_duplicated", "source_template_id": str(template.id)})
+        cls.clone_sections_into_template(source_template=template, target_template=duplicate, lock_inherited=False)
+        log_action(
+            action=AuditAction.CREATE,
+            actor=actor,
+            target=duplicate,
+            new_value=template_audit_snapshot(duplicate),
+            metadata=assessment_audit_metadata(
+                event="assessment_form_duplicated",
+                actor=actor,
+                entity=duplicate,
+                source_template_id=str(template.id),
+            ),
+        )
         return duplicate
+
+    @classmethod
+    @transaction.atomic
+    def adopt(cls, *, parent_template, actor):
+        if parent_template.status not in {AssessmentFormStatus.PUBLISHED, AssessmentFormStatus.ACTIVE}:
+            raise ValidationError("Only published or active templates can be adopted.")
+        if actor.role == UserRole.STATE_ADMIN:
+            if parent_template.scope != AssessmentFormScope.NATIONAL:
+                raise ValidationError("State templates can only adopt national parent templates.")
+            scope = AssessmentFormScope.STATE
+            state = actor.state
+            facility = None
+            owner_organization = getattr(actor, "organization", None)
+        elif actor.role == UserRole.FACILITY_ADMIN:
+            if parent_template.scope not in {AssessmentFormScope.NATIONAL, AssessmentFormScope.STATE}:
+                raise ValidationError("Facility templates can only adopt national or state parent templates.")
+            facility = getattr(getattr(actor, "organization", None), "medical_facility", None)
+            if facility is None:
+                raise ValidationError("Facility adoption requires an accredited facility linked to this account.")
+            ensure_approved_facility(facility)
+            scope = AssessmentFormScope.FACILITY
+            state = facility.state
+            owner_organization = facility.organization
+        else:
+            raise PermissionDenied("Only State or facility admins can adopt declaration templates.")
+
+        existing_draft = AssessmentFormTemplate.objects.filter(
+            form_type=parent_template.form_type,
+            scope=scope,
+            state=state,
+            facility=facility,
+            status=AssessmentFormStatus.DRAFT,
+            parent_template=parent_template,
+        ).first()
+        if existing_draft:
+            return existing_draft
+
+        template = AssessmentFormTemplate.objects.create(
+            name=parent_template.name,
+            description=parent_template.description,
+            form_type=parent_template.form_type,
+            scope=scope,
+            state=state,
+            facility=facility,
+            owner_organization=owner_organization,
+            owner_level=cls.owner_level_for_scope(scope),
+            owner_id=state.id if scope == AssessmentFormScope.STATE else facility.id,
+            version=1,
+            status=AssessmentFormStatus.DRAFT,
+            is_mandatory=parent_template.is_mandatory,
+            requires_approval=True,
+            effective_from=parent_template.effective_from,
+            effective_to=parent_template.effective_to,
+            created_by=actor,
+            parent_template=parent_template,
+            base_template=parent_template.base_template or parent_template,
+        )
+        cls.clone_sections_into_template(source_template=parent_template, target_template=template, lock_inherited=True)
+        AssessmentFormTemplateAdoption.objects.create(
+            parent_template=parent_template,
+            child_template=template,
+            adopted_by_level=cls.owner_level_for_scope(scope),
+            adopted_by_id=template.owner_id,
+        )
+        adopt_event = "assessment_form_adopted"
+        if parent_template.form_type == AssessmentFormType.HEALTH_DECLARATION and scope == AssessmentFormScope.STATE:
+            adopt_event = "state_template_adopted"
+        elif parent_template.form_type == AssessmentFormType.HEALTH_DECLARATION and scope == AssessmentFormScope.FACILITY:
+            adopt_event = "facility_template_adopted"
+        log_action(
+            action=AuditAction.CREATE,
+            actor=actor,
+            target=template,
+            old_value=template_audit_snapshot(parent_template),
+            new_value=template_audit_snapshot(template),
+            metadata=assessment_audit_metadata(
+                event=adopt_event,
+                actor=actor,
+                entity=template,
+                parent_template_id=str(parent_template.id),
+            ),
+        )
+        return template
 
 
 class AssessmentFormNotificationService:
+    @staticmethod
+    def _deduped_recipients(recipients):
+        unique = []
+        seen = set()
+        for recipient in recipients:
+            user_id = recipient.get("user_id")
+            email = recipient.get("email", "")
+            key = user_id or email
+            if not key or key in seen:
+                continue
+            seen.add(key)
+            unique.append(recipient)
+        return unique
+
+    @classmethod
+    def _send(cls, *, recipients, category, title, message, action_url="", related_object=None):
+        if not recipients:
+            return []
+        return NotificationService.send(
+            category=category,
+            title=title,
+            message=message,
+            action_url=action_url,
+            recipients=cls._deduped_recipients(recipients),
+            related_object_type=related_object.__class__.__name__ if related_object else "",
+            related_object_id=str(related_object.id) if related_object else "",
+        )
+
     @staticmethod
     def _create(*, recipient, category, title, message, related_object, action_url=""):
         if not recipient:
@@ -681,6 +1138,234 @@ class AssessmentFormNotificationService:
             message=f"{template.name} was {status_text}.{suffix}",
             related_object=template,
             action_url=f"/facility/forms?template={template.id}" if template.scope == AssessmentFormScope.FACILITY else f"/state/forms?template={template.id}",
+        )
+
+    @classmethod
+    def notify_declaration_template_published(cls, *, template):
+        if template.form_type != AssessmentFormType.HEALTH_DECLARATION:
+            return []
+        if template.scope == AssessmentFormScope.NATIONAL:
+            recipients = [
+                {
+                    "user_id": str(user.id),
+                    "email": user.email or "",
+                    "recipient_type": "state_admin",
+                    "organization_id": str(user.organization_id) if user.organization_id else "",
+                }
+                for user in User.objects.filter(role=UserRole.STATE_ADMIN, status="active")
+            ]
+            return cls._send(
+                recipients=recipients,
+                category=NotificationCategory.ASSESSMENT,
+                title="Federal declaration template published",
+                message=f"{template.name} v{template.version} is available for State adoption.",
+                action_url=f"/state/forms?template={template.id}",
+                related_object=template,
+            )
+        if template.scope == AssessmentFormScope.STATE:
+            facility_users = [
+                {
+                    "user_id": str(user.id),
+                    "email": user.email or "",
+                    "recipient_type": user.role,
+                    "organization_id": str(user.organization_id) if user.organization_id else "",
+                }
+                for user in User.objects.filter(
+                    role__in=[UserRole.FACILITY_ADMIN, UserRole.DOCTOR, UserRole.LAB_STAFF],
+                    state_id=template.state_id,
+                    status="active",
+                )
+            ]
+            facility_admins = [
+                recipient
+                for recipient in facility_users
+                if recipient["recipient_type"] == UserRole.FACILITY_ADMIN
+            ]
+            cls._send(
+                recipients=facility_users,
+                category=NotificationCategory.ASSESSMENT,
+                title="State declaration extension published",
+                message=f"{template.name} v{template.version} has been published for facilities in your State.",
+                action_url=f"/facility/forms?template={template.id}",
+                related_object=template,
+            )
+            return cls._send(
+                recipients=facility_admins,
+                category=NotificationCategory.FACILITY_ACCREDITATION,
+                title="Adopt latest State declaration template",
+                message=f"Review and adopt {template.name} v{template.version} for your facility workflow.",
+                action_url=f"/facility/forms?template={template.id}",
+                related_object=template,
+            )
+        return []
+
+    @classmethod
+    def notify_declaration_required(cls, *, assessment):
+        notifications = []
+        food_handler_user = getattr(assessment.food_handler, "user", None)
+        if food_handler_user:
+            exists = Notification.objects.filter(
+                recipient=food_handler_user,
+                related_object_type="MedicalAssessment",
+                related_object_id=assessment.id,
+                title="Health declaration required",
+            ).exists()
+            if not exists:
+                notification = cls._create(
+                    recipient=food_handler_user,
+                    category=NotificationCategory.ASSESSMENT,
+                    title="Health declaration required",
+                    message="Your health declaration is now required before your assessment can move forward.",
+                    related_object=assessment,
+                    action_url=f"/food-handler/declaration?assessment={assessment.id}",
+                )
+                if notification:
+                    notifications.append(notification)
+        employer_user = getattr(getattr(assessment, "employer", None), "user", None)
+        if employer_user:
+            exists = Notification.objects.filter(
+                recipient=employer_user,
+                related_object_type="MedicalAssessment",
+                related_object_id=assessment.id,
+                title="Staff declaration pending",
+            ).exists()
+            if not exists:
+                notification = cls._create(
+                    recipient=employer_user,
+                    category=NotificationCategory.ASSESSMENT,
+                    title="Staff declaration pending",
+                    message="A staff member has a pending health declaration required for an upcoming assessment.",
+                    related_object=assessment,
+                    action_url=f"/employer/dashboard",
+                )
+                if notification:
+                    notifications.append(notification)
+        return notifications
+
+    @classmethod
+    def notify_declaration_submitted(cls, *, declaration):
+        assessment = declaration.assessment
+        recipients = []
+        if assessment.doctor_id:
+            recipients.append(
+                {
+                    "user_id": str(assessment.doctor_id),
+                    "email": assessment.doctor.email or "",
+                    "recipient_type": "doctor",
+                    "organization_id": str(assessment.doctor.organization_id) if assessment.doctor.organization_id else "",
+                }
+            )
+        for admin in User.objects.filter(
+            role=UserRole.FACILITY_ADMIN,
+            organization_id=assessment.facility.organization_id,
+            status="active",
+        ):
+            recipients.append(
+                {
+                    "user_id": str(admin.id),
+                    "email": admin.email or "",
+                    "recipient_type": "facility_admin",
+                    "organization_id": str(admin.organization_id) if admin.organization_id else "",
+                }
+            )
+        return cls._send(
+            recipients=recipients,
+            category=NotificationCategory.ASSESSMENT,
+            title="Health declaration submitted",
+            message="A health declaration has been submitted and is ready for facility review.",
+            action_url=f"/doctor/assessments/{assessment.id}",
+            related_object=declaration,
+        )
+
+    @classmethod
+    def notify_declaration_correction_required(cls, *, declaration):
+        assessment = declaration.assessment
+        recipient = assessment.food_handler.user if assessment.food_handler and assessment.food_handler.user_id else None
+        if not recipient:
+            return None
+        return cls._create(
+            recipient=recipient,
+            category=NotificationCategory.ASSESSMENT,
+            title="Health declaration requires correction",
+            message="Your declaration needs clarification before the medical workflow can continue.",
+            related_object=declaration,
+            action_url=f"/food-handler/declaration?assessment={assessment.id}",
+        )
+
+    @classmethod
+    def notify_appointment_blocked_missing_declaration(cls, *, assessment):
+        recipients = []
+        food_handler_user = getattr(assessment.food_handler, "user", None)
+        if food_handler_user:
+            recipients.append(
+                {
+                    "user_id": str(food_handler_user.id),
+                    "email": food_handler_user.email or "",
+                    "recipient_type": "food_handler",
+                }
+            )
+        employer_user = getattr(getattr(assessment, "employer", None), "user", None)
+        if employer_user:
+            recipients.append(
+                {
+                    "user_id": str(employer_user.id),
+                    "email": employer_user.email or "",
+                    "recipient_type": "employer",
+                    "organization_id": str(employer_user.organization_id) if employer_user.organization_id else "",
+                }
+            )
+        existing = Notification.objects.filter(
+            related_object_type="MedicalAssessment",
+            related_object_id=assessment.id,
+            title="Appointment blocked by missing declaration",
+        ).exists()
+        if existing:
+            return []
+        return cls._send(
+            recipients=recipients,
+            category=NotificationCategory.APPOINTMENT,
+            title="Appointment blocked by missing declaration",
+            message="The appointment cannot be confirmed until the required health declaration is submitted.",
+            action_url=f"/food-handler/declaration?assessment={assessment.id}",
+            related_object=assessment,
+        )
+
+    @classmethod
+    def notify_high_risk_declaration_validation_required(cls, *, declaration):
+        if not declaration.risk_flag:
+            return []
+        assessment = declaration.assessment
+        recipients = []
+        if assessment.doctor_id:
+            recipients.append(
+                {
+                    "user_id": str(assessment.doctor_id),
+                    "email": assessment.doctor.email or "",
+                    "recipient_type": "doctor",
+                    "organization_id": str(assessment.doctor.organization_id) if assessment.doctor.organization_id else "",
+                }
+            )
+        else:
+            for doctor in User.objects.filter(
+                role=UserRole.DOCTOR,
+                organization_id=assessment.facility.organization_id,
+                status="active",
+            ):
+                recipients.append(
+                    {
+                        "user_id": str(doctor.id),
+                        "email": doctor.email or "",
+                        "recipient_type": "doctor",
+                        "organization_id": str(doctor.organization_id) if doctor.organization_id else "",
+                    }
+                )
+        return cls._send(
+            recipients=recipients,
+            category=NotificationCategory.ASSESSMENT,
+            title="High-risk declaration requires validation",
+            message="A submitted declaration contains high-risk answers and needs doctor review.",
+            action_url=f"/doctor/assessments/{assessment.id}",
+            related_object=declaration,
         )
 
     @classmethod
@@ -1217,6 +1902,24 @@ class AssessmentFormResponseService:
 
 
 class AssessmentService:
+    @classmethod
+    def doctor_work_started(cls, assessment):
+        return (
+            assessment.declaration_status != StepStatus.PENDING
+            or assessment.physical_exam_status != StepStatus.PENDING
+            or assessment.decision_draft != FitnessDecision.PENDING
+            or bool(assessment.signed_at)
+        )
+
+    @classmethod
+    def lab_work_started(cls, assessment):
+        return assessment.lab_tests.filter(
+            Q(sample_collected_at__isnull=False)
+            | Q(resulted_at__isnull=False)
+            | Q(submitted_to_doctor_at__isnull=False)
+            | Q(reviewed_at__isnull=False)
+        ).exists()
+
     CLINICAL_STATUSES = {
         AssessmentStatus.DECLARATION_SUBMITTED,
         AssessmentStatus.DECLARATION_VALIDATED,
@@ -1291,7 +1994,7 @@ class AssessmentService:
 
     @classmethod
     def assessment_timeline(cls, *, assessment, user):
-        cls.ensure_assessment_report_access(assessment=assessment, user=user)
+        cls.ensure_assessment_report_access(assessment=assessment, user=user, kind="summary")
         role = getattr(user, "role", "")
         if role in {UserRole.FOOD_HANDLER, UserRole.EMPLOYER}:
             raise PermissionDenied("You cannot access the assessment audit timeline.")
@@ -1371,6 +2074,10 @@ class AssessmentService:
         }
 
     @classmethod
+    def declaration_ready_for_appointment(cls, assessment) -> bool:
+        return assessment.declaration_status in {StepStatus.SUBMITTED, StepStatus.VALIDATED}
+
+    @classmethod
     def _blocker(cls, code, label, detail, *, blocking=True):
         return {
             "code": code,
@@ -1414,6 +2121,19 @@ class AssessmentService:
                     "payment_required",
                     "Payment pending",
                     "Successful assessment payment is required before the appointment can be confirmed.",
+                )
+            )
+        if (
+            assessment.status != AssessmentStatus.PAYMENT_PENDING
+            and assessment.appointment_id
+            and assessment.appointment.status in {AppointmentStatus.PENDING, AppointmentStatus.RESCHEDULED}
+            and not cls.declaration_ready_for_appointment(assessment)
+        ):
+            blockers.append(
+                cls._blocker(
+                    "declaration_required_for_confirmation",
+                    "Declaration required before appointment confirmation",
+                    "The food handler must submit the health declaration before the facility can confirm this appointment.",
                 )
             )
         if assessment.status != AssessmentStatus.PAYMENT_PENDING and not cls.has_ready_appointment(assessment):
@@ -1487,6 +2207,7 @@ class AssessmentService:
             "nin_unverified": ("verify_nin", "Verify NIN"),
             "facility_not_current": ("select_facility", "Use an approved facility"),
             "payment_required": ("complete_payment", "Complete payment"),
+            "declaration_required_for_confirmation": ("submit_declaration", "Submit health declaration"),
             "appointment_required": ("confirm_appointment", "Confirm appointment"),
             "doctor_unassigned": ("assign_doctor", "Assign doctor"),
             "doctor_not_authorized": ("assign_doctor", "Assign authorized doctor"),
@@ -1611,6 +2332,100 @@ class AssessmentService:
             raise PermissionDenied("You can only manage your own declaration.")
 
     @classmethod
+    def _declaration_templates_queryset(cls, *, assessment):
+        today = timezone.localdate()
+        return (
+            AssessmentFormTemplate.objects.filter(
+                form_type=AssessmentFormType.HEALTH_DECLARATION,
+                status__in=[AssessmentFormStatus.ACTIVE, AssessmentFormStatus.PUBLISHED],
+            )
+            .filter(Q(effective_from__isnull=True) | Q(effective_from__lte=today))
+            .filter(Q(effective_to__isnull=True) | Q(effective_to__gte=today))
+            .filter(
+                Q(scope=AssessmentFormScope.NATIONAL)
+                | Q(scope=AssessmentFormScope.STATE, state=assessment.facility.state)
+                | Q(scope=AssessmentFormScope.FACILITY, facility=assessment.facility)
+            )
+            .prefetch_related("sections__questions")
+        )
+
+    @classmethod
+    def _pick_best_template(cls, queryset, *, scope, assessment):
+        filters = {"scope": scope}
+        if scope == AssessmentFormScope.STATE:
+            filters["state"] = assessment.facility.state
+        elif scope == AssessmentFormScope.FACILITY:
+            filters["facility"] = assessment.facility
+        return (
+            queryset.filter(**filters)
+            .order_by(
+                models.Case(
+                    models.When(status=AssessmentFormStatus.ACTIVE, then=0),
+                    models.When(status=AssessmentFormStatus.PUBLISHED, then=1),
+                    default=2,
+                ),
+                "-version",
+                "-updated_at",
+            )
+            .first()
+        )
+
+    @classmethod
+    def resolve_declaration_template_snapshot(cls, *, assessment):
+        templates = cls._declaration_templates_queryset(assessment=assessment)
+        federal_template = cls._pick_best_template(templates, scope=AssessmentFormScope.NATIONAL, assessment=assessment)
+        state_template = cls._pick_best_template(templates, scope=AssessmentFormScope.STATE, assessment=assessment)
+        facility_template = cls._pick_best_template(templates, scope=AssessmentFormScope.FACILITY, assessment=assessment)
+        selected_template = facility_template or state_template or federal_template
+        merged_schema = AssessmentFormResponseService.snapshot_template(selected_template) if selected_template else {}
+        existing_snapshot = AssessmentFormTemplateSnapshot.objects.filter(assessment=assessment).first()
+        previous_snapshot = None
+        if existing_snapshot:
+            previous_snapshot = {
+                "federal_template_id": str(existing_snapshot.federal_template_id) if existing_snapshot.federal_template_id else "",
+                "state_template_id": str(existing_snapshot.state_template_id) if existing_snapshot.state_template_id else "",
+                "facility_template_id": str(existing_snapshot.facility_template_id) if existing_snapshot.facility_template_id else "",
+                "selected_template_id": str(
+                    existing_snapshot.facility_template_id
+                    or existing_snapshot.state_template_id
+                    or existing_snapshot.federal_template_id
+                    or ""
+                ),
+            }
+        snapshot, created = AssessmentFormTemplateSnapshot.objects.update_or_create(
+            assessment=assessment,
+            defaults={
+                "federal_template": federal_template,
+                "state_template": state_template,
+                "facility_template": facility_template,
+                "merged_schema": merged_schema,
+                "generated_at": timezone.now(),
+            },
+        )
+        current_snapshot = {
+            "federal_template_id": str(federal_template.id) if federal_template else "",
+            "state_template_id": str(state_template.id) if state_template else "",
+            "facility_template_id": str(facility_template.id) if facility_template else "",
+            "selected_template_id": str(selected_template.id) if selected_template else "",
+        }
+        if created or previous_snapshot != current_snapshot:
+            log_action(
+                action=AuditAction.CREATE if created else AuditAction.UPDATE,
+                actor=getattr(assessment.food_handler, "user", None),
+                target=assessment,
+                old_value=previous_snapshot or {},
+                new_value=current_snapshot,
+                metadata=assessment_audit_metadata(
+                    event="final_merged_form_generated",
+                    actor=getattr(assessment.food_handler, "user", None),
+                    entity=assessment,
+                    owner_level=AssessmentOwnerLevel.FACILITY,
+                    template_snapshot_id=str(snapshot.id),
+                ),
+            )
+        return snapshot, selected_template
+
+    @classmethod
     def _declaration_payload(cls, data):
         fields = [
             "diarrhoea_vomiting_last_7_days",
@@ -1635,6 +2450,79 @@ class AssessmentService:
         return declaration
 
     @classmethod
+    def _current_declaration_response(cls, *, assessment):
+        return (
+            AssessmentFormResponse.objects.select_related("template_snapshot", "template")
+            .filter(
+                assessment=assessment,
+                template__form_type=AssessmentFormType.HEALTH_DECLARATION,
+            )
+            .exclude(status=AssessmentFormResponseStatus.SUPERSEDED)
+            .order_by("-version", "-updated_at")
+            .first()
+        )
+
+    @classmethod
+    def _declaration_response_from_data(cls, *, data):
+        response_data = data.get("response_data")
+        if isinstance(response_data, dict):
+            return response_data
+        return cls._declaration_payload(data)
+
+    @classmethod
+    def _sync_declaration_from_response(cls, *, declaration, response_data):
+        updates = []
+        for field, value in cls._declaration_payload(response_data).items():
+            setattr(declaration, field, value)
+            updates.append(field)
+        declaration.certified_true = bool(response_data.get("certified_true", declaration.certified_true))
+        declaration.risk_flag = declaration.calculate_risk_flag() or any(
+            isinstance(value, bool) and value
+            for key, value in response_data.items()
+            if key != "certified_true"
+        )
+        updates.extend(["certified_true", "risk_flag"])
+        declaration.save(update_fields=updates + ["updated_at"])
+        return declaration
+
+    @classmethod
+    def _ensure_declaration_form_response(cls, *, assessment, actor=None):
+        snapshot, template = cls.resolve_declaration_template_snapshot(assessment=assessment)
+        if not template:
+            return None, snapshot
+        response = cls._current_declaration_response(assessment=assessment)
+        if response:
+            changed = False
+            if response.template_id != template.id:
+                response.template = template
+                response.template_version = template.version
+                response.question_snapshot = snapshot.merged_schema
+                changed = True
+            if response.template_snapshot_id != snapshot.id:
+                response.template_snapshot = snapshot
+                changed = True
+            if changed:
+                response.save(update_fields=["template", "template_version", "question_snapshot", "template_snapshot", "updated_at"])
+            return response, snapshot
+        response = AssessmentFormResponseService.assign(
+            assessment=assessment,
+            template=template,
+            is_required=True,
+            actor=actor,
+        )
+        response.template_snapshot = snapshot
+        response.question_snapshot = snapshot.merged_schema
+        response.save(update_fields=["template_snapshot", "question_snapshot", "updated_at"])
+        return response, snapshot
+
+    @classmethod
+    def declaration_detail(cls, *, assessment, actor=None):
+        declaration = cls._get_or_create_declaration(assessment)
+        response, _ = cls._ensure_declaration_form_response(assessment=assessment, actor=actor)
+        declaration._current_form_response = response
+        return declaration
+
+    @classmethod
     def _notify_appointment_change(cls, *, appointment, event, actor):
         assessment = cls._appointment_assessment(appointment)
         recipients = [appointment.food_handler.user]
@@ -1653,7 +2541,12 @@ class AssessmentService:
     @classmethod
     def _payment_confirmed_for_appointment(cls, appointment):
         assessment = cls._appointment_assessment(appointment)
-        return bool(assessment and assessment.payment_transaction and assessment.payment_transaction.status == PaymentStatus.SUCCESS)
+        if not assessment or not assessment.payment_transaction:
+            return False
+        if assessment.payment_transaction.status == PaymentStatus.SUCCESS:
+            return True
+        metadata = assessment.payment_transaction.metadata or {}
+        return bool(metadata.get("pay_at_facility_allowed") or metadata.get("payment_override_status") == "waived")
 
     @classmethod
     @transaction.atomic
@@ -1665,12 +2558,27 @@ class AssessmentService:
         appointment.status = AppointmentStatus.CONFIRMED
         if notes:
             appointment.notes = notes
-        appointment.save(update_fields=["status", "notes", "updated_at"])
         assessment = cls._appointment_assessment(appointment)
         if assessment:
+            if not cls.declaration_ready_for_appointment(assessment):
+                AssessmentFormNotificationService.notify_appointment_blocked_missing_declaration(assessment=assessment)
+                log_action(
+                    action=AuditAction.WORKFLOW_TRANSITION,
+                    actor=actor,
+                    target=assessment,
+                    old_value={"declaration_status": assessment.declaration_status},
+                    metadata=assessment_audit_metadata(
+                        event="assessment_blocked_due_to_missing_declaration",
+                        actor=actor,
+                        entity=assessment,
+                        reason="Health declaration submission is required before confirming this appointment.",
+                    ),
+                )
+                raise ValidationError("Health declaration submission is required before confirming this appointment.")
             assessment.status = AssessmentStatus.APPOINTMENT_BOOKED
             assessment.assessment_date = appointment.appointment_date
             assessment.save(update_fields=["status", "assessment_date", "updated_at"])
+        appointment.save(update_fields=["status", "notes", "updated_at"])
         cls._notify_appointment_change(appointment=appointment, event="appointment_confirmed", actor=actor)
         log_action(action=AuditAction.WORKFLOW_TRANSITION, actor=actor, target=appointment, metadata={"event": "appointment_confirmed"})
         return appointment
@@ -1723,12 +2631,16 @@ class AssessmentService:
 
     @classmethod
     @transaction.atomic
-    def assign_appointment_doctor(cls, *, appointment, doctor, actor):
+    def assign_appointment_doctor(cls, *, appointment, doctor, actor, reason=""):
         ensure_facility_admin_for_facility(actor, appointment.facility)
         ensure_doctor_for_facility(doctor, appointment.facility)
+        assessment = cls._appointment_assessment(appointment)
+        reassigning = bool(appointment.doctor_id and appointment.doctor_id != doctor.id)
+        previous_doctor_id = str(appointment.doctor_id) if appointment.doctor_id else ""
+        if reassigning and assessment and cls.doctor_work_started(assessment) and not reason:
+            raise ValidationError("Reassignment reason is required once doctor work has started.")
         appointment.doctor = doctor
         appointment.save(update_fields=["doctor", "updated_at"])
-        assessment = cls._appointment_assessment(appointment)
         if assessment:
             assessment.doctor = doctor
             assessment.save(update_fields=["doctor", "updated_at"])
@@ -1736,15 +2648,24 @@ class AssessmentService:
             action=AuditAction.WORKFLOW_TRANSITION,
             actor=actor,
             target=appointment,
-            metadata={"event": "appointment_doctor_assigned", "doctor_id": str(doctor.id)},
+            metadata={
+                "event": "appointment_doctor_reassigned" if reassigning else "appointment_doctor_assigned",
+                "doctor_id": str(doctor.id),
+                "previous_doctor_id": previous_doctor_id,
+                "reason": reason,
+            },
         )
         return appointment
 
     @classmethod
     @transaction.atomic
-    def assign_assessment_doctor(cls, *, assessment, doctor, actor):
+    def assign_assessment_doctor(cls, *, assessment, doctor, actor, reason=""):
         ensure_facility_admin_for_facility(actor, assessment.facility)
         ensure_doctor_for_facility(doctor, assessment.facility)
+        reassigning = bool(assessment.doctor_id and assessment.doctor_id != doctor.id)
+        if reassigning and cls.doctor_work_started(assessment) and not reason:
+            raise ValidationError("Reassignment reason is required once doctor work has started.")
+        previous_doctor_id = str(assessment.doctor_id) if assessment.doctor_id else ""
         assessment.doctor = doctor
         assessment.save(update_fields=["doctor", "updated_at"])
         if assessment.appointment_id:
@@ -1754,7 +2675,76 @@ class AssessmentService:
             action=AuditAction.WORKFLOW_TRANSITION,
             actor=actor,
             target=assessment,
-            metadata={"event": "assessment_doctor_assigned", "doctor_id": str(doctor.id)},
+            metadata={
+                "event": "assessment_doctor_reassigned" if reassigning else "assessment_doctor_assigned",
+                "doctor_id": str(doctor.id),
+                "previous_doctor_id": previous_doctor_id,
+                "reason": reason,
+            },
+        )
+        return assessment
+
+    @classmethod
+    @transaction.atomic
+    def assign_assessment_lab(cls, *, assessment, actor, lab_staff=None, lab_unit=None, reason=""):
+        ensure_approved_facility(assessment.facility)
+        if actor.organization_id != assessment.facility.organization_id:
+            raise PermissionDenied("Facility staff can only assign internal cases for their own facility.")
+        if actor.role not in {UserRole.FACILITY_ADMIN, UserRole.DOCTOR}:
+            raise PermissionDenied("Only facility admins or doctors can assign lab work.")
+        if actor.role == UserRole.DOCTOR:
+            ensure_assigned_doctor_for_assessment(actor, assessment)
+        if assessment.physical_exam_status != StepStatus.COMPLETED:
+            raise ValidationError("Lab assignment can only happen after physical examination is completed.")
+        if not lab_staff and not lab_unit:
+            raise ValidationError("Select a lab staff member or lab unit to continue.")
+        if lab_staff and lab_staff.role != UserRole.LAB_STAFF:
+            raise ValidationError("Assigned lab staff must be a lab user.")
+        if lab_staff and lab_staff.organization_id != assessment.facility.organization_id:
+            raise ValidationError("Assigned lab staff must belong to this facility.")
+        if lab_unit and (
+            lab_unit.organization_id != assessment.facility.organization_id
+            or lab_unit.unit_type != OrganizationUnitType.LAB_DEPARTMENT
+        ):
+            raise ValidationError("Assigned lab unit must be a lab department in this facility.")
+        reassigning = (
+            (assessment.assigned_lab_staff_id and getattr(lab_staff, "id", None) != assessment.assigned_lab_staff_id)
+            or (assessment.assigned_lab_unit_id and getattr(lab_unit, "id", None) != assessment.assigned_lab_unit_id)
+        )
+        if reassigning and cls.lab_work_started(assessment) and not reason:
+            raise ValidationError("Reassignment reason is required once lab work has started.")
+
+        previous_staff_id = str(assessment.assigned_lab_staff_id) if assessment.assigned_lab_staff_id else ""
+        previous_unit_id = str(assessment.assigned_lab_unit_id) if assessment.assigned_lab_unit_id else ""
+        assigned_at = timezone.now()
+        assessment.assigned_lab_staff = lab_staff
+        assessment.assigned_lab_unit = lab_unit
+        assessment.lab_assignment_reason = reason
+        assessment.lab_assigned_by = actor
+        assessment.lab_assigned_at = assigned_at
+        assessment.save(
+            update_fields=[
+                "assigned_lab_staff",
+                "assigned_lab_unit",
+                "lab_assignment_reason",
+                "lab_assigned_by",
+                "lab_assigned_at",
+                "updated_at",
+            ]
+        )
+        assessment.lab_tests.update(assigned_lab_staff=lab_staff, assigned_lab_unit=lab_unit, updated_at=assigned_at)
+        log_action(
+            action=AuditAction.WORKFLOW_TRANSITION,
+            actor=actor,
+            target=assessment,
+            metadata={
+                "event": "assessment_lab_reassigned" if reassigning else "assessment_lab_assigned",
+                "lab_staff_id": str(lab_staff.id) if lab_staff else "",
+                "lab_unit_id": str(lab_unit.id) if lab_unit else "",
+                "previous_lab_staff_id": previous_staff_id,
+                "previous_lab_unit_id": previous_unit_id,
+                "reason": reason,
+            },
         )
         return assessment
 
@@ -1783,6 +2773,7 @@ class AssessmentService:
             metadata={"event": "assessment_created", "status": status},
         )
         AssessmentRequirementResolutionService.assign_forms(assessment=assessment, actor=actor)
+        AssessmentFormNotificationService.notify_declaration_required(assessment=assessment)
         return assessment
 
     @classmethod
@@ -1790,6 +2781,7 @@ class AssessmentService:
     def save_declaration_draft(cls, *, assessment, data, actor):
         cls.ensure_declaration_owner(assessment, actor)
         declaration = cls._get_or_create_declaration(assessment)
+        response, _ = cls._ensure_declaration_form_response(assessment=assessment, actor=actor)
         if declaration.is_locked or declaration.validated_at:
             raise ValidationError("This declaration has been validated and is locked.")
         if declaration.submitted_at and not declaration.clarification_requested_at:
@@ -1799,33 +2791,18 @@ class AssessmentService:
             declaration.submitted_at = None
             declaration.validated_by_doctor = None
             declaration.validated_at = None
-        for field, value in cls._declaration_payload(data).items():
-            setattr(declaration, field, value)
-        declaration.risk_flag = declaration.calculate_risk_flag()
+        response_data = cls._declaration_response_from_data(data=data)
+        if response:
+            response = AssessmentFormResponseService.save_draft(
+                response=response,
+                response_data=response_data,
+                actor=actor,
+            )
+            declaration._current_form_response = response
+        cls._sync_declaration_from_response(declaration=declaration, response_data=response_data)
         declaration.is_locked = False
         declaration.save(
-            update_fields=[
-                "diarrhoea_vomiting_last_7_days",
-                "fever_more_than_one_week",
-                "skin_trouble",
-                "boils_styes_sepsis",
-                "discharge_eye_ear_nose_mouth",
-                "recurring_skin_or_ear_infection",
-                "recurring_bowel_disorder",
-                "cholera_contact_last_5_days",
-                "diarrhoea_vomiting_contact_last_7_days",
-                "typhoid_paratyphoid_jaundice_contact_last_21_days",
-                "typhoid_or_paratyphoid_carrier",
-                "previous_or_current_typhoid",
-                "certified_true",
-                "risk_flag",
-                "version",
-                "is_locked",
-                "submitted_at",
-                "validated_by_doctor",
-                "validated_at",
-                "updated_at",
-            ]
+            update_fields=["version", "is_locked", "submitted_at", "validated_by_doctor", "validated_at", "updated_at"]
         )
         assessment.declaration_status = StepStatus.PENDING
         assessment.save(update_fields=["declaration_status", "updated_at"])
@@ -1848,7 +2825,20 @@ class AssessmentService:
             raise ValidationError("This declaration has already been validated and is locked.")
         if declaration and declaration.submitted_at and not declaration.clarification_requested_at:
             raise ValidationError("This declaration has already been submitted and is awaiting doctor review.")
+        previous_snapshot = declaration_audit_snapshot(declaration) if declaration else {}
+        correction_submission = bool(
+            declaration
+            and (
+                declaration.clarification_requested_at
+                or declaration.reopened_at
+                or declaration.version > 1
+            )
+        )
         declaration = cls.save_declaration_draft(assessment=assessment, data=data, actor=actor)
+        response = cls._current_declaration_response(assessment=assessment)
+        if response:
+            response = AssessmentFormResponseService.submit(response=response, actor=actor)
+            declaration._current_form_response = response
         declaration.submitted_at = timezone.now()
         declaration.certified_true = True
         declaration.clarification_requested_by = None
@@ -1870,9 +2860,21 @@ class AssessmentService:
         log_action(
             action=AuditAction.WORKFLOW_TRANSITION,
             actor=actor,
-            target=assessment,
-            metadata={"event": "declaration_submitted", "version": declaration.version, "risk_flag": declaration.risk_flag},
+            target=declaration,
+            old_value=previous_snapshot,
+            new_value=declaration_audit_snapshot(declaration),
+            metadata=assessment_audit_metadata(
+                event="declaration_corrected" if correction_submission else "food_handler_declaration_submitted",
+                actor=actor,
+                entity=declaration,
+                owner_level=AssessmentOwnerLevel.FACILITY,
+                assessment_id=str(assessment.id),
+                version=declaration.version,
+                risk_flag=declaration.risk_flag,
+            ),
         )
+        AssessmentFormNotificationService.notify_declaration_submitted(declaration=declaration)
+        AssessmentFormNotificationService.notify_high_risk_declaration_validation_required(declaration=declaration)
         return declaration
 
     @classmethod
@@ -1880,11 +2882,16 @@ class AssessmentService:
     def validate_declaration(cls, *, declaration, doctor):
         assessment = declaration.assessment
         ensure_approved_facility(assessment.facility)
-        ensure_doctor_for_facility(doctor, assessment.facility)
+        ensure_assigned_doctor_for_assessment(doctor, assessment)
         if not declaration.submitted_at:
             raise ValidationError("Only submitted declarations can be validated.")
         if declaration.validated_at:
             raise ValidationError("This declaration has already been validated.")
+        response = cls._current_declaration_response(assessment=assessment)
+        if response and response.status != AssessmentFormResponseStatus.VALIDATED:
+            response = AssessmentFormResponseService.validate(response=response, actor=doctor)
+            declaration._current_form_response = response
+        previous_snapshot = declaration_audit_snapshot(declaration)
         declaration.validated_by_doctor = doctor
         declaration.validated_at = timezone.now()
         declaration.is_locked = True
@@ -1893,7 +2900,21 @@ class AssessmentService:
         assessment.declaration_status = StepStatus.VALIDATED
         assessment.status = AssessmentStatus.DECLARATION_VALIDATED
         assessment.save(update_fields=["doctor", "declaration_status", "status", "updated_at"])
-        log_action(action=AuditAction.WORKFLOW_TRANSITION, actor=doctor, target=assessment, metadata={"event": "declaration_validated", "version": declaration.version})
+        log_action(
+            action=AuditAction.WORKFLOW_TRANSITION,
+            actor=doctor,
+            target=declaration,
+            old_value=previous_snapshot,
+            new_value=declaration_audit_snapshot(declaration),
+            metadata=assessment_audit_metadata(
+                event="doctor_validated_declaration",
+                actor=doctor,
+                entity=declaration,
+                owner_level=AssessmentOwnerLevel.FACILITY,
+                assessment_id=str(assessment.id),
+                version=declaration.version,
+            ),
+        )
         return declaration
 
     @classmethod
@@ -1901,9 +2922,20 @@ class AssessmentService:
     def request_declaration_clarification(cls, *, declaration, doctor, reason):
         assessment = declaration.assessment
         ensure_approved_facility(assessment.facility)
-        ensure_doctor_for_facility(doctor, assessment.facility)
+        ensure_assigned_doctor_for_assessment(doctor, assessment)
         if declaration.validated_at:
             raise ValidationError("Validated declarations are locked and cannot be sent back for changes.")
+        previous_snapshot = declaration_audit_snapshot(declaration)
+        response = cls._current_declaration_response(assessment=assessment)
+        if response and response.status not in {
+            AssessmentFormResponseStatus.REOPENED,
+            AssessmentFormResponseStatus.CLARIFICATION_REQUESTED,
+            AssessmentFormResponseStatus.DRAFT,
+            AssessmentFormResponseStatus.NOT_STARTED,
+        }:
+            response = AssessmentFormResponseService.reopen(response=response, actor=doctor, reason=reason)
+        if response:
+            declaration._current_form_response = response
         declaration.clarification_requested_by = doctor
         declaration.clarification_requested_at = timezone.now()
         declaration.clarification_reason = reason
@@ -1922,9 +2954,19 @@ class AssessmentService:
         log_action(
             action=AuditAction.WORKFLOW_TRANSITION,
             actor=doctor,
-            target=assessment,
-            metadata={"event": "declaration_clarification_requested"},
+            target=declaration,
+            old_value=previous_snapshot,
+            new_value=declaration_audit_snapshot(declaration),
+            metadata=assessment_audit_metadata(
+                event="doctor_rejected_declaration",
+                actor=doctor,
+                entity=declaration,
+                owner_level=AssessmentOwnerLevel.FACILITY,
+                assessment_id=str(assessment.id),
+                reason=reason,
+            ),
         )
+        AssessmentFormNotificationService.notify_declaration_correction_required(declaration=declaration)
         return declaration
 
     @classmethod
@@ -1932,9 +2974,18 @@ class AssessmentService:
     def reopen_declaration(cls, *, declaration, doctor, reason):
         assessment = declaration.assessment
         ensure_approved_facility(assessment.facility)
-        ensure_doctor_for_facility(doctor, assessment.facility)
+        ensure_assigned_doctor_for_assessment(doctor, assessment)
         if declaration.is_locked or declaration.validated_at:
             raise ValidationError("Validated declarations are locked and cannot be reopened.")
+        previous_snapshot = declaration_audit_snapshot(declaration)
+        response = cls._current_declaration_response(assessment=assessment)
+        if response and response.status not in {
+            AssessmentFormResponseStatus.REOPENED,
+            AssessmentFormResponseStatus.CLARIFICATION_REQUESTED,
+        }:
+            response = AssessmentFormResponseService.reopen(response=response, actor=doctor, reason=reason)
+        if response:
+            declaration._current_form_response = response
         declaration.version += 1
         declaration.submitted_at = None
         declaration.certified_true = False
@@ -1963,18 +3014,27 @@ class AssessmentService:
         log_action(
             action=AuditAction.WORKFLOW_TRANSITION,
             actor=doctor,
-            target=assessment,
-            metadata={"event": "declaration_reopened", "version": declaration.version, "reason": reason},
+            target=declaration,
+            old_value=previous_snapshot,
+            new_value=declaration_audit_snapshot(declaration),
+            metadata=assessment_audit_metadata(
+                event="declaration_reopened",
+                actor=doctor,
+                entity=declaration,
+                owner_level=AssessmentOwnerLevel.FACILITY,
+                assessment_id=str(assessment.id),
+                version=declaration.version,
+                reason=reason,
+            ),
         )
+        AssessmentFormNotificationService.notify_declaration_correction_required(declaration=declaration)
         return declaration
 
     @classmethod
     @transaction.atomic
     def save_physical_exam_draft(cls, *, assessment, doctor, data):
         ensure_approved_facility(assessment.facility)
-        ensure_doctor_for_facility(doctor, assessment.facility)
-        if assessment.doctor_id and assessment.doctor_id != doctor.id:
-            raise PermissionDenied("Doctors can only edit physical exams for assigned assessments.")
+        ensure_assigned_doctor_for_assessment(doctor, assessment)
         exam, _ = PhysicalExamination.objects.update_or_create(
             assessment=assessment,
             defaults={**data, "examined_by": doctor, "examined_at": timezone.now(), "is_completed": False, "completed_at": None},
@@ -2008,14 +3068,123 @@ class AssessmentService:
 
     @classmethod
     def has_verified_identity(cls, assessment) -> bool:
+        if assessment.identity_verification_status == IdentityVerificationStatus.MISMATCH:
+            return False
+        if assessment.identity_verification_status == IdentityVerificationStatus.VERIFIED:
+            return True
         return assessment.food_handler.nin_verifications.filter(
             status__in=[NINVerificationStatus.VERIFIED, NINVerificationStatus.OVERRIDE_APPROVED]
         ).exists()
 
     @classmethod
+    def has_identity_mismatch(cls, assessment) -> bool:
+        return assessment.identity_verification_status == IdentityVerificationStatus.MISMATCH
+
+    @classmethod
+    def ensure_identity_clear_for_processing(cls, assessment):
+        if cls.has_identity_mismatch(assessment):
+            raise ValidationError("This assessment is paused because an identity mismatch has been flagged.")
+
+    @classmethod
+    @transaction.atomic
+    def check_in_assessment(cls, *, assessment, actor, notes=""):
+        ensure_approved_facility(assessment.facility)
+        if actor.organization_id != assessment.facility.organization_id:
+            raise PermissionDenied("Facility staff can only check in assessments for their own facility.")
+        if not assessment.appointment_id:
+            raise ValidationError("A linked appointment is required before check-in.")
+        if assessment.appointment.status in {AppointmentStatus.CANCELLED, AppointmentStatus.NO_SHOW}:
+            raise ValidationError("This appointment cannot be checked in from its current status.")
+
+        now = timezone.now()
+        assessment.checked_in_at = now
+        assessment.checked_in_by = actor
+        assessment.check_in_notes = notes
+        assessment.identity_verification_status = IdentityVerificationStatus.VERIFIED
+        assessment.identity_verified_at = now
+        assessment.identity_verified_by = actor
+        assessment.identity_mismatch_reason = ""
+        assessment.identity_mismatch_flagged_at = None
+        assessment.identity_mismatch_flagged_by = None
+        assessment.assessment_date = assessment.assessment_date or now
+        if assessment.status in {
+            AssessmentStatus.DRAFT,
+            AssessmentStatus.PAYMENT_PENDING,
+            AssessmentStatus.PAYMENT_CONFIRMED,
+            AssessmentStatus.APPOINTMENT_BOOKED,
+        }:
+            assessment.status = AssessmentStatus.ASSESSMENT_IN_PROGRESS
+        assessment.save(
+            update_fields=[
+                "checked_in_at",
+                "checked_in_by",
+                "check_in_notes",
+                "identity_verification_status",
+                "identity_verified_at",
+                "identity_verified_by",
+                "identity_mismatch_reason",
+                "identity_mismatch_flagged_at",
+                "identity_mismatch_flagged_by",
+                "assessment_date",
+                "status",
+                "updated_at",
+            ]
+        )
+        log_action(
+            action=AuditAction.WORKFLOW_TRANSITION,
+            actor=actor,
+            target=assessment,
+            metadata={"event": "facility_assessment_checked_in", "identity_status": assessment.identity_verification_status},
+        )
+        return assessment
+
+    @classmethod
+    @transaction.atomic
+    def flag_identity_mismatch(cls, *, assessment, actor, reason):
+        ensure_approved_facility(assessment.facility)
+        if actor.organization_id != assessment.facility.organization_id:
+            raise PermissionDenied("Facility staff can only manage assessments for their own facility.")
+        if not assessment.appointment_id:
+            raise ValidationError("A linked appointment is required before identity review.")
+
+        assessment.identity_verification_status = IdentityVerificationStatus.MISMATCH
+        assessment.identity_mismatch_reason = reason
+        assessment.identity_mismatch_flagged_at = timezone.now()
+        assessment.identity_mismatch_flagged_by = actor
+        assessment.identity_verified_at = None
+        assessment.identity_verified_by = None
+        assessment.checked_in_at = None
+        assessment.checked_in_by = None
+        assessment.check_in_notes = ""
+        if assessment.status == AssessmentStatus.ASSESSMENT_IN_PROGRESS:
+            assessment.status = AssessmentStatus.APPOINTMENT_BOOKED
+        assessment.save(
+            update_fields=[
+                "identity_verification_status",
+                "identity_mismatch_reason",
+                "identity_mismatch_flagged_at",
+                "identity_mismatch_flagged_by",
+                "identity_verified_at",
+                "identity_verified_by",
+                "checked_in_at",
+                "checked_in_by",
+                "check_in_notes",
+                "status",
+                "updated_at",
+            ]
+        )
+        log_action(
+            action=AuditAction.WORKFLOW_TRANSITION,
+            actor=actor,
+            target=assessment,
+            metadata={"event": "facility_identity_mismatch_flagged", "reason": reason[:240]},
+        )
+        return assessment
+
+    @classmethod
     def validate_final_decision_ready(cls, assessment, doctor):
         ensure_approved_facility(assessment.facility)
-        ensure_doctor_for_facility(doctor, assessment.facility)
+        ensure_assigned_doctor_for_assessment(doctor, assessment)
         if assessment.signed_at:
             raise ValidationError("Final decision has already been signed and cannot be changed.")
         if not assessment.payment_transaction or assessment.payment_transaction.status != PaymentStatus.SUCCESS:
@@ -2052,6 +3221,113 @@ class AssessmentService:
             clearance_status__in=[ClearanceStatus.CLEARED, ClearanceStatus.REJECTED]
         ).exists():
             raise ValidationError("Food handler has an unresolved illness or exclusion issue.")
+
+    @classmethod
+    def workflow_recommendation(cls, assessment):
+        from apps.lab_tests.models import LabReviewRecommendation, LabTestStatus
+        from apps.vaccinations.models import VaccinationStatus, VaccineType
+
+        declaration = getattr(assessment, "health_declaration", None)
+        physical_exam = getattr(assessment, "physical_examination", None)
+        lab_tests = list(assessment.lab_tests.all())
+        vaccinations = list(assessment.vaccinations.all())
+
+        declaration_risk = bool(declaration and declaration.risk_flag)
+        physical_exam_risk = bool(physical_exam and physical_exam.risk_flag)
+        flagged_lab_results = [
+            test for test in lab_tests
+            if test.is_flagged or test.status in {LabTestStatus.POSITIVE, LabTestStatus.INCONCLUSIVE, LabTestStatus.REPEAT_REQUIRED}
+        ]
+        repeat_required_tests = [test for test in lab_tests if test.repeat_required or test.status == LabTestStatus.REPEAT_REQUIRED]
+
+        vaccination_concerns = []
+        tracked_vaccines = {VaccineType.TYPHOID, VaccineType.HEPATITIS_A}
+        compliance_statuses = {record.vaccine_type: record.compliance_status for record in vaccinations if record.vaccine_type in tracked_vaccines}
+        for vaccine_type in tracked_vaccines:
+            compliance = compliance_statuses.get(vaccine_type)
+            if compliance != "compliant":
+                vaccination_concerns.append(vaccine_type)
+
+        recommendation_priority = [
+            LabReviewRecommendation.PUBLIC_HEALTH_CLEARANCE,
+            LabReviewRecommendation.TEMPORARILY_NOT_FIT,
+            LabReviewRecommendation.REPEAT_TEST,
+            LabReviewRecommendation.CLEARED,
+        ]
+        reviewed_lab_recommendations = [test.doctor_recommendation for test in lab_tests if test.doctor_recommendation]
+        highest_lab_recommendation = next(
+            (value for value in recommendation_priority if value in reviewed_lab_recommendations),
+            "",
+        )
+
+        reasons = []
+        status = "ready"
+        suggested_decision = FitnessDecision.FIT
+
+        if assessment.declaration_status != StepStatus.VALIDATED:
+            status = "blocked"
+            suggested_decision = FitnessDecision.REQUIRES_RECHECK
+            reasons.append("Health declaration still needs doctor validation.")
+        if assessment.physical_exam_status != StepStatus.COMPLETED:
+            status = "blocked"
+            suggested_decision = FitnessDecision.REQUIRES_RECHECK
+            reasons.append("Physical examination is not complete.")
+        if assessment.lab_status != StepStatus.REVIEWED:
+            status = "blocked"
+            suggested_decision = FitnessDecision.REQUIRES_LAB_TEST
+            reasons.append("Required lab tests are not fully reviewed yet.")
+        if assessment.vaccination_status != StepStatus.REVIEWED:
+            status = "blocked"
+            suggested_decision = FitnessDecision.REQUIRES_VACCINATION
+            reasons.append("Vaccination review is still pending.")
+
+        if status != "blocked":
+            if highest_lab_recommendation == LabReviewRecommendation.PUBLIC_HEALTH_CLEARANCE:
+                status = "warning"
+                suggested_decision = FitnessDecision.REQUIRES_PUBLIC_HEALTH_CLEARANCE
+                reasons.append("Lab review indicates public health clearance is required.")
+            elif highest_lab_recommendation == LabReviewRecommendation.TEMPORARILY_NOT_FIT:
+                status = "warning"
+                suggested_decision = FitnessDecision.TEMPORARILY_NOT_FIT
+                reasons.append("Reviewed lab results indicate temporary exclusion from food handling.")
+            elif highest_lab_recommendation == LabReviewRecommendation.REPEAT_TEST or repeat_required_tests:
+                status = "warning"
+                suggested_decision = FitnessDecision.REQUIRES_LAB_TEST
+                reasons.append("At least one lab result requires repeat testing before clearance.")
+            elif vaccination_concerns:
+                status = "warning"
+                suggested_decision = FitnessDecision.REQUIRES_VACCINATION
+                reasons.append("Vaccination records still show missing, expired, or incomplete protection.")
+            elif declaration_risk or physical_exam_risk or flagged_lab_results:
+                status = "warning"
+                suggested_decision = FitnessDecision.REQUIRES_RECHECK
+                if declaration_risk:
+                    reasons.append("Declaration answers disclosed food-safety risk symptoms or exposures.")
+                if physical_exam_risk:
+                    reasons.append("Physical examination recorded clinical risk indicators.")
+                if flagged_lab_results:
+                    reasons.append("Reviewed lab results were flagged for follow-up.")
+            else:
+                reasons.append("Declaration, physical exam, lab review, and vaccination review are aligned for fit clearance.")
+
+        return {
+            "status": status,
+            "suggested_decision": suggested_decision,
+            "rationale": reasons[0] if reasons else "",
+            "reasons": reasons,
+            "signals": {
+                "declaration_risk": declaration_risk,
+                "physical_exam_risk": physical_exam_risk,
+                "flagged_lab_results": len(flagged_lab_results),
+                "repeat_required_tests": len(repeat_required_tests),
+                "highest_lab_recommendation": highest_lab_recommendation or "none",
+                "vaccination_concerns": vaccination_concerns,
+                "declaration_status": assessment.declaration_status,
+                "physical_exam_status": assessment.physical_exam_status,
+                "lab_status": assessment.lab_status,
+                "vaccination_status": assessment.vaccination_status,
+            },
+        }
 
     @classmethod
     def signature_hash(cls, *, assessment, doctor, final_decision):
@@ -2137,9 +3413,22 @@ class AssessmentService:
         return False
 
     @classmethod
-    def ensure_assessment_report_access(cls, *, assessment, user):
+    def ensure_assessment_report_access(cls, *, assessment, user, kind):
         if not cls._can_access_assessment_report(assessment=assessment, user=user):
             raise PermissionDenied("You cannot access reports for this assessment.")
+        if kind != "return_to_work":
+            return
+        role = cls._assessment_report_role(user)
+        if role in {UserRole.SUPER_ADMIN, UserRole.STATE_ADMIN, UserRole.INSPECTOR, UserRole.FOOD_HANDLER, UserRole.EMPLOYER}:
+            return
+        if role == UserRole.DOCTOR and assessment.facility.organization_id == user.organization_id:
+            return
+        if role in {UserRole.FACILITY_ADMIN, UserRole.LAB_STAFF}:
+            from apps.facilities.services import FacilityTeamService
+
+            if FacilityTeamService.has_permission(user=user, facility=assessment.facility, permission_key="unfit_reports.view"):
+                return
+        raise PermissionDenied("You do not have permission to access temporary unfit reports for this assessment.")
 
     @classmethod
     def report_type_for_assessment_kind(cls, kind, assessment=None):
@@ -2298,7 +3587,7 @@ class AssessmentService:
 
     @classmethod
     def assessment_report_payload(cls, *, assessment, user, kind):
-        cls.ensure_assessment_report_access(assessment=assessment, user=user)
+        cls.ensure_assessment_report_access(assessment=assessment, user=user, kind=kind)
         builders = {
             "summary": cls._summary_payload,
             "medical": cls._medical_payload,
@@ -2331,7 +3620,7 @@ class AssessmentService:
     @transaction.atomic
     def save_fitness_decision_draft(cls, *, assessment, doctor, final_decision, doctor_notes="", return_to_work_date=None):
         ensure_approved_facility(assessment.facility)
-        ensure_doctor_for_facility(doctor, assessment.facility)
+        ensure_assigned_doctor_for_assessment(doctor, assessment)
         if assessment.signed_at:
             raise ValidationError("Final decision has already been signed and cannot be changed.")
         if final_decision == FitnessDecision.RETURN_TO_WORK_ON_DATE and not return_to_work_date:

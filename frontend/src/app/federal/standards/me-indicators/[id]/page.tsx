@@ -257,7 +257,7 @@ export default function MEIndicatorDetailPage() {
   const handlerCategories = handlerCategoriesQuery.data ?? [];
   const establishmentCategories = establishmentCategoriesQuery.data ?? [];
   const indicatorType = String(indicator?.formula_config?.indicator_type || "quantitative");
-  const inputMode = indicator?.input_mode === "automated" ? "automatic" : (indicator?.input_mode ?? String(indicator?.formula_config?.input_mode ?? "manual"));
+  const inputMode = indicator?.input_mode ?? String(indicator?.formula_config?.input_mode ?? "manual");
   const isQualitative = indicatorType === "qualitative";
   const approvedValues = values.filter((value) => value.approval_status === "approved");
   const latestApproved = approvedValues[0] ?? values[0];
@@ -839,7 +839,7 @@ export default function MEIndicatorDetailPage() {
 
                 <div className="flex flex-col gap-3 border-t border-neutral-200 pt-4 sm:flex-row sm:items-center sm:justify-between">
                   <div className="text-sm text-neutral-500">
-                    Period: {sourcesQuery.data?.period_start ?? sourceFilters.period_start || "-"} to {sourcesQuery.data?.period_end ?? sourceFilters.period_end || "-"}
+                    Period: {(sourcesQuery.data?.period_start ?? sourceFilters.period_start) || "-"} to {(sourcesQuery.data?.period_end ?? sourceFilters.period_end) || "-"}
                   </div>
                   <div className="flex gap-2">
                     <button

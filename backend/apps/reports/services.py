@@ -17,7 +17,19 @@ from reportlab.pdfgen import canvas
 from rest_framework.exceptions import PermissionDenied
 
 from apps.accounts.models import User, UserRole, UserStatus
-from apps.assessments.models import FitnessDecision, MedicalAssessment, StepStatus
+from apps.assessments.models import (
+    AppointmentStatus,
+    AssessmentFormScope,
+    AssessmentFormStatus,
+    AssessmentFormTemplate,
+    AssessmentFormTemplateAdoption,
+    AssessmentFormType,
+    AssessmentOwnerLevel,
+    FitnessDecision,
+    HealthDeclaration,
+    MedicalAssessment,
+    StepStatus,
+)
 from apps.certificates.models import Certificate, CertificateRequest, CertificateRequestStatus, CertificateStatus, CertificateVerificationLog
 from apps.employers.models import Employer
 from apps.facilities.models import AccreditationStatus, FacilityAccreditationApplication, MedicalFacility
@@ -752,6 +764,51 @@ class AnalyticsService:
 
 class DashboardService:
     @classmethod
+    def active_declaration_templates(cls):
+        today = timezone.localdate()
+        return (
+            AssessmentFormTemplate.objects.filter(
+                form_type=AssessmentFormType.HEALTH_DECLARATION,
+                status__in=[AssessmentFormStatus.ACTIVE, AssessmentFormStatus.PUBLISHED],
+            )
+            .filter(Q(effective_from__isnull=True) | Q(effective_from__lte=today))
+            .filter(Q(effective_to__isnull=True) | Q(effective_to__gte=today))
+        )
+
+    @classmethod
+    def latest_declaration_template(cls, *, scope, state=None, facility=None):
+        queryset = cls.active_declaration_templates().filter(scope=scope)
+        if state is not None:
+            queryset = queryset.filter(state=state)
+        if facility is not None:
+            queryset = queryset.filter(facility=facility)
+        return (
+            queryset.order_by(
+                models.Case(
+                    models.When(status=AssessmentFormStatus.ACTIVE, then=0),
+                    models.When(status=AssessmentFormStatus.PUBLISHED, then=1),
+                    default=2,
+                ),
+                "-version",
+                "-updated_at",
+            ).first()
+        )
+
+    @classmethod
+    def declaration_report_status(cls, assessment):
+        if not assessment:
+            return "not_available"
+        if getattr(assessment, "certificate", None):
+            return "certificate_issued"
+        if assessment.final_decision == FitnessDecision.TEMPORARILY_NOT_FIT:
+            return "return_to_work_report_available"
+        if assessment.final_decision == FitnessDecision.NOT_FIT:
+            return "summary_report_available"
+        if assessment.final_decision == FitnessDecision.FIT:
+            return "certificate_pending"
+        return "assessment_in_progress"
+
+    @classmethod
     def food_handler_for_user(cls, user):
         if user.role != UserRole.FOOD_HANDLER:
             raise PermissionDenied("You cannot access food handler dashboards.")
@@ -781,6 +838,7 @@ class DashboardService:
         )
         vaccinations = VaccinationRecord.objects.filter(food_handler=food_handler).order_by("vaccine_type", "dose_number", "-date_administered")
         latest_illness = IllnessReport.objects.filter(food_handler=food_handler).order_by("-created_at").first()
+        declaration = getattr(latest_assessment, "health_declaration", None) if latest_assessment else None
         certificate_status = certificate.effective_status if certificate else "not_issued"
         certificate_expiry_date = certificate.expiry_date if certificate else None
         days_to_expiry = (certificate_expiry_date - today).days if certificate_expiry_date else None
@@ -808,7 +866,10 @@ class DashboardService:
                 "certificate_status": certificate_status,
                 "certificate_expiry_date": certificate_expiry_date.isoformat() if certificate_expiry_date else "",
                 "days_to_expiry": days_to_expiry,
+                "declaration_status": latest_assessment.declaration_status if latest_assessment else StepStatus.PENDING,
+                "appointment_status": latest_assessment.appointment.status if latest_assessment and latest_assessment.appointment else "not_booked",
                 "assessment_status": latest_assessment.status if latest_assessment else "not_started",
+                "report_status": cls.declaration_report_status(latest_assessment),
                 "vaccination_status": vaccination_status,
                 "renewal_status": renewal_status,
                 "return_to_work_status": return_to_work_status,
@@ -817,6 +878,16 @@ class DashboardService:
             "sections": {
                 "my_certificate": cls.food_handler_certificate_payload(certificate, today),
                 "my_assessment": cls.food_handler_assessment_payload(latest_assessment),
+                "declaration": {
+                    "submitted_at": declaration.submitted_at.isoformat() if declaration and declaration.submitted_at else "",
+                    "validated_at": declaration.validated_at.isoformat() if declaration and declaration.validated_at else "",
+                    "risk_flag": declaration.risk_flag if declaration else False,
+                    "clarification_requested_at": declaration.clarification_requested_at.isoformat()
+                    if declaration and declaration.clarification_requested_at
+                    else "",
+                }
+                if declaration
+                else None,
                 "vaccination_records": [
                     {
                         "id": str(record.id),
@@ -1299,6 +1370,8 @@ class DashboardService:
         typhoid_expired = handlers.filter(vaccinations__vaccine_type=VaccineType.TYPHOID, vaccinations__status=VaccinationStatus.EXPIRED).distinct().count()
         hep_a_dose_1 = handlers.filter(vaccinations__vaccine_type=VaccineType.HEPATITIS_A, vaccinations__dose_number=1).distinct().count()
         hep_a_dose_2_pending = handlers.filter(vaccinations__vaccine_type=VaccineType.HEPATITIS_A, vaccinations__status=VaccinationStatus.SECOND_DOSE_DUE).distinct().count()
+        employer_assessments = MedicalAssessment.objects.filter(employer=employer, food_handler__in=handlers)
+        today = timezone.localdate()
         return {
             "employer": {"id": str(employer.id), "business_name": employer.business_name},
             "branch": {"id": str(branch.id), "name": branch.name} if branch else None,
@@ -1309,6 +1382,26 @@ class DashboardService:
                 "expiring_soon": compliance["expiring_soon"],
                 "not_certified": compliance["not_certified"],
                 "temporarily_not_fit": compliance["temporarily_not_fit"],
+                "staff_pending_declaration": employer_assessments.filter(declaration_status=StepStatus.PENDING).count(),
+                "staff_pending_test": employer_assessments.filter(
+                    Q(lab_status__in=[StepStatus.PENDING, StepStatus.SUBMITTED])
+                    | Q(vaccination_status=StepStatus.PENDING)
+                    | Q(physical_exam_status=StepStatus.PENDING)
+                )
+                .exclude(final_decision__in=[FitnessDecision.FIT, FitnessDecision.NOT_FIT, FitnessDecision.TEMPORARILY_NOT_FIT])
+                .count(),
+                "certified_staff": handlers.filter(
+                    certificates__status=CertificateStatus.ACTIVE,
+                    certificates__expiry_date__gte=today,
+                )
+                .distinct()
+                .count(),
+                "expired_certificate_staff": handlers.filter(certificates__expiry_date__lt=today).distinct().count(),
+                "temporarily_unfit_staff": handlers.filter(
+                    current_status__in=[FoodHandlerStatus.TEMPORARILY_NOT_FIT, FoodHandlerStatus.TEMPORARILY_EXCLUDED]
+                )
+                .distinct()
+                .count(),
                 "cleared_to_return": IllnessReport.objects.filter(employer=employer, food_handler__in=handlers, clearance_status="cleared").count(),
                 "typhoid_vaccination_valid": typhoid_valid,
                 "typhoid_vaccination_expired": typhoid_expired,
@@ -1365,6 +1458,14 @@ class DashboardService:
         if date_to:
             appointments = appointments.filter(appointment_date__date__lte=date_to)
         certificate_requests = CertificateRequest.objects.filter(assessment__facility=facility)
+        declarations = HealthDeclaration.objects.filter(assessment__facility=facility)
+        active_facility_template = cls.latest_declaration_template(
+            scope=AssessmentFormScope.FACILITY,
+            facility=facility,
+        ) or cls.latest_declaration_template(
+            scope=AssessmentFormScope.STATE,
+            state=facility.state,
+        ) or cls.latest_declaration_template(scope=AssessmentFormScope.NATIONAL)
         return {
             "facility": {"id": str(facility.id), "facility_name": facility.facility_name},
             "filters": {
@@ -1397,12 +1498,23 @@ class DashboardService:
                 "average_turnaround_hours": cls.average_turnaround_hours(assessments),
                 "pending_settlements": pending_settlements.count(),
                 "settled_amount": decimal_string(settled.aggregate(total=Sum("facility_amount"))["total"]),
+                "active_declaration_template_version": f"v{active_facility_template.version}" if active_facility_template else "",
+                "pending_declarations": assessments.filter(declaration_status=StepStatus.PENDING).count(),
+                "declarations_requiring_doctor_validation": assessments.filter(declaration_status=StepStatus.SUBMITTED).count(),
+                "declarations_reopened_for_correction": declarations.filter(
+                    Q(reopened_at__isnull=False) | Q(clarification_requested_at__isnull=False)
+                ).count(),
+                "appointments_blocked_missing_declaration": assessments.filter(
+                    declaration_status=StepStatus.PENDING,
+                    appointment__status__in=[AppointmentStatus.PENDING, AppointmentStatus.RESCHEDULED, AppointmentStatus.CONFIRMED],
+                ).count(),
             },
             "charts": {
                 "assessment_status": list(assessments.values("status").annotate(total=Count("id")).order_by("status")),
                 "lab_status": list(assessments.values("lab_status").annotate(total=Count("id")).order_by("lab_status")),
                 "decision_distribution": list(assessments.values("final_decision").annotate(total=Count("id")).order_by("final_decision")),
                 "settlement_status": list(Settlement.objects.filter(facility=facility).values("settlement_status").annotate(total=Count("id")).order_by("settlement_status")),
+                "declaration_status": list(assessments.values("declaration_status").annotate(total=Count("id")).order_by("declaration_status")),
             },
             "sections": {
                 "queue_summary": [
@@ -1442,9 +1554,11 @@ class DashboardService:
         user,
         state_id=None,
         lga_id=None,
+        facility_id=None,
         date_from=None,
         date_to=None,
         employer_category="",
+        food_handler_category="",
         certificate_status="",
     ):
         if user.role not in {UserRole.SUPER_ADMIN, UserRole.FEDERAL_ADMIN, UserRole.STATE_ADMIN, UserRole.INSPECTOR}:
@@ -1466,10 +1580,14 @@ class DashboardService:
         )
         facility_applications = FacilityAccreditationApplication.objects.select_related("facility")
         settlements = Settlement.objects.all()
+        assessments = MedicalAssessment.objects.select_related("food_handler", "facility", "doctor", "employer")
+        lab_tests = LabTest.objects.select_related("assessment", "assessment__facility", "assessment__food_handler")
         if state:
             certificate_requests = certificate_requests.filter(assessment__facility__state=state)
             facility_applications = facility_applications.filter(facility__state=state)
             settlements = settlements.filter(state=state)
+            assessments = assessments.filter(facility__state=state)
+            lab_tests = lab_tests.filter(assessment__facility__state=state)
         if user.unit_id and getattr(user.unit, "lga_id", None):
             lga_id = user.unit.lga_id
         if lga_id:
@@ -1480,6 +1598,27 @@ class DashboardService:
             illness = illness.filter(food_handler__lga_id=lga_id)
             certificate_requests = certificate_requests.filter(assessment__food_handler__lga_id=lga_id)
             facility_applications = facility_applications.filter(facility__lga_id=lga_id)
+            assessments = assessments.filter(food_handler__lga_id=lga_id)
+            lab_tests = lab_tests.filter(assessment__food_handler__lga_id=lga_id)
+        if facility_id:
+            handlers = handlers.filter(assessments__facility_id=facility_id).distinct()
+            employers = employers.filter(
+                Q(food_handlers__assessments__facility_id=facility_id)
+                | Q(assessments__facility_id=facility_id)
+                | Q(certificates__facility_id=facility_id)
+            ).distinct()
+            facilities = facilities.filter(id=facility_id)
+            inspections = inspections.filter(
+                Q(employer__assessments__facility_id=facility_id)
+                | Q(employer__food_handlers__assessments__facility_id=facility_id)
+            ).distinct()
+            illness = illness.filter(food_handler__assessments__facility_id=facility_id).distinct()
+            certs = certs.filter(facility_id=facility_id)
+            certificate_requests = certificate_requests.filter(assessment__facility_id=facility_id)
+            facility_applications = facility_applications.filter(facility_id=facility_id)
+            settlements = settlements.filter(facility_id=facility_id)
+            assessments = assessments.filter(facility_id=facility_id)
+            lab_tests = lab_tests.filter(assessment__facility_id=facility_id)
         if employer_category:
             employers = employers.filter(establishment_category=employer_category)
             handlers = handlers.filter(employer__establishment_category=employer_category)
@@ -1487,6 +1626,16 @@ class DashboardService:
             inspections = inspections.filter(employer__establishment_category=employer_category)
             illness = illness.filter(employer__establishment_category=employer_category)
             certificate_requests = certificate_requests.filter(assessment__employer__establishment_category=employer_category)
+            assessments = assessments.filter(employer__establishment_category=employer_category)
+            lab_tests = lab_tests.filter(assessment__employer__establishment_category=employer_category)
+        if food_handler_category:
+            handlers = handlers.filter(food_handler_category=food_handler_category)
+            certs = certs.filter(food_handler__food_handler_category=food_handler_category)
+            inspections = inspections.filter(food_handler__food_handler_category=food_handler_category)
+            illness = illness.filter(food_handler__food_handler_category=food_handler_category)
+            certificate_requests = certificate_requests.filter(assessment__food_handler__food_handler_category=food_handler_category)
+            assessments = assessments.filter(food_handler__food_handler_category=food_handler_category)
+            lab_tests = lab_tests.filter(assessment__food_handler__food_handler_category=food_handler_category)
         if certificate_status:
             certs = certs.filter(status=certificate_status)
             handlers = handlers.filter(certificates__status=certificate_status).distinct()
@@ -1497,6 +1646,8 @@ class DashboardService:
             certificate_requests = certificate_requests.filter(created_at__date__gte=date_from)
             facility_applications = facility_applications.filter(created_at__date__gte=date_from)
             settlements = settlements.filter(created_at__date__gte=date_from)
+            assessments = assessments.filter(created_at__date__gte=date_from)
+            lab_tests = lab_tests.filter(created_at__date__gte=date_from)
         if date_to:
             certs = certs.filter(issue_date__lte=date_to)
             inspections = inspections.filter(inspection_date__date__lte=date_to)
@@ -1504,14 +1655,63 @@ class DashboardService:
             certificate_requests = certificate_requests.filter(created_at__date__lte=date_to)
             facility_applications = facility_applications.filter(created_at__date__lte=date_to)
             settlements = settlements.filter(created_at__date__lte=date_to)
+            assessments = assessments.filter(created_at__date__lte=date_to)
+            lab_tests = lab_tests.filter(created_at__date__lte=date_to)
         today = timezone.localdate()
         month_start = today.replace(day=1)
         pending_facility_applications = facility_applications.filter(
             application_status__in=[AccreditationStatus.SUBMITTED, AccreditationStatus.UNDER_REVIEW]
         )
+        declarations = HealthDeclaration.objects.select_related("assessment", "assessment__facility").all()
+        if state:
+            declarations = declarations.filter(assessment__facility__state=state)
+        if lga_id:
+            declarations = declarations.filter(assessment__food_handler__lga_id=lga_id)
+        state_active_template = cls.latest_declaration_template(
+            scope=AssessmentFormScope.STATE,
+            state=state,
+        ) if state else None
+        active_facility_templates = cls.active_declaration_templates().filter(scope=AssessmentFormScope.FACILITY)
+        if state:
+            active_facility_templates = active_facility_templates.filter(facility__state=state)
+        facility_adoptions = AssessmentFormTemplateAdoption.objects.filter(
+            child_template__form_type=AssessmentFormType.HEALTH_DECLARATION,
+            child_template__scope=AssessmentFormScope.FACILITY,
+            child_template__status__in=[AssessmentFormStatus.ACTIVE, AssessmentFormStatus.PUBLISHED],
+        )
+        if state:
+            facility_adoptions = facility_adoptions.filter(child_template__facility__state=state)
         pending_certificate_requests = certificate_requests.filter(status=CertificateRequestStatus.PENDING_VALIDATION)
         active_illness_exclusions = illness.exclude(clearance_status__in=["cleared", "rejected"])
         enforcement_notices = inspections.exclude(enforcement_action="none")
+        completed_assessments = assessments.filter(
+            status__in=[
+                "fit",
+                "temporarily_not_fit",
+                "not_fit",
+                "approved_by_state",
+                "certificate_issued",
+                "closed",
+            ]
+        )
+        pending_lab_results = lab_tests.filter(
+            status__in=[
+                LabTestStatus.REQUESTED,
+                LabTestStatus.SAMPLE_COLLECTION_PENDING,
+                LabTestStatus.SAMPLE_COLLECTED,
+                LabTestStatus.IN_PROGRESS,
+                LabTestStatus.RESULT_UPLOADED,
+            ]
+        )
+        overdue_doctor_reviews = assessments.filter(
+            status__in=[
+                "declaration_submitted",
+                "lab_results_reviewed",
+                "vaccination_reviewed",
+                "doctor_decision_pending",
+            ],
+            created_at__lte=timezone.now() - timezone.timedelta(days=2),
+        )
         settled_total = settlements.filter(settlement_status=SettlementStatus.PAID).aggregate(total=Sum("state_amount"))["total"] or 0
         compliance_summary = ComplianceStatusService.handler_queryset_summary(handlers)
         active_certified_handlers = compliance_summary["certified_food_handlers"]
@@ -1531,9 +1731,11 @@ class DashboardService:
             "state": {"id": str(state.id), "name": state.name} if state else None,
             "filters": {
                 "lga": str(lga_id) if lga_id else "",
+                "facility": str(facility_id) if facility_id else "",
                 "date_from": str(date_from) if date_from else "",
                 "date_to": str(date_to) if date_to else "",
                 "employer_category": employer_category or "",
+                "food_handler_category": food_handler_category or "",
                 "certificate_status": certificate_status or "",
             },
             "cards": {
@@ -1542,6 +1744,12 @@ class DashboardService:
                 "food_businesses_registered": employers.count(),
                 "approved_facilities": facilities.filter(accreditation_status=AccreditationStatus.APPROVED).count(),
                 "pending_facility_applications": pending_facility_applications.count(),
+                "assessments_completed": completed_assessments.count(),
+                "certificates_issued_total": certs.count(),
+                "temporary_unfit_reports": assessments.filter(final_decision=FitnessDecision.TEMPORARILY_NOT_FIT).count(),
+                "pending_lab_results": pending_lab_results.count(),
+                "overdue_doctor_reviews": overdue_doctor_reviews.count(),
+                "compliance_cases": enforcement_notices.count(),
                 "pending_certificate_validations": pending_certificate_requests.count(),
                 "suspended_facilities": facilities.filter(accreditation_status=AccreditationStatus.SUSPENDED).count(),
                 "facilities_due_for_reaccreditation": facilities.filter(accreditation_expiry_date__lte=today + timezone.timedelta(days=60), accreditation_expiry_date__gte=today).count(),
@@ -1558,6 +1766,16 @@ class DashboardService:
                 "certificates_expiring_soon": certificates_expiring_soon,
                 "overall_compliance_status": compliance_summary["overall_compliance_status"],
                 "performance_rating": performance_rating,
+                "facilities_adopted_state_template": facility_adoptions.values("child_template__facility_id").distinct().count(),
+                "facilities_using_latest_template": active_facility_templates.filter(parent_template=state_active_template).values("facility_id").distinct().count()
+                if state_active_template
+                else 0,
+                "declarations_submitted_in_state": declarations.filter(submitted_at__isnull=False).count(),
+                "pending_facility_adoption": max(
+                    facilities.filter(accreditation_status=AccreditationStatus.APPROVED).count()
+                    - facility_adoptions.values("child_template__facility_id").distinct().count(),
+                    0,
+                ),
             },
             "charts": {
                 "compliance_by_lga": list(handlers.values("lga__name").annotate(total=Count("id")).order_by("lga__name")),
@@ -1569,12 +1787,18 @@ class DashboardService:
                 "vaccination_coverage": vaccination_coverage,
                 "illness_trends": cls.monthly_trend(illness, "created_at"),
                 "assessment_volume_by_facility": list(
-                    MedicalAssessment.objects.filter(facility__in=facilities)
+                    assessments
                     .values("facility__facility_name")
                     .annotate(total=Count("id"))
                     .order_by("facility__facility_name")
                 ),
                 "revenue_trend": cls.monthly_revenue_trend(settlements) if user.role in {UserRole.SUPER_ADMIN, UserRole.FEDERAL_ADMIN, UserRole.STATE_ADMIN} else [],
+                "high_risk_declaration_trends": list(
+                    declarations.filter(risk_flag=True)
+                    .values("assessment__facility__facility_name")
+                    .annotate(total=Count("id"))
+                    .order_by("assessment__facility__facility_name")
+                ),
             },
             "sections": {
                 "operational_queues": [
@@ -1634,6 +1858,23 @@ class DashboardService:
         compliance_summary = ComplianceStatusService.get_national_compliance_summary()
         states = State.objects.order_by("name")
         state_rows = [cls.federal_state_dashboard_row(state, today) for state in states]
+        declarations = HealthDeclaration.objects.select_related("assessment", "assessment__facility", "assessment__facility__state")
+        national_template = cls.latest_declaration_template(scope=AssessmentFormScope.NATIONAL)
+        state_adoptions = AssessmentFormTemplateAdoption.objects.filter(
+            child_template__form_type=AssessmentFormType.HEALTH_DECLARATION,
+            child_template__scope=AssessmentFormScope.STATE,
+            child_template__status__in=[AssessmentFormStatus.ACTIVE, AssessmentFormStatus.PUBLISHED],
+        )
+        adopted_state_ids = set(
+            state_adoptions.values_list("child_template__state_id", flat=True).distinct()
+        )
+        latest_version_state_ids = (
+            set(
+                state_adoptions.filter(parent_template=national_template).values_list("child_template__state_id", flat=True).distinct()
+            )
+            if national_template
+            else set()
+        )
         states_with_active_implementation = sum(1 for row in state_rows if row["registered_handlers"] or row["registered_employers"] or row["approved_facilities"])
         states_with_overdue_reports = sum(1 for row in state_rows if row["latest_report_status"] in {"missing", "overdue"})
         national_vaccination_coverage = compliance_summary["vaccination_coverage_rate"]
@@ -1648,6 +1889,10 @@ class DashboardService:
                 "inspections": compliance_summary["inspections_conducted"],
                 "states_with_active_implementation": states_with_active_implementation,
                 "states_with_overdue_reports": states_with_overdue_reports,
+                "states_adopted_federal_declaration_template": len(adopted_state_ids),
+                "states_using_latest_federal_template_version": len(latest_version_state_ids),
+                "states_pending_federal_template_adoption": max(states.count() - len(adopted_state_ids), 0),
+                "declarations_submitted_nationally": declarations.filter(submitted_at__isnull=False).count(),
                 "national_vaccination_coverage": national_vaccination_coverage,
                 "national_inspection_count": compliance_summary["inspections_conducted"],
                 "national_illness_reports": IllnessReport.objects.count(),
@@ -1676,6 +1921,12 @@ class DashboardService:
                 "vaccination_coverage": cls.vaccination_coverage_queryset(handlers),
                 "illness_trends": cls.monthly_trend(IllnessReport.objects.all(), "created_at"),
                 "inspection_trends": cls.monthly_trend(Inspection.objects.all(), "inspection_date"),
+                "risk_flag_trends_by_state": list(
+                    declarations.filter(risk_flag=True)
+                    .values("assessment__facility__state__name")
+                    .annotate(total=Count("id"))
+                    .order_by("assessment__facility__state__name")
+                ),
             },
         }
 

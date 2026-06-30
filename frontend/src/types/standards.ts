@@ -10,6 +10,33 @@ export type PolicyVersionStatus =
 
 export type PolicyVersionType = "major" | "minor" | "emergency";
 
+export type PolicyCategory =
+  | "food_handler_eligibility"
+  | "food_establishment_coverage"
+  | "medical_test"
+  | "laboratory_investigation"
+  | "vaccination"
+  | "health_declaration"
+  | "facility_accreditation"
+  | "certificate"
+  | "reporting"
+  | "compliance_enforcement"
+  | "me_indicator";
+
+export const POLICY_CATEGORY_LABELS: Record<PolicyCategory, string> = {
+  food_handler_eligibility: "Food Handler Eligibility Standard",
+  food_establishment_coverage: "Food Establishment Coverage Standard",
+  medical_test: "Medical Test Standard",
+  laboratory_investigation: "Laboratory Investigation Standard",
+  vaccination: "Vaccination Standard",
+  health_declaration: "Health Declaration Standard",
+  facility_accreditation: "Facility Accreditation Standard",
+  certificate: "Certificate Standard",
+  reporting: "Reporting Standard",
+  compliance_enforcement: "Compliance and Enforcement Standard",
+  me_indicator: "M&E Indicator Standard",
+};
+
 export type RiskLevel = "low" | "medium" | "high";
 
 export type StandardStatus = "draft" | "active" | "inactive" | "retired";
@@ -96,6 +123,11 @@ export interface PolicyVersion {
   title: string;
   description: string;
   version_type: PolicyVersionType;
+  policy_category: PolicyCategory | "";
+  legal_basis: string;
+  scope: string;
+  affected_entities: string[];
+  review_date: string | null;
   status: PolicyVersionStatus;
   effective_start_date: string | null;
   effective_end_date: string | null;
@@ -117,6 +149,48 @@ export interface PolicyVersion {
   medical_test_rule_count: number;
   vaccination_rule_count: number;
   acknowledgement_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export type MedicalTestPackageComponentType =
+  | "health_declaration_form"
+  | "doctor_declaration_validation"
+  | "physical_examination"
+  | "vaccination_certificate_review"
+  | "stool_microscopy_culture_sensitivity"
+  | "hepatitis_a_antigen"
+  | "additional_tests"
+  | "doctor_final_review"
+  | "certificate_of_fitness"
+  | "other";
+
+export interface MedicalTestPackageComponent {
+  id: string;
+  package: string;
+  component_type: MedicalTestPackageComponentType;
+  label: string;
+  mandatory: boolean;
+  conditional: boolean;
+  order: number;
+  notes: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface MedicalTestPackage {
+  id: string;
+  policy_version: string;
+  policy_version_code: string;
+  name: string;
+  code: string;
+  description: string;
+  package_version: string;
+  status: string;
+  components: MedicalTestPackageComponent[];
+  mandatory_component_count: number;
+  created_by: string | null;
+  created_by_name: string;
   created_at: string;
   updated_at: string;
 }
@@ -203,6 +277,10 @@ export interface MedicalTestRule {
   requires_doctor_validation: boolean;
   requires_lab_validation: boolean;
   validity_days: number | null;
+  condition: Record<string, unknown>;
+  action: Record<string, unknown>;
+  severity: "" | "low" | "medium" | "high" | "critical";
+  effective_date: string | null;
   applicable_categories: string[];
   applicable_establishment_risk_levels: string[];
   emergency_activation_rule: Record<string, unknown> | null;
@@ -211,6 +289,15 @@ export interface MedicalTestRule {
   created_by_name: string;
   created_at: string;
   updated_at: string;
+}
+
+export interface MedicalTestRuleEvaluation {
+  value: unknown;
+  matched_condition: boolean;
+  blocks_certification: boolean;
+  passed: boolean;
+  action: Record<string, unknown>;
+  reasons: string[];
 }
 
 export interface PhysicalExaminationRule {

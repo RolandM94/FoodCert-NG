@@ -414,12 +414,24 @@ class FederalOversightService:
         return {"cards": {"risk_count": len(risks)}, "risks": risks}
 
     @classmethod
-    def audit_logs(cls, *, action="", state="", search=""):
+    def audit_logs(cls, *, action="", state="", search="", entity_type="", entity_id="", actor="", role="", date_from="", date_to=""):
         queryset = AuditLog.objects.select_related("actor", "state").order_by("-created_at")
         if action:
             queryset = queryset.filter(action=action)
         if state:
             queryset = queryset.filter(state_id=state)
+        if entity_type:
+            queryset = queryset.filter(target_type__iexact=entity_type)
+        if entity_id:
+            queryset = queryset.filter(target_id=entity_id)
+        if actor:
+            queryset = queryset.filter(actor_id=actor)
+        if role:
+            queryset = queryset.filter(actor__role=role)
+        if date_from:
+            queryset = queryset.filter(created_at__date__gte=date_from)
+        if date_to:
+            queryset = queryset.filter(created_at__date__lte=date_to)
         if search:
             queryset = queryset.filter(Q(target_type__icontains=search) | Q(target_id__icontains=search) | Q(metadata__icontains=search))
         rows = []
@@ -487,6 +499,41 @@ class FederalOversightService:
         return rows
 
     @classmethod
+    def dashboard_widgets(cls):
+        from apps.assessments.models import MedicalAssessment
+        from apps.certificates.models import CertificateVerificationLog
+        from apps.ministries.models import ComplianceAlert, ComplianceAlertStatus, PublicNotice, PublicNoticeStatus
+        from apps.standards.models import AcknowledgementStatus, PolicyVersion, PolicyVersionStatus, StateAcknowledgement
+
+        today = timezone.localdate()
+        active_policy = PolicyVersion.objects.filter(status=PolicyVersionStatus.ACTIVE).order_by("-published_at").first()
+        states_using_latest_policy = 0
+        if active_policy:
+            states_using_latest_policy = StateAcknowledgement.objects.filter(
+                policy_version=active_policy, status=AcknowledgementStatus.ACKNOWLEDGED,
+            ).count()
+        certificates = Certificate.objects.all()
+        return {
+            "states_onboarded": State.objects.count(),
+            "states_using_latest_policy": states_using_latest_policy,
+            "approved_facilities": MedicalFacility.objects.filter(accreditation_status=AccreditationStatus.APPROVED).count(),
+            "registered_food_handlers": FoodHandlerProfile.objects.count(),
+            "assessments_completed": MedicalAssessment.objects.filter(status="certificate_issued").count(),
+            "certificates_issued": certificates.count(),
+            "active_certificates": certificates.filter(status=CertificateStatus.ACTIVE, expiry_date__gte=today).count(),
+            "expired_certificates": certificates.filter(Q(status=CertificateStatus.EXPIRED) | Q(expiry_date__lt=today)).count(),
+            "temporary_unfit_reports": MedicalAssessment.objects.filter(final_decision="temporarily_not_fit").count(),
+            "state_report_submissions": {
+                "submitted": StateReport.objects.filter(status=StateReportStatus.SUBMITTED).count(),
+                "accepted": StateReport.objects.filter(status=StateReportStatus.ACCEPTED).count(),
+                "returned": StateReport.objects.filter(status=StateReportStatus.RETURNED).count(),
+            },
+            "compliance_alerts": ComplianceAlert.objects.filter(status__in=[ComplianceAlertStatus.OPEN, ComplianceAlertStatus.ACKNOWLEDGED, ComplianceAlertStatus.IN_REVIEW]).count(),
+            "qr_verification_activity": CertificateVerificationLog.objects.count(),
+            "public_awareness_campaigns": PublicNotice.objects.filter(status=PublicNoticeStatus.PUBLISHED).count(),
+        }
+
+    @classmethod
     def respond_query(cls, *, query, actor, response):
         query.response = response
         query.responded_by = actor
@@ -503,6 +550,211 @@ class FederalOversightService:
         query.save(update_fields=["status", "closed_at", "updated_at"])
         log_action(action=AuditAction.WORKFLOW_TRANSITION, actor=actor, target=query, state=query.state, metadata={"event": "federal_state_query_closed"})
         return query
+
+    @classmethod
+    def submitted_reports(cls, *, state=None, status=None):
+        queryset = StateReport.objects.select_related("state", "generated_by", "submitted_by", "reviewed_by").order_by("-submitted_at", "-created_at")
+        if status:
+            queryset = queryset.filter(status=status)
+        else:
+            queryset = queryset.filter(status__in=[StateReportStatus.SUBMITTED, StateReportStatus.RETURNED, StateReportStatus.ACCEPTED, StateReportStatus.ESCALATED])
+        if state:
+            queryset = queryset.filter(state_id=state)
+        return queryset
+
+    @classmethod
+    def review_report(cls, *, report, actor, action, comment=""):
+        from rest_framework.exceptions import ValidationError
+
+        if report.status not in {StateReportStatus.SUBMITTED, StateReportStatus.ESCALATED}:
+            raise ValidationError("Only submitted or escalated reports can be reviewed.")
+        if action == "accept":
+            report.status = StateReportStatus.ACCEPTED
+            event = "state_report_accepted"
+        elif action == "return":
+            if not (comment or "").strip():
+                raise ValidationError("A clarification comment is required when returning a report.")
+            report.status = StateReportStatus.RETURNED
+            event = "state_report_returned_for_clarification"
+        elif action == "escalate":
+            report.status = StateReportStatus.ESCALATED
+            event = "state_report_escalated"
+        else:
+            raise ValidationError("Unsupported report review action.")
+        report.reviewed_by = actor
+        report.reviewed_at = timezone.now()
+        report.review_comment = comment or ""
+        report.save(update_fields=["status", "reviewed_by", "reviewed_at", "review_comment", "updated_at"])
+        log_action(
+            action=AuditAction.WORKFLOW_TRANSITION,
+            actor=actor,
+            target=report,
+            state=report.state,
+            metadata={"event": event, "comment": comment or ""},
+        )
+        cls._notify_state(
+            state=report.state,
+            title=f"State report {report.get_status_display().lower()}",
+            message=f"Your {report.report_type} report for {report.reporting_period_end:%Y-%m-%d} was {report.get_status_display().lower()} by the Federal Ministry.",
+            action_url="/state/reports",
+        )
+        return report
+
+    @classmethod
+    def send_adoption_reminder(cls, *, state, actor, policy_version=None):
+        from rest_framework.exceptions import ValidationError
+        from apps.standards.models import AcknowledgementStatus, PolicyVersion, PolicyVersionStatus, StateAcknowledgement
+
+        if policy_version is None:
+            policy_version = (
+                PolicyVersion.objects.filter(status=PolicyVersionStatus.ACTIVE)
+                .order_by("-published_at", "-effective_start_date")
+                .first()
+            )
+        if policy_version is None:
+            raise ValidationError("There is no active policy version to remind states about.")
+        acknowledgement = StateAcknowledgement.objects.filter(policy_version=policy_version, state=state).first()
+        if acknowledgement and acknowledgement.status == AcknowledgementStatus.ACKNOWLEDGED:
+            raise ValidationError("This state has already acknowledged the active policy version.")
+        cls._notify_state(
+            state=state,
+            title="Policy adoption reminder",
+            message=f"Please review and acknowledge active national policy {policy_version.version_code}: {policy_version.title}.",
+            action_url=f"/state/standards/policy-versions/{policy_version.id}",
+            priority=NotificationPriority.HIGH,
+        )
+        log_action(
+            action=AuditAction.WORKFLOW_TRANSITION,
+            actor=actor,
+            target=policy_version,
+            state=state,
+            metadata={
+                "event": "state_adoption_reminder_sent",
+                "state_id": str(state.id),
+                "policy_version_code": policy_version.version_code,
+            },
+        )
+        return {
+            "state_id": str(state.id),
+            "state_name": state.name,
+            "policy_version_id": str(policy_version.id),
+            "policy_version_code": policy_version.version_code,
+            "acknowledgement_status": acknowledgement.status if acknowledgement else "pending",
+        }
+
+    @classmethod
+    def _notify_state(cls, *, state, title, message, action_url="", priority=None):
+        from apps.accounts.models import UserRole
+        from apps.accounts.models import User as AccountUser
+        from apps.notifications.models import NotificationCategory, NotificationChannel, NotificationPriority
+        from apps.notifications.services import NotificationService
+
+        recipients = [
+            {
+                "user_id": str(user.id),
+                "email": user.email or "",
+                "phone": getattr(user, "phone", "") or "",
+                "recipient_type": user.role or "",
+                "organization_id": str(user.organization_id) if user.organization_id else "",
+                "organization_unit_id": str(user.unit_id) if user.unit_id else "",
+            }
+            for user in AccountUser.objects.filter(is_active=True, role=UserRole.STATE_ADMIN, state=state)
+        ]
+        if not recipients:
+            return
+        NotificationService.send(
+            category=NotificationCategory.SYSTEM,
+            priority=priority or NotificationPriority.NORMAL,
+            title=title,
+            message=message,
+            action_url=action_url,
+            recipients=recipients,
+            channels=[NotificationChannel.IN_APP, NotificationChannel.EMAIL],
+            related_object_type="StateMinistry",
+            related_object_id=str(state.id),
+        )
+
+
+class PublicNoticeService:
+    AUDIENCE_ROLES = {
+        "states": ["state_admin"],
+        "medical_facilities": ["facility_admin", "doctor", "lab_staff"],
+        "food_businesses": ["employer"],
+        "food_handlers": ["food_handler"],
+        "inspectors": ["inspector"],
+        "general_public": [],
+    }
+
+    @classmethod
+    def transition(cls, *, notice, actor, action, comment=""):
+        from rest_framework.exceptions import ValidationError
+        from apps.ministries.models import PublicNoticeStatus
+
+        transitions = {
+            "submit": (PublicNoticeStatus.DRAFT, PublicNoticeStatus.SUBMITTED, "submitted_by", "submitted_at"),
+            "approve": (PublicNoticeStatus.SUBMITTED, PublicNoticeStatus.APPROVED, "approved_by", "approved_at"),
+            "publish": (PublicNoticeStatus.APPROVED, PublicNoticeStatus.PUBLISHED, "published_by", "published_at"),
+            "archive": (None, PublicNoticeStatus.ARCHIVED, None, None),
+        }
+        if action not in transitions:
+            raise ValidationError("Unsupported notice action.")
+        required_from, new_status, actor_field, time_field = transitions[action]
+        if required_from is not None and notice.status != required_from:
+            raise ValidationError(f"Only {required_from} notices can be {action}d.")
+        notice.status = new_status
+        update_fields = ["status", "updated_at"]
+        if actor_field:
+            setattr(notice, actor_field, actor)
+            update_fields.append(actor_field)
+        if time_field:
+            setattr(notice, time_field, timezone.now())
+            update_fields.append(time_field)
+        notice.save(update_fields=update_fields)
+        log_action(
+            action=AuditAction.WORKFLOW_TRANSITION,
+            actor=actor,
+            target=notice,
+            metadata={"event": f"public_notice_{action}ed", "comment": comment},
+        )
+        if action == "publish":
+            cls._notify_audiences(notice)
+        return notice
+
+    @classmethod
+    def _notify_audiences(cls, notice):
+        from apps.accounts.models import User as AccountUser
+        from apps.notifications.models import NotificationCategory, NotificationChannel, NotificationPriority
+        from apps.notifications.services import NotificationService
+
+        roles = []
+        for audience in notice.audiences or []:
+            roles.extend(cls.AUDIENCE_ROLES.get(audience, []))
+        roles = list(dict.fromkeys(roles))
+        if not roles:
+            return
+        recipients = [
+            {
+                "user_id": str(user.id),
+                "email": user.email or "",
+                "phone": getattr(user, "phone", "") or "",
+                "recipient_type": user.role or "",
+                "organization_id": str(user.organization_id) if user.organization_id else "",
+                "organization_unit_id": str(user.unit_id) if user.unit_id else "",
+            }
+            for user in AccountUser.objects.filter(is_active=True, role__in=roles)
+        ]
+        if not recipients:
+            return
+        NotificationService.send(
+            category=NotificationCategory.SYSTEM,
+            priority=NotificationPriority.NORMAL,
+            title=notice.title,
+            message=notice.body,
+            recipients=recipients,
+            channels=[NotificationChannel.IN_APP, NotificationChannel.EMAIL],
+            related_object_type="PublicNotice",
+            related_object_id=str(notice.id),
+        )
 
 
 def get_state_ministry_organization(user):

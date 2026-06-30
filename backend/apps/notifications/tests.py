@@ -6,7 +6,10 @@ from rest_framework.test import APIClient
 from rest_framework_simplejwt.tokens import RefreshToken
 
 from apps.accounts.models import User, UserRole
+from apps.audit.models import AuditLog
+from apps.locations.models import State
 from apps.notifications.models import (
+    BroadcastMessage,
     Notification,
     NotificationCategory,
     NotificationChannel,
@@ -145,9 +148,19 @@ class PermissionTests(TestCase):
 
 class E2ETests(TestCase):
     def setUp(self):
+        self.state = State.objects.create(name="Lagos", code="LA")
         self.handler = User.objects.create_user(
             username="e2ehandler", email="e2e@test.com",
-            password="pass", role=UserRole.FOOD_HANDLER
+            password="pass", role=UserRole.FOOD_HANDLER, state=self.state
+        )
+        self.state_admin = User.objects.create_user(
+            username="stateadmin", email="state@test.com", password="pass",
+            role=UserRole.STATE_ADMIN, state=self.state
+        )
+        self.other_state = State.objects.create(name="Oyo", code="OY")
+        self.other_state_admin = User.objects.create_user(
+            username="otherstateadmin", email="otherstate@test.com", password="pass",
+            role=UserRole.STATE_ADMIN, state=self.other_state
         )
         self.admin = User.objects.create_user(
             username="e2eadmin", email="e2ea@test.com", password="pass",
@@ -255,6 +268,69 @@ class E2ETests(TestCase):
         self.client.post(f"/api/admin/broadcasts/{bid}/approve/")
         resp = self.client.post(f"/api/admin/broadcasts/{bid}/send/")
         self.assertEqual(resp.status_code, 200)
+
+    def test_state_admin_public_awareness_workflow(self):
+        client = APIClient()
+        refresh = RefreshToken.for_user(self.state_admin)
+        client.credentials(HTTP_AUTHORIZATION=f"Bearer {refresh.access_token}")
+
+        create = client.post("/api/admin/broadcasts/", {
+            "title": "State cholera advisory",
+            "message": "Review current food safety guidance and facility hygiene alerts.",
+            "category": "system",
+            "priority": "high",
+            "audience_type": "all_facilities_in_state",
+            "audience_filters": {"notice_kind": "public_notice"},
+            "channels": ["in_app"],
+        }, format="json")
+        self.assertEqual(create.status_code, 201)
+        broadcast_id = create.json().get("data", {}).get("id")
+        broadcast = BroadcastMessage.objects.get(id=broadcast_id)
+        self.assertEqual(str(broadcast.audience_filters.get("state_id")), str(self.state.id))
+
+        submit = client.post(f"/api/admin/broadcasts/{broadcast_id}/submit-for-approval/")
+        self.assertEqual(submit.status_code, 200)
+        approve = client.post(f"/api/admin/broadcasts/{broadcast_id}/approve/")
+        self.assertEqual(approve.status_code, 200)
+        publish = client.post(f"/api/admin/broadcasts/{broadcast_id}/send/")
+        self.assertEqual(publish.status_code, 200)
+        archive = client.post(f"/api/admin/broadcasts/{broadcast_id}/archive/")
+        self.assertEqual(archive.status_code, 200)
+
+        events = AuditLog.objects.filter(target_id=str(broadcast_id)).values_list("metadata", flat=True)
+        audit_events = {event.get("event") for event in events}
+        self.assertTrue({"broadcast_created", "broadcast_submitted_for_approval", "broadcast_approved", "broadcast_published", "broadcast_archived"}.issubset(audit_events))
+
+    def test_state_admin_sees_only_state_broadcasts(self):
+        own = BroadcastMessage.objects.create(
+            title="Lagos advisory",
+            message="State notice",
+            category="system",
+            priority="normal",
+            audience_type="all_facilities_in_state",
+            audience_filters={"state_id": str(self.state.id)},
+            channels=["in_app"],
+            created_by=self.state_admin,
+        )
+        BroadcastMessage.objects.create(
+            title="Oyo advisory",
+            message="Other state notice",
+            category="system",
+            priority="normal",
+            audience_type="all_facilities_in_state",
+            audience_filters={"state_id": str(self.other_state.id)},
+            channels=["in_app"],
+            created_by=self.other_state_admin,
+        )
+
+        client = APIClient()
+        refresh = RefreshToken.for_user(self.state_admin)
+        client.credentials(HTTP_AUTHORIZATION=f"Bearer {refresh.access_token}")
+        response = client.get("/api/admin/broadcasts/")
+        self.assertEqual(response.status_code, 200)
+        rows = response.json().get("data", [])
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["id"], str(own.id))
 
     def test_mark_read_and_unread_count(self):
         Notification.objects.create(

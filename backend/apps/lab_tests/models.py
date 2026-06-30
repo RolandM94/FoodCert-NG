@@ -56,6 +56,20 @@ class LabTest(BaseModel):
     doctor_review_notes = models.TextField(blank=True)
     doctor_recommendation = models.CharField(max_length=64, choices=LabReviewRecommendation.choices, blank=True, db_index=True)
     result_document = models.FileField(upload_to="lab_results/", blank=True)
+    assigned_lab_staff = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="assigned_lab_tests",
+    )
+    assigned_lab_unit = models.ForeignKey(
+        "organizations.OrganizationUnit",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="assigned_lab_tests",
+    )
     requested_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="requested_lab_tests")
     resulted_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -82,6 +96,8 @@ class LabTest(BaseModel):
         indexes = [
             models.Index(fields=["assessment"]),
             models.Index(fields=["parent_lab_test"]),
+            models.Index(fields=["assigned_lab_staff"]),
+            models.Index(fields=["assigned_lab_unit"]),
             models.Index(fields=["test_type"]),
             models.Index(fields=["status"]),
             models.Index(fields=["repeat_required"]),

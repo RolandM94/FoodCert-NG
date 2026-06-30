@@ -49,12 +49,61 @@ class MinistryStaffProfile(BaseModel):
         return f"{self.user} - {self.get_sub_role_display()}"
 
 
+class ReportingCycle(models.TextChoices):
+    MONTHLY = "monthly", "Monthly"
+    QUARTERLY = "quarterly", "Quarterly"
+    ANNUAL = "annual", "Annual"
+
+
+class CentralPortalStatus(models.TextChoices):
+    ACTIVE = "active", "Active"
+    INACTIVE = "inactive", "Inactive"
+
+
+class FederalProfile(BaseModel):
+    """Singleton-style identity profile for the Federal Ministry of Health account."""
+
+    ministry_name = models.CharField(max_length=255, default="Federal Ministry of Health and Social Welfare")
+    department_name = models.CharField(max_length=255, blank=True)
+    programme_name = models.CharField(max_length=255, blank=True)
+    national_coordinator = models.CharField(max_length=255, blank=True)
+    official_email = models.EmailField(blank=True)
+    official_phone = models.CharField(max_length=32, blank=True)
+    logo_url = models.URLField(blank=True)
+    active_guideline_version = models.CharField(
+        max_length=255,
+        blank=True,
+        default="National Guidelines for Food Handlers' Medical Test 2024",
+    )
+    reporting_cycle = models.CharField(max_length=16, choices=ReportingCycle.choices, default=ReportingCycle.QUARTERLY)
+    central_portal_status = models.CharField(
+        max_length=16,
+        choices=CentralPortalStatus.choices,
+        default=CentralPortalStatus.ACTIVE,
+        db_index=True,
+    )
+    updated_by = models.ForeignKey(
+        "accounts.User",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="updated_federal_profiles",
+    )
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self) -> str:
+        return self.ministry_name or "Federal profile"
+
+
 class StateReportStatus(models.TextChoices):
     DRAFT = "draft", "Draft"
     GENERATED = "generated", "Generated"
     SUBMITTED = "submitted", "Submitted"
     RETURNED = "returned", "Returned"
     ACCEPTED = "accepted", "Accepted"
+    ESCALATED = "escalated", "Escalated"
 
 
 class StateReport(BaseModel):
@@ -98,6 +147,111 @@ class FederalStateQueryPriority(models.TextChoices):
     MEDIUM = "medium", "Medium"
     HIGH = "high", "High"
     URGENT = "urgent", "Urgent"
+
+
+class PublicNoticeAudience(models.TextChoices):
+    STATES = "states", "States"
+    MEDICAL_FACILITIES = "medical_facilities", "Medical Facilities"
+    FOOD_BUSINESSES = "food_businesses", "Food Businesses"
+    FOOD_HANDLERS = "food_handlers", "Food Handlers"
+    INSPECTORS = "inspectors", "Inspectors"
+    GENERAL_PUBLIC = "general_public", "General Public"
+
+
+class PublicNoticeStatus(models.TextChoices):
+    DRAFT = "draft", "Draft"
+    SUBMITTED = "submitted", "Submitted"
+    APPROVED = "approved", "Approved"
+    PUBLISHED = "published", "Published"
+    ARCHIVED = "archived", "Archived"
+
+
+class PublicNotice(BaseModel):
+    title = models.CharField(max_length=255)
+    body = models.TextField()
+    audiences = models.JSONField(default=list, blank=True, help_text="List of PublicNoticeAudience values")
+    attachments = models.JSONField(default=list, blank=True, help_text="List of {name, url} attachment objects")
+    effective_date = models.DateField(null=True, blank=True)
+    expiry_date = models.DateField(null=True, blank=True)
+    status = models.CharField(max_length=16, choices=PublicNoticeStatus.choices, default=PublicNoticeStatus.DRAFT, db_index=True)
+    created_by = models.ForeignKey("accounts.User", on_delete=models.SET_NULL, null=True, blank=True, related_name="created_public_notices")
+    submitted_by = models.ForeignKey("accounts.User", on_delete=models.SET_NULL, null=True, blank=True, related_name="submitted_public_notices")
+    approved_by = models.ForeignKey("accounts.User", on_delete=models.SET_NULL, null=True, blank=True, related_name="approved_public_notices")
+    published_by = models.ForeignKey("accounts.User", on_delete=models.SET_NULL, null=True, blank=True, related_name="published_public_notices")
+    submitted_at = models.DateTimeField(null=True, blank=True)
+    approved_at = models.DateTimeField(null=True, blank=True)
+    published_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["status"]),
+            models.Index(fields=["effective_date"]),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.title} ({self.get_status_display()})"
+
+
+class ComplianceAlertType(models.TextChoices):
+    POLICY_NOT_ADOPTED = "policy_not_adopted", "State has not adopted active policy"
+    REPORT_OVERDUE = "report_overdue", "State M&E report overdue"
+    UNUSUAL_CERTIFICATE_PATTERN = "unusual_certificate_pattern", "Unusual certificate generation pattern"
+    DUPLICATE_ACTIVE_CERTIFICATES = "duplicate_active_certificates", "Duplicate active certificates for same NIN"
+    HIGH_FACILITY_SUSPENSION = "high_facility_suspension", "High facility suspension rate"
+    HIGH_PENDING_LAB_RESULTS = "high_pending_lab_results", "High pending lab result rate"
+    HIGH_EXPIRED_CERTIFICATES = "high_expired_certificates", "High expired certificate count"
+    CERTIFICATE_VERIFICATION_FAILURE = "certificate_verification_failure", "Certificate verification failure spike"
+    MANUAL = "manual", "Manual alert"
+
+
+class ComplianceAlertSeverity(models.TextChoices):
+    LOW = "low", "Low"
+    MEDIUM = "medium", "Medium"
+    HIGH = "high", "High"
+    CRITICAL = "critical", "Critical"
+
+
+class ComplianceAlertStatus(models.TextChoices):
+    OPEN = "open", "Open"
+    ACKNOWLEDGED = "acknowledged", "Acknowledged"
+    IN_REVIEW = "in_review", "In Review"
+    RESOLVED = "resolved", "Resolved"
+    DISMISSED = "dismissed", "Dismissed"
+
+
+class ComplianceAlert(BaseModel):
+    alert_type = models.CharField(max_length=48, choices=ComplianceAlertType.choices, db_index=True)
+    severity = models.CharField(max_length=16, choices=ComplianceAlertSeverity.choices, default=ComplianceAlertSeverity.MEDIUM, db_index=True)
+    status = models.CharField(max_length=16, choices=ComplianceAlertStatus.choices, default=ComplianceAlertStatus.OPEN, db_index=True)
+    title = models.CharField(max_length=255)
+    description = models.TextField(blank=True)
+    state = models.ForeignKey("locations.State", on_delete=models.SET_NULL, null=True, blank=True, related_name="compliance_alerts")
+    entity_type = models.CharField(max_length=64, blank=True)
+    entity_id = models.CharField(max_length=64, blank=True)
+    metric_value = models.FloatField(null=True, blank=True)
+    threshold_value = models.FloatField(null=True, blank=True)
+    auto_generated = models.BooleanField(default=True, db_index=True)
+    dedupe_key = models.CharField(max_length=255, blank=True, db_index=True)
+    metadata = models.JSONField(default=dict, blank=True)
+    created_by = models.ForeignKey("accounts.User", on_delete=models.SET_NULL, null=True, blank=True, related_name="created_compliance_alerts")
+    acknowledged_by = models.ForeignKey("accounts.User", on_delete=models.SET_NULL, null=True, blank=True, related_name="acknowledged_compliance_alerts")
+    resolved_by = models.ForeignKey("accounts.User", on_delete=models.SET_NULL, null=True, blank=True, related_name="resolved_compliance_alerts")
+    resolved_at = models.DateTimeField(null=True, blank=True)
+    resolution_note = models.TextField(blank=True)
+    last_detected_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["alert_type", "status"]),
+            models.Index(fields=["state", "status"]),
+            models.Index(fields=["severity"]),
+            models.Index(fields=["dedupe_key"]),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.get_alert_type_display()} ({self.get_status_display()})"
 
 
 class FederalStateQuery(BaseModel):

@@ -35,8 +35,16 @@ from apps.certificates.serializers import (
     SuspiciousCertificateReportSerializer,
 )
 from apps.certificates.services import CertificateService
+from apps.facilities.services import FacilityProfileService, FacilityTeamService
 from apps.notifications.models import Notification, NotificationCategory
 from apps.policy.models import NationalPolicyConfig
+
+
+def _facility_with_permission_for_user(user, permission_key):
+    facility = FacilityProfileService.get_facility_membership_for_user(user)
+    if facility and FacilityTeamService.has_permission(user=user, facility=facility, permission_key=permission_key):
+        return facility
+    return None
 
 
 class CertificateRequestViewSet(viewsets.ReadOnlyModelViewSet):
@@ -65,7 +73,10 @@ class CertificateRequestViewSet(viewsets.ReadOnlyModelViewSet):
         if user.role == UserRole.EMPLOYER and hasattr(user, "employer"):
             return self.queryset.filter(assessment__employer=user.employer)
         if user.organization_id:
-            return self.queryset.filter(assessment__facility__organization=user.organization)
+            facility = _facility_with_permission_for_user(user, "certificates.view")
+            if facility:
+                return self.queryset.filter(assessment__facility=facility)
+            return self.queryset.none()
         return self.queryset.none()
 
     @extend_schema(request=ReviewCertificateRequestSerializer, responses=CertificateRequestSerializer)
@@ -153,7 +164,10 @@ class CertificateViewSet(viewsets.ReadOnlyModelViewSet):
                 queryset = queryset.filter(food_handler__business_branch=user.unit)
             return queryset
         if user.organization_id:
-            return self.queryset.filter(facility__organization=user.organization)
+            facility = _facility_with_permission_for_user(user, "certificates.view")
+            if facility:
+                return self.queryset.filter(facility=facility)
+            return self.queryset.none()
         return self.queryset.none()
 
     @extend_schema(responses=CertificateSerializer)
@@ -252,7 +266,10 @@ class AccreditationCertificateViewSet(viewsets.ReadOnlyModelViewSet):
                 return queryset.filter(employer__organization=user.organization)
             return queryset.none()
         if user.organization_id:
-            return queryset.filter(facility__organization=user.organization)
+            facility = _facility_with_permission_for_user(user, "certificates.view")
+            if facility:
+                return queryset.filter(facility=facility)
+            return queryset.none()
         return queryset.none()
 
     @extend_schema(responses=AccreditationCertificateSerializer)
@@ -363,6 +380,8 @@ class GenerateCertificateView(APIView):
 
     @extend_schema(request=GenerateCertificateSerializer, responses={201: CertificateSerializer})
     def post(self, request):
+        if request.user.role not in {UserRole.SUPER_ADMIN, UserRole.STATE_ADMIN}:
+            raise PermissionDenied("Only State or platform administrators can issue certificates.")
         serializer = GenerateCertificateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         certificate_request = serializer.validated_data.get("certificate_request")

@@ -2,7 +2,7 @@ from celery import shared_task
 from django.utils import timezone
 
 from apps.locations.models import State
-from apps.reports.models import DataQualityIssue, DataQualityIssueSeverity, DataQualityIssueStatus, MEIndicator
+from apps.reports.models import DashboardExportJob, DataQualityIssue, DataQualityIssueSeverity, DataQualityIssueStatus, MEIndicator
 from apps.reports.services import MEIndicatorService
 
 
@@ -75,3 +75,31 @@ def create_threshold_alert(value):
         },
     )
     return issue
+
+
+@shared_task(name="reports.process_dashboard_export_job")
+def process_dashboard_export_job(job_id):
+    from apps.reports.views import build_published_dashboard_export_payload
+
+    job = DashboardExportJob.objects.select_related("published_dashboard", "published_dashboard__canvas").get(id=job_id)
+    job.status = "processing"
+    job.started_at = timezone.now()
+    job.save(update_fields=["status", "started_at", "updated_at"])
+    try:
+        export_data = build_published_dashboard_export_payload(
+            job.published_dashboard,
+            job.export_format,
+            job.block_id or None,
+        )
+        job.payload = export_data
+        job.status = "completed"
+        job.completed_at = timezone.now()
+        job.error_message = ""
+        job.save(update_fields=["payload", "status", "completed_at", "error_message", "updated_at"])
+    except Exception as exc:
+        job.status = "failed"
+        job.error_message = str(exc)
+        job.completed_at = timezone.now()
+        job.save(update_fields=["status", "error_message", "completed_at", "updated_at"])
+        raise
+    return {"job_id": str(job.id), "status": job.status}

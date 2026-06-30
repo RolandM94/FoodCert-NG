@@ -9,6 +9,7 @@ import { getApiErrorMessage } from "@/lib/api/client";
 import {
   activateMEIndicator,
   approveMEIndicatorValue,
+  calculateMEIndicator,
   createMEIndicatorValue,
   confirmMEIndicatorImport,
   downloadMEIndicatorImportTemplate,

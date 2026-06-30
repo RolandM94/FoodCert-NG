@@ -157,6 +157,9 @@ export type FederalFacilityRegistryItem = {
   accreditation_start_date?: string | null;
   accreditation_expiry_date?: string | null;
   can_conduct_assessments: boolean;
+  assessments_count: number;
+  certificates_count: number;
+  temporary_unfit_count: number;
   created_at: string;
   updated_at: string;
 };
@@ -275,8 +278,41 @@ export async function fetchFederalFacilities(params?: Record<string, string>): P
   return unwrap(response.data);
 }
 
+export async function flagFederalFacility(id: string, payload: { subject?: string; description?: string; priority?: string }): Promise<FederalStateQueryItem> {
+  const response = await apiClient.post<ApiEnvelope<FederalStateQueryItem>>(`/federal/facilities/${id}/flag/`, payload);
+  return unwrap(response.data);
+}
+
 export async function fetchFederalEmployers(params?: Record<string, string>): Promise<FederalEmployerRegistryItem[]> {
   const response = await apiClient.get<ApiEnvelope<FederalEmployerRegistryItem[]>>("/federal/employers/", { params });
+  return unwrap(response.data);
+}
+
+export type FederalProfile = {
+  id: string;
+  ministry_name: string;
+  department_name: string;
+  programme_name: string;
+  national_coordinator: string;
+  official_email: string;
+  official_phone: string;
+  logo_url: string;
+  active_guideline_version: string;
+  reporting_cycle: "monthly" | "quarterly" | "annual";
+  central_portal_status: "active" | "inactive";
+  updated_by?: string | null;
+  updated_by_name?: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export async function fetchFederalProfile(): Promise<FederalProfile> {
+  const response = await apiClient.get<ApiEnvelope<FederalProfile>>("/federal/profile/");
+  return unwrap(response.data);
+}
+
+export async function updateFederalProfile(payload: Partial<FederalProfile>): Promise<FederalProfile> {
+  const response = await apiClient.patch<ApiEnvelope<FederalProfile>>("/federal/profile/", payload);
   return unwrap(response.data);
 }
 
@@ -363,8 +399,171 @@ export async function fetchFederalAuditLogs(params?: Record<string, string>): Pr
   return unwrap(response.data);
 }
 
+export type FederalDashboardWidgets = {
+  states_onboarded: number;
+  states_using_latest_policy: number;
+  approved_facilities: number;
+  registered_food_handlers: number;
+  assessments_completed: number;
+  certificates_issued: number;
+  active_certificates: number;
+  expired_certificates: number;
+  temporary_unfit_reports: number;
+  state_report_submissions: { submitted: number; accepted: number; returned: number };
+  compliance_alerts: number;
+  qr_verification_activity: number;
+  public_awareness_campaigns: number;
+};
+
+export async function fetchFederalDashboardWidgets(): Promise<FederalDashboardWidgets> {
+  const response = await apiClient.get<ApiEnvelope<FederalDashboardWidgets>>("/federal/dashboard/widgets/");
+  return unwrap(response.data);
+}
+
 export async function fetchFederalAccountAuditLogs(params?: Record<string, string>): Promise<FederalAuditLogItem[]> {
   const response = await apiClient.get<ApiEnvelope<FederalAuditLogItem[]>>("/federal/account-audit-logs/", { params });
+  return unwrap(response.data);
+}
+
+export type PublicNoticeAudience = "states" | "medical_facilities" | "food_businesses" | "food_handlers" | "inspectors" | "general_public";
+
+export type PublicNotice = {
+  id: string;
+  title: string;
+  body: string;
+  audiences: PublicNoticeAudience[];
+  attachments: { name: string; url: string }[];
+  effective_date?: string | null;
+  expiry_date?: string | null;
+  status: "draft" | "submitted" | "approved" | "published" | "archived";
+  created_by_name?: string;
+  published_by_name?: string;
+  submitted_at?: string | null;
+  approved_at?: string | null;
+  published_at?: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export async function fetchPublicNotices(params?: { status?: string }): Promise<PublicNotice[]> {
+  const response = await apiClient.get<ApiEnvelope<PublicNotice[]>>("/federal/notices/", { params });
+  return unwrap(response.data);
+}
+
+export async function createPublicNotice(payload: Partial<PublicNotice>): Promise<PublicNotice> {
+  const response = await apiClient.post<ApiEnvelope<PublicNotice>>("/federal/notices/", payload);
+  return unwrap(response.data);
+}
+
+export async function updatePublicNotice(id: string, payload: Partial<PublicNotice>): Promise<PublicNotice> {
+  const response = await apiClient.patch<ApiEnvelope<PublicNotice>>(`/federal/notices/${id}/`, payload);
+  return unwrap(response.data);
+}
+
+export async function actionPublicNotice(id: string, action: "submit" | "approve" | "publish" | "archive", comment = ""): Promise<PublicNotice> {
+  const response = await apiClient.patch<ApiEnvelope<PublicNotice>>(`/federal/notices/${id}/${action}/`, { comment });
+  return unwrap(response.data);
+}
+
+export type ComplianceAlert = {
+  id: string;
+  alert_type: string;
+  alert_type_display: string;
+  severity: "low" | "medium" | "high" | "critical";
+  status: "open" | "acknowledged" | "in_review" | "resolved" | "dismissed";
+  title: string;
+  description: string;
+  state?: string | null;
+  state_name?: string;
+  entity_type: string;
+  entity_id: string;
+  metric_value?: number | null;
+  threshold_value?: number | null;
+  auto_generated: boolean;
+  metadata: Record<string, unknown>;
+  created_by_name?: string;
+  resolved_by_name?: string;
+  resolved_at?: string | null;
+  resolution_note: string;
+  last_detected_at?: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export async function fetchComplianceAlerts(params?: { status?: string; alert_type?: string; severity?: string; state?: string; auto_generated?: string }): Promise<ComplianceAlert[]> {
+  const response = await apiClient.get<ApiEnvelope<ComplianceAlert[]>>("/federal/compliance/alerts/", { params });
+  return unwrap(response.data);
+}
+
+export async function createComplianceAlert(payload: {
+  alert_type: string;
+  severity?: string;
+  title: string;
+  description?: string;
+  state?: string;
+  entity_type?: string;
+  entity_id?: string;
+}): Promise<ComplianceAlert> {
+  const response = await apiClient.post<ApiEnvelope<ComplianceAlert>>("/federal/compliance/alerts/", payload);
+  return unwrap(response.data);
+}
+
+export async function runComplianceScan(): Promise<{ created: number; updated: number; open_alerts: number }> {
+  const response = await apiClient.post<ApiEnvelope<{ created: number; updated: number; open_alerts: number }>>("/federal/compliance/scan/");
+  return unwrap(response.data);
+}
+
+export async function actionComplianceAlert(
+  id: string,
+  action: "acknowledge" | "in-review" | "resolve" | "dismiss",
+  note = "",
+): Promise<ComplianceAlert> {
+  const response = await apiClient.patch<ApiEnvelope<ComplianceAlert>>(`/federal/compliance/alerts/${id}/${action}/`, { note });
+  return unwrap(response.data);
+}
+
+export type FederalStateReportItem = {
+  id: string;
+  state: string;
+  state_name?: string;
+  report_type: string;
+  reporting_period_start: string;
+  reporting_period_end: string;
+  status: "draft" | "generated" | "submitted" | "returned" | "accepted" | "escalated";
+  submitted_by_name?: string;
+  submitted_at?: string | null;
+  reviewed_by_name?: string;
+  reviewed_at?: string | null;
+  review_comment: string;
+  data_snapshot: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+};
+
+export async function fetchFederalReports(params?: { status?: string; state?: string }): Promise<FederalStateReportItem[]> {
+  const response = await apiClient.get<ApiEnvelope<FederalStateReportItem[]>>("/federal/reports/", { params });
+  return unwrap(response.data);
+}
+
+export async function reviewFederalReport(
+  id: string,
+  action: "accept" | "return" | "escalate",
+  comment = "",
+): Promise<FederalStateReportItem> {
+  const response = await apiClient.patch<ApiEnvelope<FederalStateReportItem>>(`/federal/reports/${id}/${action}/`, { comment });
+  return unwrap(response.data);
+}
+
+export async function sendStateAdoptionReminder(stateId: string): Promise<{
+  state_id: string;
+  state_name: string;
+  policy_version_id: string;
+  policy_version_code: string;
+  acknowledgement_status: string;
+}> {
+  const response = await apiClient.post<ApiEnvelope<{ state_id: string; state_name: string; policy_version_id: string; policy_version_code: string; acknowledgement_status: string }>>(
+    `/federal/states/${stateId}/send-adoption-reminder/`,
+  );
   return unwrap(response.data);
 }
 

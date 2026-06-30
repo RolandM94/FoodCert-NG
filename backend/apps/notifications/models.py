@@ -78,6 +78,7 @@ class BroadcastStatus(models.TextChoices):
     APPROVED = "approved", "Approved"
     SENDING = "sending", "Sending"
     SENT = "sent", "Sent"
+    ARCHIVED = "archived", "Archived"
     FAILED = "failed", "Failed"
     CANCELLED = "cancelled", "Cancelled"
 

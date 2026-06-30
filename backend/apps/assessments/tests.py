@@ -4,18 +4,29 @@ from django.utils import timezone
 from rest_framework.test import APITestCase
 
 from apps.accounts.models import EmployerStaffRole, UserRole
-from apps.assessments.models import Appointment, AppointmentStatus, AssessmentStatus, FitnessDecision, MedicalAssessment
+from apps.assessments.models import Appointment, AppointmentStatus, AssessmentStatus, FitnessDecision, HealthDeclaration, MedicalAssessment, PhysicalExamination, StepStatus
 from apps.audit.models import AuditAction, AuditLog
 from apps.audit.services import log_action
 from apps.employers.models import Employer, EstablishmentCategory
-from apps.facilities.models import AccreditationStatus, FacilityType, MedicalFacility, OwnershipType
+from apps.facilities.models import (
+    AccreditationStatus,
+    FacilityProfessionalCategory,
+    FacilityRole,
+    FacilityStaffProfile,
+    FacilityStaffType,
+    FacilityTeamMemberStatus,
+    FacilityType,
+    MedicalFacility,
+    OwnershipType,
+)
+from apps.facilities.services import FacilityTeamService
 from apps.food_handlers.models import FoodHandlerCategory, FoodHandlerProfile, FoodHandlerStatus, Gender
 from apps.illness.models import ClearanceStatus, IllnessReport, SuspectedCondition
-from apps.lab_tests.models import LabTest, LabTestStatus
+from apps.lab_tests.models import LabReviewRecommendation, LabTest, LabTestStatus
 from apps.locations.models import State
 from apps.nin_verification.models import NINVerification, NINVerificationStatus
 from apps.notifications.models import Notification
-from apps.organizations.models import Organization, OrganizationType
+from apps.organizations.models import Organization, OrganizationType, OrganizationUnit, OrganizationUnitType
 from apps.payments.models import PaymentStatus, PaymentTransaction
 from apps.reports.models import GeneratedReport, ReportType
 from apps.vaccinations.models import VaccinationRecord, VaccinationStatus
@@ -55,6 +66,14 @@ class MedicalAssessmentWorkflowTests(APITestCase):
             organization=self.facility_org,
             state=self.state,
         )
+        self.second_doctor = User.objects.create_user(
+            username="doctor-two",
+            email="doctor-two@example.com",
+            password="StrongPass123!",
+            role=UserRole.DOCTOR,
+            organization=self.facility_org,
+            state=self.state,
+        )
         self.facility_admin = User.objects.create_user(
             username="facility-admin",
             email="facility-admin@example.com",
@@ -63,9 +82,25 @@ class MedicalAssessmentWorkflowTests(APITestCase):
             organization=self.facility_org,
             state=self.state,
         )
+        self.finance_user = User.objects.create_user(
+            username="finance-user",
+            email="finance@example.com",
+            password="StrongPass123!",
+            role=UserRole.DOCTOR,
+            organization=self.facility_org,
+            state=self.state,
+        )
         self.lab_staff = User.objects.create_user(
             username="lab",
             email="lab@example.com",
+            password="StrongPass123!",
+            role=UserRole.LAB_STAFF,
+            organization=self.facility_org,
+            state=self.state,
+        )
+        self.second_lab_staff = User.objects.create_user(
+            username="lab-two",
+            email="lab-two@example.com",
             password="StrongPass123!",
             role=UserRole.LAB_STAFF,
             organization=self.facility_org,
@@ -126,6 +161,28 @@ class MedicalAssessmentWorkflowTests(APITestCase):
             accreditation_start_date=timezone.localdate(),
             accreditation_expiry_date=timezone.localdate() + timezone.timedelta(days=365),
         )
+        FacilityTeamService.ensure_default_roles(facility=self.facility, actor=self.facility_admin)
+        finance_role = FacilityRole.objects.get(facility=self.facility, name="Finance / Billing Officer")
+        FacilityStaffProfile.objects.create(
+            user=self.finance_user,
+            facility=self.facility,
+            role=finance_role,
+            staff_type=FacilityStaffType.FINANCE_USER,
+            professional_category=FacilityProfessionalCategory.FINANCE,
+            status=FacilityTeamMemberStatus.ACTIVE,
+            is_active=True,
+        )
+        self.lab_unit = OrganizationUnit.objects.create(
+            organization=self.facility_org,
+            name="Main Lab Department",
+            unit_type=OrganizationUnitType.LAB_DEPARTMENT,
+        )
+        self.lab_staff.unit = self.lab_unit
+        self.lab_staff.unit_restricted = True
+        self.lab_staff.save(update_fields=["unit", "unit_restricted", "updated_at"])
+        self.second_lab_staff.unit = self.lab_unit
+        self.second_lab_staff.unit_restricted = True
+        self.second_lab_staff.save(update_fields=["unit", "unit_restricted", "updated_at"])
         self.unapproved_facility = MedicalFacility.objects.create(
             organization=Organization.objects.create(
                 name="Pending Facility",
@@ -200,9 +257,29 @@ class MedicalAssessmentWorkflowTests(APITestCase):
             food_handler=self.food_handler,
             employer=self.employer,
             facility=self.facility,
+            doctor=self.doctor,
             payment_transaction=self.payment,
             status="payment_confirmed",
         )
+
+    def _assign_doctor(self, assessment, doctor=None):
+        assessment.doctor = doctor or self.doctor
+        assessment.save(update_fields=["doctor", "updated_at"])
+        if assessment.appointment_id:
+            assessment.appointment.doctor = assessment.doctor
+            assessment.appointment.save(update_fields=["doctor", "updated_at"])
+        return assessment
+
+    def _assign_lab(self, assessment, lab_staff=None, lab_unit=None):
+        assessment.assigned_lab_staff = lab_staff or self.lab_staff
+        assessment.assigned_lab_unit = lab_unit or self.lab_unit
+        assessment.save(update_fields=["assigned_lab_staff", "assigned_lab_unit", "updated_at"])
+        assessment.lab_tests.update(
+            assigned_lab_staff=assessment.assigned_lab_staff,
+            assigned_lab_unit=assessment.assigned_lab_unit,
+            updated_at=timezone.now(),
+        )
+        return assessment
 
     def _create_decision_ready_assessment(self):
         assessment = self._create_verified_assessment()
@@ -270,6 +347,28 @@ class MedicalAssessmentWorkflowTests(APITestCase):
         self.assertEqual(response.status_code, 201)
         self.assertEqual(data(response)["status"], "payment_pending")
 
+    def test_assessment_creation_notifies_food_handler_and_employer_about_pending_declaration(self):
+        self.client.force_authenticate(self.handler_user)
+
+        response = self.client.post(
+            "/api/assessments/",
+            {
+                "food_handler": str(self.food_handler.id),
+                "facility": str(self.facility.id),
+                "payment_transaction": str(self.payment.id),
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        assessment_id = data(response)["id"]
+        handler_notification = Notification.objects.get(recipient=self.handler_user, title="Health declaration required")
+        employer_notification = Notification.objects.get(recipient=self.employer_user, title="Staff declaration pending")
+        self.assertEqual(str(handler_notification.related_object_id), assessment_id)
+        self.assertEqual(str(employer_notification.related_object_id), assessment_id)
+        self.assertNotIn("fever", employer_notification.message.lower())
+        self.assertNotIn("symptom", employer_notification.message.lower())
+
     def test_assessment_status_snapshot_reports_prerequisite_blockers(self):
         assessment = MedicalAssessment.objects.create(
             food_handler=self.food_handler,
@@ -314,6 +413,28 @@ class MedicalAssessmentWorkflowTests(APITestCase):
         self.assertEqual(payload["blockers"], [])
         self.assertEqual(payload["next_action"]["code"], "submit_declaration")
         self.assertTrue(payload["can_proceed"])
+
+    def test_assessment_status_snapshot_requires_declaration_before_confirming_appointment(self):
+        appointment = Appointment.objects.create(
+            food_handler=self.food_handler,
+            facility=self.facility,
+            appointment_date=timezone.now() + timezone.timedelta(days=1),
+            status=AppointmentStatus.PENDING,
+        )
+        assessment = self._create_verified_assessment()
+        assessment.appointment = appointment
+        assessment.status = AssessmentStatus.PAYMENT_CONFIRMED
+        assessment.save(update_fields=["appointment", "status", "updated_at"])
+        self.client.force_authenticate(self.handler_user)
+
+        response = self.client.get(f"/api/assessments/{assessment.id}/status/")
+
+        self.assertEqual(response.status_code, 200)
+        payload = data(response)
+        blocker_codes = {blocker["code"] for blocker in payload["blockers"]}
+        self.assertIn("declaration_required_for_confirmation", blocker_codes)
+        self.assertEqual(payload["next_action"]["code"], "submit_declaration")
+        self.assertFalse(payload["can_proceed"])
 
     def test_assessment_cancel_and_close_actions_update_status_and_audit(self):
         appointment = Appointment.objects.create(
@@ -368,6 +489,7 @@ class MedicalAssessmentWorkflowTests(APITestCase):
             facility=self.facility,
             appointment=appointment,
             payment_transaction=self.payment,
+            declaration_status=StepStatus.SUBMITTED,
             status=AssessmentStatus.PAYMENT_CONFIRMED,
         )
         self.client.force_authenticate(self.facility_admin)
@@ -383,9 +505,55 @@ class MedicalAssessmentWorkflowTests(APITestCase):
         assessment.refresh_from_db()
         self.assertEqual(appointment.status, AppointmentStatus.CONFIRMED)
         self.assertEqual(assessment.status, AssessmentStatus.APPOINTMENT_BOOKED)
-        self.assertEqual(data(response)["payment_status"], PaymentStatus.SUCCESS)
+        self.assertEqual(data(response)["payment_status"], "paid")
         self.assertEqual(Notification.objects.filter(recipient=self.handler_user).count(), 1)
         self.assertEqual(Notification.objects.filter(recipient=self.employer_user).count(), 1)
+
+    def test_confirm_appointment_requires_submitted_declaration(self):
+        appointment = Appointment.objects.create(
+            food_handler=self.food_handler,
+            facility=self.facility,
+            appointment_date=timezone.now() + timezone.timedelta(days=1),
+        )
+        assessment = MedicalAssessment.objects.create(
+            food_handler=self.food_handler,
+            employer=self.employer,
+            facility=self.facility,
+            appointment=appointment,
+            payment_transaction=self.payment,
+            declaration_status=StepStatus.PENDING,
+            status=AssessmentStatus.PAYMENT_CONFIRMED,
+        )
+        self.client.force_authenticate(self.facility_admin)
+
+        response = self.client.patch(
+            f"/api/facilities/{self.facility.id}/appointments/{appointment.id}/confirm/",
+            {},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("health declaration submission is required", str(response.data).lower())
+        self.assertTrue(
+            Notification.objects.filter(
+                recipient=self.handler_user,
+                related_object_id=assessment.id,
+                title="Appointment blocked by missing declaration",
+            ).exists()
+        )
+        self.assertTrue(
+            Notification.objects.filter(
+                recipient=self.employer_user,
+                related_object_id=assessment.id,
+                title="Appointment blocked by missing declaration",
+            ).exists()
+        )
+        self.assertTrue(
+            AuditLog.objects.filter(
+                target_id=str(assessment.id),
+                metadata__event="assessment_blocked_due_to_missing_declaration",
+            ).exists()
+        )
 
     def test_confirm_appointment_requires_successful_payment_and_current_accreditation(self):
         appointment = Appointment.objects.create(
@@ -411,6 +579,108 @@ class MedicalAssessmentWorkflowTests(APITestCase):
 
         suspended_response = self.client.patch(f"/api/appointments/{appointment.id}/confirm/", {}, format="json")
         self.assertEqual(suspended_response.status_code, 400)
+
+    def test_confirm_appointment_allows_pay_at_facility_pending_payment(self):
+        pending_payment = PaymentTransaction.objects.create(
+            payer_user=self.handler_user,
+            payer_type="food_handler",
+            related_entity_type="food_handler_assessment",
+            related_entity_id=self.food_handler.id,
+            amount="15000.00",
+            payment_provider="mock",
+            internal_reference="ASS-ASSESS-PENDING-001",
+            status=PaymentStatus.PENDING,
+            metadata={
+                "facility_id": str(self.facility.id),
+                "state_id": str(self.state.id),
+                "pay_at_facility_allowed": True,
+            },
+        )
+        appointment = Appointment.objects.create(
+            food_handler=self.food_handler,
+            facility=self.facility,
+            appointment_date=timezone.now() + timezone.timedelta(days=1),
+        )
+        assessment = MedicalAssessment.objects.create(
+            food_handler=self.food_handler,
+            employer=self.employer,
+            facility=self.facility,
+            appointment=appointment,
+            payment_transaction=pending_payment,
+            declaration_status=StepStatus.SUBMITTED,
+            status=AssessmentStatus.PAYMENT_PENDING,
+        )
+        self.client.force_authenticate(self.facility_admin)
+
+        response = self.client.patch(
+            f"/api/facilities/{self.facility.id}/appointments/{appointment.id}/confirm/",
+            {"notes": "Pay at facility approved."},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        appointment.refresh_from_db()
+        assessment.refresh_from_db()
+        self.assertEqual(appointment.status, AppointmentStatus.CONFIRMED)
+        self.assertEqual(assessment.status, AssessmentStatus.APPOINTMENT_BOOKED)
+        self.assertEqual(data(response)["payment_status"], "pending")
+
+    def test_finance_staff_can_confirm_pay_at_facility_payment_and_generate_receipt(self):
+        pending_payment = PaymentTransaction.objects.create(
+            payer_user=self.handler_user,
+            payer_type="food_handler",
+            related_entity_type="food_handler_assessment",
+            related_entity_id=self.food_handler.id,
+            amount="15000.00",
+            payment_provider="mock",
+            internal_reference="ASS-ASSESS-PENDING-002",
+            status=PaymentStatus.PENDING,
+            metadata={
+                "facility_id": str(self.facility.id),
+                "state_id": str(self.state.id),
+                "assessment_id": "",
+                "pay_at_facility_allowed": True,
+            },
+        )
+        appointment = Appointment.objects.create(
+            food_handler=self.food_handler,
+            facility=self.facility,
+            appointment_date=timezone.now() + timezone.timedelta(days=1),
+        )
+        assessment = MedicalAssessment.objects.create(
+            food_handler=self.food_handler,
+            employer=self.employer,
+            facility=self.facility,
+            appointment=appointment,
+            payment_transaction=pending_payment,
+            declaration_status=StepStatus.SUBMITTED,
+            status=AssessmentStatus.PAYMENT_PENDING,
+        )
+        pending_payment.metadata["assessment_id"] = str(assessment.id)
+        pending_payment.save(update_fields=["metadata", "updated_at"])
+
+        self.client.force_authenticate(self.finance_user)
+        response = self.client.patch(
+            f"/api/facilities/{self.facility.id}/appointments/{appointment.id}/confirm-payment/",
+            {"payment_method": "cash", "notes": "Confirmed at reception."},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        pending_payment.refresh_from_db()
+        assessment.refresh_from_db()
+        self.assertEqual(pending_payment.status, PaymentStatus.SUCCESS)
+        self.assertEqual(assessment.status, AssessmentStatus.PAYMENT_CONFIRMED)
+        self.assertTrue(bool(pending_payment.receipt.receipt_number))
+        self.assertEqual(data(response)["payment_status"], "paid")
+        self.assertEqual(data(response)["payment_receipt_number"], pending_payment.receipt.receipt_number)
+        self.assertTrue(
+            AuditLog.objects.filter(
+                action=AuditAction.PAYMENT_EVENT,
+                target_id=str(pending_payment.id),
+                metadata__event="facility_payment_confirmed",
+            ).exists()
+        )
 
     def test_facility_can_reschedule_cancel_no_show_and_assign_doctor(self):
         appointment = Appointment.objects.create(
@@ -495,7 +765,7 @@ class MedicalAssessmentWorkflowTests(APITestCase):
         rows = response.data
         self.assertEqual(len(rows), 1)
         self.assertEqual(rows[0]["id"], str(own.id))
-        self.assertEqual(rows[0]["payment_status"], PaymentStatus.SUCCESS)
+        self.assertEqual(rows[0]["payment_status"], "paid")
         self.assertEqual(rows[0]["doctor_notes"], "")
 
     def test_facility_assessment_detail_is_audited_and_privacy_shaped(self):
@@ -540,6 +810,124 @@ class MedicalAssessmentWorkflowTests(APITestCase):
         appointment.refresh_from_db()
         self.assertEqual(assessment.doctor, self.doctor)
         self.assertEqual(appointment.doctor, self.doctor)
+
+    def test_doctor_reassignment_requires_reason_once_work_has_started(self):
+        assessment = self._create_verified_assessment()
+        assessment.declaration_status = StepStatus.VALIDATED
+        assessment.save(update_fields=["declaration_status", "updated_at"])
+        self.client.force_authenticate(self.facility_admin)
+
+        blocked = self.client.patch(
+            f"/api/facilities/{self.facility.id}/assessments/{assessment.id}/assign-doctor/",
+            {"doctor": str(self.second_doctor.id)},
+            format="json",
+        )
+
+        self.assertEqual(blocked.status_code, 400)
+        assessment.refresh_from_db()
+        self.assertEqual(assessment.doctor, self.doctor)
+
+        allowed = self.client.patch(
+            f"/api/facilities/{self.facility.id}/assessments/{assessment.id}/assign-doctor/",
+            {"doctor": str(self.second_doctor.id), "reason": "Shift handover after declaration review."},
+            format="json",
+        )
+
+        self.assertEqual(allowed.status_code, 200)
+        assessment.refresh_from_db()
+        self.assertEqual(assessment.doctor, self.second_doctor)
+        self.assertTrue(
+            AuditLog.objects.filter(
+                target_id=str(assessment.id),
+                metadata__event="assessment_doctor_reassigned",
+                metadata__reason="Shift handover after declaration review.",
+            ).exists()
+        )
+
+    def test_facility_can_assign_lab_after_physical_exam_and_lab_queue_follows_assignment(self):
+        assessment = self._create_verified_assessment()
+        assessment.physical_exam_status = StepStatus.COMPLETED
+        assessment.save(update_fields=["physical_exam_status", "updated_at"])
+        lab_test = LabTest.objects.create(
+            assessment=assessment,
+            requested_by=self.doctor,
+            test_type="stool_microscopy",
+        )
+        self.client.force_authenticate(self.facility_admin)
+
+        response = self.client.patch(
+            f"/api/facilities/{self.facility.id}/assessments/{assessment.id}/assign-lab/",
+            {"lab_staff": str(self.lab_staff.id), "lab_unit": str(self.lab_unit.id)},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        assessment.refresh_from_db()
+        lab_test.refresh_from_db()
+        self.assertEqual(assessment.assigned_lab_staff, self.lab_staff)
+        self.assertEqual(assessment.assigned_lab_unit, self.lab_unit)
+        self.assertEqual(lab_test.assigned_lab_staff, self.lab_staff)
+        self.assertEqual(lab_test.assigned_lab_unit, self.lab_unit)
+
+        self.client.force_authenticate(self.lab_staff)
+        own_queue = self.client.get("/api/lab/requests/")
+        self.assertEqual(own_queue.status_code, 200)
+        self.assertEqual(len(data(own_queue)), 1)
+        self.assertEqual(data(own_queue)[0]["id"], str(lab_test.id))
+
+        self.client.force_authenticate(self.other_lab_staff)
+        other_queue = self.client.get("/api/lab/requests/")
+        self.assertEqual(other_queue.status_code, 200)
+        self.assertEqual(data(other_queue), [])
+
+    def test_lab_reassignment_requires_reason_once_lab_work_has_started(self):
+        assessment = self._create_verified_assessment()
+        assessment.physical_exam_status = StepStatus.COMPLETED
+        assessment.assigned_lab_staff = self.lab_staff
+        assessment.assigned_lab_unit = self.lab_unit
+        assessment.save(update_fields=["physical_exam_status", "assigned_lab_staff", "assigned_lab_unit", "updated_at"])
+        lab_test = LabTest.objects.create(
+            assessment=assessment,
+            requested_by=self.doctor,
+            test_type="stool_microscopy",
+            assigned_lab_staff=self.lab_staff,
+            assigned_lab_unit=self.lab_unit,
+            sample_collected_at=timezone.now(),
+        )
+        self.client.force_authenticate(self.facility_admin)
+
+        blocked = self.client.patch(
+            f"/api/facilities/{self.facility.id}/assessments/{assessment.id}/assign-lab/",
+            {"lab_staff": str(self.second_lab_staff.id), "lab_unit": str(self.lab_unit.id)},
+            format="json",
+        )
+
+        self.assertEqual(blocked.status_code, 400)
+        assessment.refresh_from_db()
+        self.assertEqual(assessment.assigned_lab_staff, self.lab_staff)
+
+        allowed = self.client.patch(
+            f"/api/facilities/{self.facility.id}/assessments/{assessment.id}/assign-lab/",
+            {
+                "lab_staff": str(self.second_lab_staff.id),
+                "lab_unit": str(self.lab_unit.id),
+                "reason": "Original lab officer handed over active bench work.",
+            },
+            format="json",
+        )
+
+        self.assertEqual(allowed.status_code, 200)
+        assessment.refresh_from_db()
+        lab_test.refresh_from_db()
+        self.assertEqual(assessment.assigned_lab_staff, self.second_lab_staff)
+        self.assertEqual(lab_test.assigned_lab_staff, self.second_lab_staff)
+        self.assertTrue(
+            AuditLog.objects.filter(
+                target_id=str(assessment.id),
+                metadata__event="assessment_lab_reassigned",
+                metadata__reason="Original lab officer handed over active bench work.",
+            ).exists()
+        )
 
     def test_declaration_sets_risk_flag_and_doctor_validates(self):
         assessment = self._create_verified_assessment()
@@ -778,6 +1166,78 @@ class MedicalAssessmentWorkflowTests(APITestCase):
         self.assertEqual(assessment.physical_exam_status, "completed")
         self.assertEqual(assessment.status, AssessmentStatus.PHYSICAL_EXAM_COMPLETED)
 
+    def test_doctor_assessment_detail_includes_blocked_workflow_recommendation(self):
+        assessment = self._create_verified_assessment()
+        assessment.doctor = self.doctor
+        assessment.save(update_fields=["doctor", "updated_at"])
+        self.client.force_authenticate(self.doctor)
+
+        response = self.client.get(f"/api/doctor/assessments/{assessment.id}/")
+
+        self.assertEqual(response.status_code, 200)
+        recommendation = data(response)["workflow_recommendation"]
+        self.assertEqual(recommendation["status"], "blocked")
+        self.assertEqual(recommendation["suggested_decision"], FitnessDecision.REQUIRES_VACCINATION)
+        self.assertIn("Health declaration still needs doctor validation.", recommendation["reasons"])
+        self.assertEqual(recommendation["signals"]["lab_status"], StepStatus.PENDING)
+        self.assertEqual(recommendation["signals"]["vaccination_status"], StepStatus.PENDING)
+
+    def test_doctor_assessment_detail_includes_warning_recommendation_from_reviewed_signals(self):
+        assessment = self._create_decision_ready_assessment()
+        HealthDeclaration.objects.create(
+            assessment=assessment,
+            diarrhoea_vomiting_last_7_days=True,
+            certified_true=True,
+            risk_flag=True,
+            submitted_at=timezone.now(),
+            validated_at=timezone.now(),
+            validated_by_doctor=self.doctor,
+        )
+        PhysicalExamination.objects.create(
+            assessment=assessment,
+            fever=False,
+            jaundice=False,
+            skin_infection=False,
+            boils_styes_sepsis=False,
+            discharge=False,
+            diarrhoea=False,
+            vomiting=False,
+            sore_throat_with_fever=False,
+            cough_or_flu=False,
+            known_typhoid_carrier_history=False,
+            risk_flag=False,
+            is_completed=True,
+            completed_at=timezone.now(),
+            examined_by=self.doctor,
+            examined_at=timezone.now(),
+        )
+        LabTest.objects.create(
+            assessment=assessment,
+            requested_by=self.doctor,
+            test_type="stool_microscopy",
+            status=LabTestStatus.REVIEWED,
+            result_value="Borderline",
+            is_flagged=True,
+            doctor_recommendation=LabReviewRecommendation.REPEAT_TEST,
+            reviewed_by=self.doctor,
+            reviewed_at=timezone.now(),
+            resulted_by=self.lab_staff,
+            resulted_at=timezone.now(),
+            submitted_to_doctor_at=timezone.now(),
+        )
+        self.client.force_authenticate(self.doctor)
+
+        response = self.client.get(f"/api/doctor/assessments/{assessment.id}/")
+
+        self.assertEqual(response.status_code, 200)
+        recommendation = data(response)["workflow_recommendation"]
+        self.assertEqual(recommendation["status"], "warning")
+        self.assertEqual(recommendation["suggested_decision"], FitnessDecision.REQUIRES_LAB_TEST)
+        self.assertEqual(recommendation["signals"]["flagged_lab_results"], 1)
+        self.assertEqual(recommendation["signals"]["repeat_required_tests"], 0)
+        self.assertEqual(recommendation["signals"]["highest_lab_recommendation"], LabReviewRecommendation.REPEAT_TEST)
+        self.assertIn("repeat testing", recommendation["rationale"].lower())
+
     def test_doctor_can_request_declaration_changes_before_validation(self):
         assessment = self._create_verified_assessment()
         assessment.doctor = self.doctor
@@ -817,6 +1277,8 @@ class MedicalAssessmentWorkflowTests(APITestCase):
 
     def test_unassigned_doctor_cannot_access_doctor_assessment_alias(self):
         assessment = self._create_verified_assessment()
+        assessment.doctor = None
+        assessment.save(update_fields=["doctor", "updated_at"])
         self.client.force_authenticate(self.doctor)
 
         response = self.client.get(f"/api/doctor/assessments/{assessment.id}/")
@@ -864,6 +1326,7 @@ class MedicalAssessmentWorkflowTests(APITestCase):
             format="json",
         )
         self.assertEqual(exam_response.status_code, 201)
+        self._assign_lab(assessment)
         lab_request = self.client.post(
             f"/api/assessments/{assessment.id}/lab-tests/",
             {"tests": [{"test_type": "stool_microscopy"}, {"test_type": "hepatitis_a_antigen"}]},
@@ -1014,6 +1477,81 @@ class MedicalAssessmentWorkflowTests(APITestCase):
         self.assertEqual(illness.clearance_status, ClearanceStatus.PENDING)
         self.assertEqual(illness.notes, "Follow up required.")
 
+        self.client.force_authenticate(self.doctor)
+        blocked_request = self.client.post(
+            f"/api/assessments/{assessment.id}/request-certificate/",
+            {"request_notes": "Try to submit anyway."},
+            format="json",
+        )
+        self.assertEqual(blocked_request.status_code, 400)
+
+        self.client.force_authenticate(self.facility_admin)
+        blocked_submit = self.client.post(
+            f"/api/assessments/{assessment.id}/submit-to-state/",
+            {"request_notes": "Should stay blocked."},
+            format="json",
+        )
+        self.assertEqual(blocked_submit.status_code, 400)
+
+        self.client.force_authenticate(self.employer_user)
+        employer_medical = self.client.get(f"/api/assessments/{assessment.id}/reports/medical/")
+        employer_summary = self.client.get(f"/api/assessments/{assessment.id}/reports/summary/")
+        self.assertEqual(employer_medical.status_code, 403)
+        self.assertEqual(employer_summary.status_code, 200)
+        self.assertIn(FitnessDecision.TEMPORARILY_NOT_FIT, str(data(employer_summary)["summary"]))
+        self.assertNotIn("Follow up required.", str(data(employer_summary)["summary"]))
+
+        self.client.force_authenticate(self.handler_user)
+        handler_return_to_work = self.client.get(f"/api/assessments/{assessment.id}/reports/return-to-work/")
+        self.assertEqual(handler_return_to_work.status_code, 200)
+        self.assertIn(FitnessDecision.TEMPORARILY_NOT_FIT, str(data(handler_return_to_work)["summary"]))
+        self.assertNotIn("Follow up required.", str(data(handler_return_to_work)["summary"]))
+
+        records_role = FacilityRole.objects.get(facility=self.facility, name="Records Officer")
+        records_user = User.objects.create_user(
+            username="records-assessment-user",
+            email="records-assessment@example.com",
+            password="StrongPass123!",
+            role=UserRole.DOCTOR,
+            organization=self.facility_org,
+            state=self.state,
+        )
+        finance_role = FacilityRole.objects.get(facility=self.facility, name="Finance / Billing Officer")
+        blocked_user = User.objects.create_user(
+            username="blocked-assessment-user",
+            email="blocked-assessment@example.com",
+            password="StrongPass123!",
+            role=UserRole.DOCTOR,
+            organization=self.facility_org,
+            state=self.state,
+        )
+        FacilityStaffProfile.objects.create(
+            user=records_user,
+            facility=self.facility,
+            role=records_role,
+            staff_type=FacilityStaffType.RECORDS_STAFF,
+            professional_category=FacilityProfessionalCategory.RECORDS,
+            status=FacilityTeamMemberStatus.ACTIVE,
+            is_active=True,
+        )
+        FacilityStaffProfile.objects.create(
+            user=blocked_user,
+            facility=self.facility,
+            role=finance_role,
+            staff_type=FacilityStaffType.FINANCE_USER,
+            professional_category=FacilityProfessionalCategory.FINANCE,
+            status=FacilityTeamMemberStatus.ACTIVE,
+            is_active=True,
+        )
+
+        self.client.force_authenticate(records_user)
+        records_return_to_work = self.client.get(f"/api/assessments/{assessment.id}/reports/return-to-work/")
+        self.assertEqual(records_return_to_work.status_code, 200)
+
+        self.client.force_authenticate(blocked_user)
+        blocked_return_to_work = self.client.get(f"/api/assessments/{assessment.id}/reports/return-to-work/")
+        self.assertEqual(blocked_return_to_work.status_code, 403)
+
     def test_fitness_decision_draft_does_not_sign_or_mutate_final_decision(self):
         assessment = self._create_decision_ready_assessment()
         self.client.force_authenticate(self.doctor)
@@ -1123,6 +1661,8 @@ class MedicalAssessmentWorkflowTests(APITestCase):
             assessment=assessment,
             requested_by=self.doctor,
             test_type="stool_microscopy",
+            assigned_lab_staff=self.lab_staff,
+            assigned_lab_unit=self.lab_unit,
         )
 
         self.client.force_authenticate(self.other_lab_staff)
@@ -1145,6 +1685,8 @@ class MedicalAssessmentWorkflowTests(APITestCase):
             assessment=assessment,
             requested_by=self.doctor,
             test_type="stool_microscopy",
+            assigned_lab_staff=self.lab_staff,
+            assigned_lab_unit=self.lab_unit,
         )
         self.client.force_authenticate(self.lab_staff)
 
@@ -1189,6 +1731,8 @@ class MedicalAssessmentWorkflowTests(APITestCase):
             test_type="stool_microscopy",
             status=LabTestStatus.NEGATIVE,
             result_value="Negative",
+            assigned_lab_staff=self.lab_staff,
+            assigned_lab_unit=self.lab_unit,
             resulted_by=self.lab_staff,
             resulted_at=timezone.now(),
         )
@@ -1216,6 +1760,8 @@ class MedicalAssessmentWorkflowTests(APITestCase):
             test_type="stool_microscopy",
             status=LabTestStatus.INCONCLUSIVE,
             result_value="Borderline",
+            assigned_lab_staff=self.lab_staff,
+            assigned_lab_unit=self.lab_unit,
             resulted_by=self.lab_staff,
             resulted_at=timezone.now(),
             submitted_to_doctor_at=timezone.now(),
@@ -1250,6 +1796,8 @@ class MedicalAssessmentWorkflowTests(APITestCase):
         self.assertEqual(request_response.status_code, 201)
         lab_test = LabTest.objects.filter(assessment=assessment, test_type="stool_microscopy").first()
         self.assertIsNotNone(lab_test)
+        self._assign_lab(assessment)
+        lab_test.refresh_from_db()
         self.assertEqual(lab_test.status, LabTestStatus.SAMPLE_COLLECTION_PENDING)
 
         self.client.force_authenticate(self.lab_staff)
@@ -1296,6 +1844,7 @@ class MedicalAssessmentWorkflowTests(APITestCase):
             format="json",
         )
         self.assertEqual(request_response.status_code, 201)
+        self._assign_lab(assessment)
         tests = LabTest.objects.filter(assessment=assessment)
         self.assertEqual(tests.count(), 4)
         self.assertTrue(tests.filter(test_type="stool_microscopy").exists())

@@ -1,4 +1,5 @@
 from django.db.models import Q
+from django.utils.dateparse import parse_date
 from rest_framework import viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied
@@ -142,12 +143,55 @@ class StatePolicyConfigViewSet(viewsets.ModelViewSet):
         else:
             queryset = queryset.filter(state=user.state)
         action_filter = request.query_params.get("action")
+        actor_filter = request.query_params.get("actor")
+        role_filter = request.query_params.get("role")
         module_filter = request.query_params.get("module")
+        entity_filter = request.query_params.get("entity")
+        date_from = parse_date(request.query_params.get("date_from", ""))
+        date_to = parse_date(request.query_params.get("date_to", ""))
+        lga_filter = request.query_params.get("lga")
+        facility_filter = request.query_params.get("facility")
         search = request.query_params.get("search")
+        if actor_filter:
+            queryset = queryset.filter(
+                Q(actor__email__icontains=actor_filter)
+                | Q(actor__first_name__icontains=actor_filter)
+                | Q(actor__last_name__icontains=actor_filter)
+            )
+        if role_filter:
+            queryset = queryset.filter(actor__role=role_filter)
         if action_filter:
             queryset = queryset.filter(action=action_filter)
         if module_filter:
             queryset = queryset.filter(metadata__module=module_filter)
+        if entity_filter:
+            queryset = queryset.filter(
+                Q(target_type__icontains=entity_filter) | Q(metadata__entity__icontains=entity_filter)
+            )
+        if date_from:
+            queryset = queryset.filter(created_at__date__gte=date_from)
+        if date_to:
+            queryset = queryset.filter(created_at__date__lte=date_to)
+        if lga_filter:
+            queryset = queryset.filter(
+                Q(metadata__lga_id=lga_filter)
+                | Q(metadata__branch_lga_id=lga_filter)
+                | Q(metadata__lga_name__icontains=lga_filter)
+                | Q(metadata__branch_lga_name__icontains=lga_filter)
+            )
+        if facility_filter:
+            queryset = queryset.filter(
+                Q(metadata__facility_id=facility_filter)
+                | Q(metadata__facility_name__icontains=facility_filter)
+                | Q(metadata__facility__icontains=facility_filter)
+            )
         if search:
-            queryset = queryset.filter(metadata__icontains=search)
-        return Response(StateAuditLogSerializer(queryset[:100], many=True).data)
+            queryset = queryset.filter(
+                Q(actor__email__icontains=search)
+                | Q(actor__first_name__icontains=search)
+                | Q(actor__last_name__icontains=search)
+                | Q(target_type__icontains=search)
+                | Q(target_id__icontains=search)
+                | Q(metadata__icontains=search)
+            )
+        return Response(StateAuditLogSerializer(queryset[:200], many=True).data)

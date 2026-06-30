@@ -3,7 +3,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { BadgeCheck, Download, FileCheck2 } from "lucide-react";
 import { useSearchParams } from "next/navigation";
-import { useState } from "react";
+import { Suspense, useState } from "react";
 import { PortalShell } from "@/components/layout/portal-shell";
 import { DataTable, StatusCell } from "@/components/ui/data-table";
 import { downloadAccreditationCertificatePdf, downloadCertificatePdf } from "@/lib/api/certificates";
@@ -36,7 +36,7 @@ function recordLabel(recordType: string) {
   return recordType.replaceAll("_", " ");
 }
 
-export default function Page() {
+function StateCertificatesPageContent() {
   const params = useSearchParams();
   const queryClient = useQueryClient();
   const [tab, setTab] = useState<UnifiedCertificateRegistryTab>((params.get("tab") as UnifiedCertificateRegistryTab) || "pending_review");
@@ -178,5 +178,13 @@ export default function Page() {
         </div>
       ) : null}
     </PortalShell>
+  );
+}
+
+export default function Page() {
+  return (
+    <Suspense fallback={null}>
+      <StateCertificatesPageContent />
+    </Suspense>
   );
 }

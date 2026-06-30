@@ -11,7 +11,10 @@ import type {
   MEIndicatorDataSource,
   MEIndicatorSourceRecordsResponse,
   MEIndicatorValue,
+  MedicalTestPackage,
+  MedicalTestPackageComponent,
   MedicalTestRule,
+  MedicalTestRuleEvaluation,
   PhysicalExaminationRule,
   PolicyDocument,
   PolicyVersion,
@@ -144,6 +147,11 @@ export async function updateMedicalTestRule(id: string, data: Partial<MedicalTes
 
 export async function deleteMedicalTestRule(id: string) {
   await apiClient.delete(`${BASE}/medical-test-rules/${id}/`);
+}
+
+export async function testMedicalTestRule(id: string, value: unknown) {
+  const res = await apiClient.post<ApiEnvelope<MedicalTestRuleEvaluation>>(`${BASE}/medical-test-rules/${id}/test/`, { value });
+  return unwrap(res.data);
 }
 
 export async function listPhysicalExaminationRules(params?: Record<string, string>) {
@@ -653,4 +661,30 @@ export async function getActiveMEIndicators() {
 export async function getActiveStateConfigurationControls() {
   const res = await apiClient.get<ApiEnvelope<StateConfigurationControl[]>>("/standards/active/state-configuration-controls/");
   return unwrap(res.data);
+}
+
+// --- Medical Test Packages (Federal minimum package configuration) ---
+
+export async function listMedicalTestPackages(params?: { policy_version?: string; status?: string }) {
+  const res = await apiClient.get<ApiEnvelope<MedicalTestPackage[]>>(`${BASE}/medical-test-packages/`, { params });
+  return unwrap(res.data);
+}
+
+export async function createMedicalTestPackage(data: Partial<MedicalTestPackage>) {
+  const res = await apiClient.post<ApiEnvelope<MedicalTestPackage>>(`${BASE}/medical-test-packages/`, data);
+  return unwrap(res.data);
+}
+
+export async function createMedicalTestPackageComponent(data: Partial<MedicalTestPackageComponent>) {
+  const res = await apiClient.post<ApiEnvelope<MedicalTestPackageComponent>>(`${BASE}/medical-test-package-components/`, data);
+  return unwrap(res.data);
+}
+
+export async function updateMedicalTestPackageComponent(id: string, data: Partial<MedicalTestPackageComponent>) {
+  const res = await apiClient.patch<ApiEnvelope<MedicalTestPackageComponent>>(`${BASE}/medical-test-package-components/${id}/`, data);
+  return unwrap(res.data);
+}
+
+export async function deleteMedicalTestPackageComponent(id: string) {
+  await apiClient.delete(`${BASE}/medical-test-package-components/${id}/`);
 }

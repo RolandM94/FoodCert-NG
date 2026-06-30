@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createPolicyVersion, clonePolicyVersion, listPolicyVersions } from "@/lib/api/standards";
 import { getApiErrorMessage } from "@/lib/api/client";
+import { POLICY_CATEGORY_LABELS, type PolicyCategory } from "@/types/standards";
 
 interface Props {
   onClose: () => void;
@@ -22,12 +23,29 @@ export function CreatePolicyVersionForm({ onClose, onSuccess }: Props) {
     version_code: "",
     title: "",
     version_type: "major" as "major" | "minor" | "emergency",
+    policy_category: "" as PolicyCategory | "",
+    legal_basis: "",
+    scope: "",
+    affected_entities: "",
+    review_date: "",
     description: "",
     change_summary: "",
     effective_start_date: "",
     effective_end_date: "",
     requires_state_acknowledgement: false,
   });
+
+  function buildPayload() {
+    const { affected_entities, review_date, ...rest } = form;
+    return {
+      ...rest,
+      review_date: review_date || null,
+      affected_entities: affected_entities
+        .split(",")
+        .map((entity) => entity.trim())
+        .filter(Boolean),
+    };
+  }
 
   const { data: activeVersion } = useQuery({
     queryKey: ["standards-policy-versions", "active"],
@@ -36,7 +54,7 @@ export function CreatePolicyVersionForm({ onClose, onSuccess }: Props) {
   });
 
   const createMutation = useMutation({
-    mutationFn: () => createPolicyVersion(form),
+    mutationFn: () => createPolicyVersion(buildPayload()),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["standards-policy-versions"] });
       setSuccess(true);
@@ -149,11 +167,59 @@ export function CreatePolicyVersionForm({ onClose, onSuccess }: Props) {
             </select>
           </label>
           <label className="block text-sm font-medium text-neutral-700">
+            Policy Category
+            <select
+              className="mt-1 h-11 w-full rounded border border-neutral-200 bg-white px-3 text-sm"
+              value={form.policy_category}
+              onChange={(e) => update("policy_category", e.target.value)}
+            >
+              <option value="">Select a category…</option>
+              {Object.entries(POLICY_CATEGORY_LABELS).map(([value, label]) => (
+                <option key={value} value={value}>{label}</option>
+              ))}
+            </select>
+          </label>
+          <label className="block text-sm font-medium text-neutral-700">
             Description
             <textarea
               className="mt-1 min-h-[80px] w-full rounded border border-neutral-200 bg-neutral-50 px-3 py-2 text-sm"
               value={form.description}
               onChange={(e) => update("description", e.target.value)}
+            />
+          </label>
+          <label className="block text-sm font-medium text-neutral-700">
+            Guideline / Legal Basis
+            <textarea
+              className="mt-1 min-h-[60px] w-full rounded border border-neutral-200 bg-neutral-50 px-3 py-2 text-sm"
+              value={form.legal_basis}
+              onChange={(e) => update("legal_basis", e.target.value)}
+            />
+          </label>
+          <label className="block text-sm font-medium text-neutral-700">
+            Scope
+            <textarea
+              className="mt-1 min-h-[60px] w-full rounded border border-neutral-200 bg-neutral-50 px-3 py-2 text-sm"
+              value={form.scope}
+              onChange={(e) => update("scope", e.target.value)}
+            />
+          </label>
+          <label className="block text-sm font-medium text-neutral-700">
+            Affected Entities (comma-separated)
+            <input
+              type="text"
+              placeholder="States, Medical facilities, Food handlers"
+              className="mt-1 h-11 w-full rounded border border-neutral-200 bg-neutral-50 px-3 text-sm"
+              value={form.affected_entities}
+              onChange={(e) => update("affected_entities", e.target.value)}
+            />
+          </label>
+          <label className="block text-sm font-medium text-neutral-700">
+            Review Date (optional)
+            <input
+              type="date"
+              className="mt-1 h-11 w-full rounded border border-neutral-200 bg-neutral-50 px-3 text-sm"
+              value={form.review_date}
+              onChange={(e) => update("review_date", e.target.value)}
             />
           </label>
           <label className="block text-sm font-medium text-neutral-700">

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { Suspense, useState, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { HeartPulse, AlertCircle, CheckCircle2, X } from "lucide-react";
 import { PortalShell } from "@/components/layout/portal-shell";
@@ -37,7 +37,7 @@ const CONDITIONS = [
   { value: "other", label: "Other" },
 ];
 
-export default function Page() {
+function EmployerIllnessReportsPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [employerId, setEmployerId] = useState<string | null>(null);
@@ -280,5 +280,13 @@ export default function Page() {
         </div>
       )}
     </PortalShell>
+  );
+}
+
+export default function Page() {
+  return (
+    <Suspense fallback={null}>
+      <EmployerIllnessReportsPageContent />
+    </Suspense>
   );
 }

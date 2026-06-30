@@ -1,19 +1,22 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { AlertCircle, CalendarDays, CheckCircle2, Clock3, RefreshCw, UserRoundCheck, XCircle } from "lucide-react";
 import { PortalShell } from "@/components/layout/portal-shell";
 import { StatusBadge } from "@/components/status/status-badge";
+import { getApiErrorMessage } from "@/lib/api/client";
 import {
   assignFacilityAppointmentDoctor,
   cancelFacilityAppointment,
   confirmFacilityAppointment,
+  confirmFacilityAppointmentPayment,
   listFacilityAppointments,
   noShowFacilityAppointment,
   rescheduleFacilityAppointment,
 } from "@/lib/api/assessments";
 import { getCurrentMedicalFacility, listFacilityStaff } from "@/lib/api/facilities";
-import type { Appointment, AppointmentStatus } from "@/types/assessments";
+import type { Appointment, AppointmentStatus, StepStatus } from "@/types/assessments";
 import type { FacilityStaffProfile, MedicalFacility } from "@/types/facilities";
 
 const STATUS_OPTIONS: Array<["all" | AppointmentStatus, string]> = [
@@ -32,6 +35,19 @@ function formatDate(value: string) {
 
 function label(value?: string) {
   return value ? value.replaceAll("_", " ") : "Not set";
+}
+
+function declarationReady(status?: StepStatus | null) {
+  return status === "submitted" || status === "validated";
+}
+
+function declarationBlocksConfirmation(appointment: Appointment) {
+  return Boolean(appointment.assessment_id) && !declarationReady(appointment.declaration_status);
+}
+
+function paymentBlocksConfirmation(appointment: Appointment) {
+  return !["paid", "waived", "pending"].includes(appointment.payment_status || "unpaid")
+    || ((appointment.payment_status || "unpaid") === "pending" && !appointment.pay_at_facility_allowed);
 }
 
 export default function Page() {
@@ -104,8 +120,31 @@ export default function Page() {
           : await noShowFacilityAppointment(facility.id, appointment.id, { notes: "Food handler did not attend." });
       replaceAppointment(updated);
       setSuccess(`Appointment ${label(updated.status)}.`);
-    } catch {
-      setError("Could not update appointment. Check payment, accreditation, and facility permissions.");
+    } catch (caughtError) {
+      setError(getApiErrorMessage(caughtError, "Could not update appointment. Check payment, declaration completion, accreditation, and facility permissions."));
+    } finally {
+      setBusyId("");
+    }
+  }
+
+  async function confirmPayment(appointment: Appointment) {
+    if (!facility) return;
+    setBusyId(appointment.id);
+    setError("");
+    setSuccess("");
+    try {
+      const updated = await confirmFacilityAppointmentPayment(facility.id, appointment.id, {
+        notes: "Payment confirmed at facility counter.",
+        payment_method: "cash",
+      });
+      replaceAppointment(updated);
+      setSuccess(
+        updated.payment_receipt_number
+          ? `Payment confirmed. Receipt ${updated.payment_receipt_number} generated.`
+          : "Payment confirmed."
+      );
+    } catch (caughtError) {
+      setError(getApiErrorMessage(caughtError, "Could not confirm payment at facility."));
     } finally {
       setBusyId("");
     }
@@ -217,24 +256,57 @@ export default function Page() {
             <div className="overflow-x-auto">
               <table className="w-full text-left text-sm">
                 <thead className="bg-neutral-50 text-xs font-bold uppercase text-neutral-500">
-                  <tr><th className="p-3">Food handler</th><th className="p-3">Date</th><th className="p-3">Payment</th><th className="p-3">Doctor</th><th className="p-3">Status</th><th className="p-3">Actions</th></tr>
+                  <tr><th className="p-3">Appointment</th><th className="p-3">Food handler</th><th className="p-3">Date</th><th className="p-3">Payment</th><th className="p-3">Declaration</th><th className="p-3">Assessment</th><th className="p-3">Doctor</th><th className="p-3">Lab technician</th><th className="p-3">Status</th><th className="p-3">Actions</th></tr>
                 </thead>
                 <tbody className="divide-y divide-neutral-200">
                   {filtered.length ? filtered.map((appointment) => (
-                    <tr key={appointment.id}>
+                    <tr className={declarationBlocksConfirmation(appointment) ? "bg-amber-50/40" : undefined} key={appointment.id}>
+                      <td className="p-3">
+                        <p className="font-mono text-xs font-bold text-neutral-900">{appointment.id.slice(0, 8)}</p>
+                        <Link className="mt-1 inline-flex text-xs font-semibold text-brand-700 hover:text-brand-800" href={`/facility/appointments/${appointment.id}`}>Open detail</Link>
+                      </td>
                       <td className="p-3"><p className="font-bold text-neutral-900">{appointment.food_handler_name}</p><p className="text-xs text-neutral-500">{appointment.employer_name || "Individual"}</p></td>
                       <td className="p-3">{formatDate(appointment.appointment_date)}</td>
                       <td className="p-3 capitalize"><StatusBadge status={appointment.payment_status || "missing"} /></td>
+                      <td className="p-3">
+                        <div className="space-y-1">
+                          <StatusBadge status={appointment.declaration_status || "pending"} />
+                          {declarationBlocksConfirmation(appointment) ? (
+                            <p className="text-[11px] font-medium text-amber-700">Food handler must submit declaration before confirmation.</p>
+                          ) : null}
+                        </div>
+                      </td>
+                      <td className="p-3">
+                        <div className="space-y-1">
+                          <StatusBadge status={appointment.assessment_status || "pending"} />
+                          {appointment.assessment_id ? (
+                            <Link className="inline-flex text-xs font-semibold text-brand-700 hover:text-brand-800" href={`/facility/assessments/${appointment.assessment_id}`}>Open assessment</Link>
+                          ) : (
+                            <p className="text-[11px] text-neutral-500">Assessment pending</p>
+                          )}
+                        </div>
+                      </td>
                       <td className="p-3">
                         <select className="h-9 rounded border border-neutral-200 bg-white px-2 text-xs" disabled={busyId === appointment.id} value={appointment.doctor || ""} onChange={(event) => void assignDoctor(appointment, event.target.value)}>
                           <option value="">Unassigned</option>
                           {staff.map((profile) => <option key={profile.user} value={profile.user}>{profile.user_name || profile.user_email}</option>)}
                         </select>
                       </td>
+                      <td className="p-3 text-xs text-neutral-500">Not assigned yet</td>
                       <td className="p-3"><StatusBadge status={appointment.status} /></td>
                       <td className="min-w-[340px] p-3">
                         <div className="flex flex-wrap gap-2">
-                          <button className="inline-flex h-8 items-center gap-1 rounded border border-neutral-200 px-2 text-xs font-bold text-neutral-700 disabled:opacity-60" disabled={busyId === appointment.id} type="button" onClick={() => void runAction(appointment, "confirm")}><CheckCircle2 size={14} /> Confirm</button>
+                          <button className="inline-flex h-8 items-center gap-1 rounded border border-neutral-200 px-2 text-xs font-bold text-neutral-700 disabled:opacity-60" disabled={busyId === appointment.id || declarationBlocksConfirmation(appointment) || paymentBlocksConfirmation(appointment)} title={declarationBlocksConfirmation(appointment) ? "Health declaration must be submitted before confirmation." : paymentBlocksConfirmation(appointment) ? "Payment must be confirmed or marked as pay-at-facility before appointment confirmation." : undefined} type="button" onClick={() => void runAction(appointment, "confirm")}><CheckCircle2 size={14} /> Confirm</button>
+                          {appointment.can_confirm_payment_at_facility ? (
+                            <button
+                              className="inline-flex h-8 items-center gap-1 rounded border border-brand-200 px-2 text-xs font-bold text-brand-700 disabled:opacity-60"
+                              disabled={busyId === appointment.id}
+                              type="button"
+                              onClick={() => void confirmPayment(appointment)}
+                            >
+                              <CheckCircle2 size={14} /> Confirm payment
+                            </button>
+                          ) : null}
                           <button className="inline-flex h-8 items-center gap-1 rounded border border-neutral-200 px-2 text-xs font-bold text-neutral-700 disabled:opacity-60" disabled={busyId === appointment.id} type="button" onClick={() => setRescheduleId(rescheduleId === appointment.id ? "" : appointment.id)}><CalendarDays size={14} /> Reschedule</button>
                           <button className="inline-flex h-8 items-center gap-1 rounded border border-neutral-200 px-2 text-xs font-bold text-neutral-700 disabled:opacity-60" disabled={busyId === appointment.id} type="button" onClick={() => void runAction(appointment, "no_show")}><Clock3 size={14} /> No-show</button>
                           <button className="inline-flex h-8 items-center gap-1 rounded border border-danger-100 px-2 text-xs font-bold text-danger-700 disabled:opacity-60" disabled={busyId === appointment.id} type="button" onClick={() => void runAction(appointment, "cancel")}><XCircle size={14} /> Cancel</button>
@@ -245,10 +317,13 @@ export default function Page() {
                             <button className="h-9 rounded bg-brand-600 px-3 text-xs font-bold text-white disabled:opacity-60" disabled={busyId === appointment.id || !rescheduleDate} type="button" onClick={() => void submitReschedule(appointment)}>Save</button>
                           </div>
                         ) : null}
+                        {appointment.payment_receipt_number ? (
+                          <p className="mt-2 text-[11px] font-medium text-neutral-500">Receipt: {appointment.payment_receipt_number}</p>
+                        ) : null}
                       </td>
                     </tr>
                   )) : (
-                    <tr><td className="p-3 text-neutral-500" colSpan={6}>No appointments match the current filters.</td></tr>
+                    <tr><td className="p-3 text-neutral-500" colSpan={10}>No appointments match the current filters.</td></tr>
                   )}
                 </tbody>
               </table>

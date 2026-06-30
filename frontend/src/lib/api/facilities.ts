@@ -1,5 +1,15 @@
 import { apiClient, unwrap, type ApiEnvelope } from "@/lib/api/client";
-import type { FacilityAccreditationApplication, FacilityDocument, FacilityInvite, FacilityStaffProfile, MedicalFacility } from "@/types/facilities";
+import type {
+  FacilityAccreditationApplication,
+  FacilityAuditLog,
+  FacilityComplianceDashboard,
+  FacilityDocument,
+  FacilityInvite,
+  FacilityRole,
+  FacilityStaffProfile,
+  FacilityTemporaryUnfitReport,
+  MedicalFacility,
+} from "@/types/facilities";
 
 export async function listMedicalFacilities(): Promise<MedicalFacility[]> {
   const response = await apiClient.get<ApiEnvelope<MedicalFacility[]>>("/medical-facilities/");
@@ -146,5 +156,61 @@ export async function createFacilityInvite(facilityId: string, payload: Record<s
 
 export async function revokeFacilityInvite(facilityId: string, inviteId: string): Promise<FacilityInvite> {
   const response = await apiClient.delete<ApiEnvelope<FacilityInvite>>(`/medical-facilities/${facilityId}/invites/${inviteId}/`);
+  return unwrap(response.data);
+}
+
+export async function listFacilityRoles(facilityId: string): Promise<FacilityRole[]> {
+  const response = await apiClient.get<ApiEnvelope<FacilityRole[]>>(`/medical-facilities/${facilityId}/roles/`);
+  return unwrap(response.data);
+}
+
+export async function getFacilityRole(facilityId: string, roleId: string): Promise<FacilityRole> {
+  const response = await apiClient.get<ApiEnvelope<FacilityRole>>(`/medical-facilities/${facilityId}/roles/${roleId}/`);
+  return unwrap(response.data);
+}
+
+export async function createFacilityRole(
+  facilityId: string,
+  payload: { name: string; description?: string; professional_category: string; permission_keys: string[] }
+): Promise<FacilityRole> {
+  const response = await apiClient.post<ApiEnvelope<FacilityRole>>(`/medical-facilities/${facilityId}/roles/`, payload);
+  return unwrap(response.data);
+}
+
+export async function updateFacilityRole(
+  facilityId: string,
+  roleId: string,
+  payload: Partial<{ name: string; description: string; professional_category: string; permission_keys: string[] }>
+): Promise<FacilityRole> {
+  const response = await apiClient.patch<ApiEnvelope<FacilityRole>>(`/medical-facilities/${facilityId}/roles/${roleId}/`, payload);
+  return unwrap(response.data);
+}
+
+export async function getFacilityComplianceDashboard(
+  facilityId: string,
+  params?: Record<string, string>
+): Promise<FacilityComplianceDashboard> {
+  const response = await apiClient.get<ApiEnvelope<FacilityComplianceDashboard>>(
+    `/medical-facilities/${facilityId}/compliance-dashboard/`,
+    { params }
+  );
+  return unwrap(response.data);
+}
+
+export async function listFacilityAuditLogs(
+  facilityId: string,
+  params?: Record<string, string>
+): Promise<FacilityAuditLog[]> {
+  const response = await apiClient.get<ApiEnvelope<FacilityAuditLog[]>>(
+    `/medical-facilities/${facilityId}/audit-logs/`,
+    { params }
+  );
+  return unwrap(response.data);
+}
+
+export async function listFacilityTemporaryUnfitReports(facilityId: string): Promise<FacilityTemporaryUnfitReport[]> {
+  const response = await apiClient.get<ApiEnvelope<FacilityTemporaryUnfitReport[]>>(
+    `/medical-facilities/${facilityId}/temporary-unfit-reports/`
+  );
   return unwrap(response.data);
 }

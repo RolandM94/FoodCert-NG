@@ -3,8 +3,17 @@ from rest_framework.routers import DefaultRouter
 
 from apps.reports.views import (
     AdminDashboardView,
+    AnalyticsDatasetViewSet,
+    AnalyticsWidgetViewSet,
+    AnalyticsWorksheetViewSet,
+    DashboardAlertEventViewSet,
+    DashboardAlertRuleViewSet,
+    DashboardExportJobViewSet,
     AssessmentAnalyticsView,
     CertificateAnalyticsView,
+    DashboardCanvasBlockViewSet,
+    DashboardCanvasViewSet,
+    DashboardTemplateViewSet,
     DashboardWidgetViewSet,
     DataQualityAnalyticsView,
     DataQualityIssueViewSet,
@@ -33,6 +42,7 @@ from apps.reports.views import (
     MEStatePerformanceView,
     NationalReportView,
     PaymentAnalyticsView,
+    PublishedDashboardViewSet,
     ReportScheduleViewSet,
     ReportTemplateViewSet,
     ScheduledReportViewSet,
@@ -51,6 +61,16 @@ router.register("reports/schedule", ReportScheduleViewSet, basename="report-sche
 router.register("reports/generated", GeneratedReportViewSet, basename="generated-reports")
 router.register("federal/state-reports", FederalStateReportViewSet, basename="federal-state-reports")
 router.register("dashboard-widgets", DashboardWidgetViewSet, basename="dashboard-widgets")
+router.register("analytics/datasets", AnalyticsDatasetViewSet, basename="analytics-datasets")
+router.register("analytics/worksheets", AnalyticsWorksheetViewSet, basename="analytics-worksheets")
+router.register("analytics/widgets", AnalyticsWidgetViewSet, basename="analytics-widgets")
+router.register("analytics/dashboard-alerts", DashboardAlertRuleViewSet, basename="analytics-dashboard-alerts")
+router.register("analytics/dashboard-alert-events", DashboardAlertEventViewSet, basename="analytics-dashboard-alert-events")
+router.register("analytics/dashboard-export-jobs", DashboardExportJobViewSet, basename="analytics-dashboard-export-jobs")
+router.register("analytics/dashboard-canvases", DashboardCanvasViewSet, basename="analytics-dashboard-canvases")
+router.register("analytics/dashboard-blocks", DashboardCanvasBlockViewSet, basename="analytics-dashboard-blocks")
+router.register("analytics/published-dashboards", PublishedDashboardViewSet, basename="analytics-published-dashboards")
+router.register("analytics/dashboard-templates", DashboardTemplateViewSet, basename="analytics-dashboard-templates")
 router.register("data-quality/issues", DataQualityIssueViewSet, basename="data-quality-issues")
 router.register("scheduled-reports", ScheduledReportViewSet, basename="scheduled-reports")
 

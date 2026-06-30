@@ -25,6 +25,7 @@ import {
   fetchRolesByOrganizationType, fetchPermissions,
 } from "@/lib/api/organizations";
 import { getApiErrorMessage } from "@/lib/api/client";
+import { fetchStateProfileSettings } from "@/lib/api/state";
 import type { UserRole } from "@/types/auth";
 import type { StakeholderContext } from "@/lib/api/organizations";
 import type { OrganizationMembership, OrganizationUnit, StakeholderRole, OrganizationType } from "@/types/organizations";
@@ -44,6 +45,14 @@ const TAB_LABELS: Record<UserRole, Record<TabKey, string>> = {
 };
 
 const PRIMARY_TABS: TabKey[] = ["stakeholders", "roles", "units"];
+const STATE_MINISTRY_DEFAULT_ROLES = [
+  { role: "State Super Admin", responsibility: "Full state account control, onboarding, governance, and escalation ownership." },
+  { role: "Programme Manager", responsibility: "Leads implementation, facility rollout, and policy adoption coordination." },
+  { role: "Accreditation Officer", responsibility: "Reviews medical facility applications, inspection outcomes, and renewal readiness." },
+  { role: "M&E Officer", responsibility: "Tracks indicators, reporting quality, and periodic submissions to Federal." },
+  { role: "Compliance Officer", responsibility: "Handles warnings, corrections, suspensions, and enforcement case follow-up." },
+  { role: "Public Awareness Officer", responsibility: "Publishes state notices, campaigns, and operational public guidance." },
+] as const;
 
 function formatDate(value?: string) {
   if (!value) return "N/A";
@@ -64,15 +73,51 @@ function roleTone(role?: string) {
   return "bg-brand-50 text-brand-700 ring-brand-200";
 }
 
+function readinessTone(ready: boolean) {
+  return ready
+    ? "border-brand-200 bg-brand-50 text-brand-800"
+    : "border-warning-200 bg-warning-50 text-warning-800";
+}
+
 // ── Overview Tab ──
 function OverviewTab({ context }: { context: StakeholderContext }) {
   const { data: summary, isLoading } = useQuery({
     queryKey: ["stakeholder-summary"],
     queryFn: fetchStakeholderSummary,
   });
+  const stateProfileQuery = useQuery({
+    queryKey: ["stakeholder-state-profile", context.organization.id],
+    queryFn: fetchStateProfileSettings,
+    enabled: context.organization.organization_type === "state_ministry",
+  });
 
   const s = summary?.summary;
   const recent = summary?.recent_activity ?? [];
+  const stateProfile = stateProfileQuery.data?.state_profile_settings;
+  const isStateMinistry = context.organization.organization_type === "state_ministry";
+  const readiness = [
+    {
+      label: "State profile",
+      ready: Boolean(stateProfile?.ministry_name && stateProfile?.official_email && stateProfile?.official_phone),
+      detail: stateProfile?.ministry_name ? stateProfile.ministry_name : "Add ministry identity and official contact details.",
+    },
+    {
+      label: "Officer workspace",
+      ready: Boolean((s?.active_users ?? 0) > 0),
+      detail: `${s?.active_users ?? 0} active officer${(s?.active_users ?? 0) === 1 ? "" : "s"} with access to the state workspace.`,
+    },
+    {
+      label: "Departments & offices",
+      ready: Boolean((s?.active_units ?? 0) > 0),
+      detail: `${s?.active_units ?? 0} active ${context.labels.units.toLowerCase()} available for assignment.`,
+    },
+    {
+      label: "Audit visibility",
+      ready: Boolean(context.permissions.can_view_audit_logs),
+      detail: context.permissions.can_view_audit_logs ? "Audit logs available to authorized state leadership." : "Audit logs are currently restricted to higher-level oversight roles.",
+    },
+  ];
+  const completedReadiness = readiness.filter((item) => item.ready).length;
 
   return (
     <div className="space-y-6">
@@ -82,6 +127,51 @@ function OverviewTab({ context }: { context: StakeholderContext }) {
         <DashboardCard icon={UserPlus} label="Pending Invites" value={s?.pending_invites ?? "-"} />
         <DashboardCard icon={Network} label={context.labels.units} value={s?.total_units ?? "-"} />
       </div>
+
+      {isStateMinistry ? (
+        <div className="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
+          <section className="rounded-lg border border-neutral-200 bg-white p-5 shadow-sm">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <p className="text-xs font-bold uppercase tracking-wide text-brand-700">State Ministry Readiness</p>
+                <h3 className="mt-2 text-lg font-bold text-neutral-900">Implementation and governance snapshot</h3>
+                <p className="mt-2 max-w-2xl text-sm leading-6 text-neutral-500">
+                  Track whether this State Ministry workspace is ready for facility oversight, stakeholder operations, and Federal reporting.
+                </p>
+              </div>
+              <div className="rounded-full bg-neutral-100 px-4 py-2 text-sm font-semibold text-neutral-700">
+                {completedReadiness}/{readiness.length} checkpoints ready
+              </div>
+            </div>
+            <div className="mt-5 grid gap-3 md:grid-cols-2">
+              {readiness.map((item) => (
+                <div key={item.label} className={`rounded-lg border px-4 py-3 ${readinessTone(item.ready)}`}>
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="text-sm font-bold">{item.label}</p>
+                    <span className="rounded-full bg-white/70 px-2.5 py-1 text-[11px] font-bold uppercase tracking-wide">
+                      {item.ready ? "Ready" : "Pending"}
+                    </span>
+                  </div>
+                  <p className="mt-2 text-sm leading-5">{item.detail}</p>
+                </div>
+              ))}
+            </div>
+          </section>
+
+          <section className="rounded-lg border border-neutral-200 bg-white p-5 shadow-sm">
+            <p className="text-xs font-bold uppercase tracking-wide text-brand-700">Default State Roles</p>
+            <h3 className="mt-2 text-lg font-bold text-neutral-900">Recommended operating structure</h3>
+            <div className="mt-4 space-y-3">
+              {STATE_MINISTRY_DEFAULT_ROLES.map((item) => (
+                <div key={item.role} className="rounded-lg border border-neutral-100 bg-neutral-50 px-4 py-3">
+                  <p className="text-sm font-bold text-neutral-900">{item.role}</p>
+                  <p className="mt-1 text-sm leading-5 text-neutral-500">{item.responsibility}</p>
+                </div>
+              ))}
+            </div>
+          </section>
+        </div>
+      ) : null}
 
       <div className="grid gap-6 lg:grid-cols-2">
         <section className="rounded-lg border border-neutral-200 bg-white p-5 shadow-sm">
@@ -101,6 +191,19 @@ function OverviewTab({ context }: { context: StakeholderContext }) {
                 <span>{context.organization.state_name}{context.organization.lga_name ? `, ${context.organization.lga_name}` : ""}</span>
               </div>
             )}
+            {isStateMinistry && stateProfile ? (
+              <>
+                <div className="pt-2 text-neutral-600">
+                  <span className="font-semibold text-neutral-800">Official Email:</span> {stateProfile.official_email || "Not configured"}
+                </div>
+                <div className="text-neutral-600">
+                  <span className="font-semibold text-neutral-800">Official Phone:</span> {stateProfile.official_phone || "Not configured"}
+                </div>
+                <div className="text-neutral-600">
+                  <span className="font-semibold text-neutral-800">Working window:</span> {stateProfile.working_hours_start || "09:00"} - {stateProfile.working_hours_end || "17:00"}
+                </div>
+              </>
+            ) : null}
           </div>
         </section>
 

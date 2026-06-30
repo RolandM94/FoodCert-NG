@@ -32,6 +32,8 @@ from .models import (
     MEIndicatorDataSource,
     MEIndicatorValue,
     MEIndicatorValueHistory,
+    MedicalTestPackage,
+    MedicalTestPackageComponent,
     MedicalTestRule,
     PhysicalExaminationRule,
     PolicyDocument,
@@ -68,6 +70,8 @@ from .serializers import (
     MEIndicatorOverrideSerializer,
     MEIndicatorSerializer,
     MEIndicatorValueSerializer,
+    MedicalTestPackageSerializer,
+    MedicalTestPackageComponentSerializer,
     MedicalTestRuleSerializer,
     PhysicalExaminationRuleSerializer,
     PolicyDocumentSerializer,
@@ -446,6 +450,14 @@ class EstablishmentCategoryViewSet(StandardsConfigViewSetMixin, viewsets.ModelVi
 class MedicalTestRuleViewSet(StandardsConfigViewSetMixin, viewsets.ModelViewSet):
     queryset = MedicalTestRule.objects.all()
     serializer_class = MedicalTestRuleSerializer
+
+    @action(detail=True, methods=["post"], url_path="test")
+    def test_rule(self, request, pk=None):
+        rule = self.get_object()
+        if "value" not in request.data:
+            from rest_framework.exceptions import ValidationError
+            raise ValidationError({"value": "A sample 'value' is required to test this rule."})
+        return Response(rule.evaluate(request.data.get("value")))
     filterset_fields = ["policy_version", "status", "rule_type", "test_type"]
     search_fields = ["name", "code"]
 
@@ -489,6 +501,53 @@ class FacilityRequirementRuleViewSet(StandardsConfigViewSetMixin, viewsets.Model
     serializer_class = FacilityRequirementRuleSerializer
     filterset_fields = ["policy_version", "status", "category", "mandatory"]
     search_fields = ["requirement_name", "requirement_code"]
+
+
+class MedicalTestPackageViewSet(StandardsConfigViewSetMixin, viewsets.ModelViewSet):
+    queryset = MedicalTestPackage.objects.prefetch_related("components").all()
+    serializer_class = MedicalTestPackageSerializer
+    filterset_fields = ["policy_version", "status"]
+    search_fields = ["name", "code"]
+
+
+class MedicalTestPackageComponentViewSet(viewsets.ModelViewSet):
+    queryset = MedicalTestPackageComponent.objects.select_related("package", "package__policy_version").all()
+    serializer_class = MedicalTestPackageComponentSerializer
+    permission_classes = [IsAuthenticated, IsActiveUser, CanManageStandards]
+    http_method_names = ["get", "post", "patch", "delete", "head", "options"]
+    filterset_fields = ["package", "component_type", "mandatory"]
+
+    def get_queryset(self):
+        if getattr(self, "swagger_fake_view", False):
+            return self.queryset
+        user = self.request.user
+        qs = self.queryset
+        if user.role in FEDERAL_STANDARDS_ROLES:
+            return qs
+        if user.role in ("state_admin", "facility_admin"):
+            return qs.filter(package__policy_version__status=PolicyVersionStatus.ACTIVE)
+        return qs.none()
+
+    def _assert_editable(self, package):
+        from rest_framework.exceptions import ValidationError
+
+        if package.policy_version.status not in (PolicyVersionStatus.DRAFT, PolicyVersionStatus.RETURNED):
+            raise ValidationError("Package components can only be changed on draft or returned policy versions.")
+
+    def perform_create(self, serializer):
+        self._assert_editable(serializer.validated_data["package"])
+        instance = serializer.save()
+        log_action(action=AuditAction.CREATE, actor=self.request.user, target=instance, metadata={"event": "medicaltestpackagecomponent_created"}, request=self.request)
+
+    def perform_update(self, serializer):
+        self._assert_editable(serializer.instance.package)
+        instance = serializer.save()
+        log_action(action=AuditAction.UPDATE, actor=self.request.user, target=instance, metadata={"event": "medicaltestpackagecomponent_updated"}, request=self.request)
+
+    def perform_destroy(self, instance):
+        self._assert_editable(instance.package)
+        log_action(action=AuditAction.DELETE, actor=self.request.user, target=instance, metadata={"event": "medicaltestpackagecomponent_deleted"}, request=self.request)
+        instance.delete()
 
 
 class ReportingTemplateViewSet(StandardsConfigViewSetMixin, viewsets.ModelViewSet):

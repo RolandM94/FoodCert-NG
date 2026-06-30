@@ -4,6 +4,7 @@ from rest_framework.exceptions import PermissionDenied
 
 from apps.accounts.models import EmployerStaffRole, UserRole
 from apps.facilities.models import FacilityStaffType
+from apps.facilities.services import FacilityTeamService
 from apps.ministries.permissions import can_manage_state_fees, can_view_federal_aggregate_data, effective_state_id, ministry_sub_role
 from apps.ministries.models import MinistryStaffRole
 
@@ -87,6 +88,12 @@ def has_facility_finance_access(user, facility) -> bool:
         return True
     if is_state_finance_user(user) and getattr(facility, "state_id", None) == effective_state_id(user):
         return True
+    if getattr(user, "role", "") == UserRole.FACILITY_ADMIN and getattr(user, "organization_id", None) == facility.organization_id:
+        return True
+    if getattr(user, "organization_id", None) != facility.organization_id:
+        return False
+    if FacilityTeamService.has_permission(user=user, facility=facility, permission_key="finance.view_payments"):
+        return True
     user_facility = facility_for_finance_user(user)
     return bool(user_facility and user_facility.id == facility.id)
 
@@ -94,6 +101,23 @@ def has_facility_finance_access(user, facility) -> bool:
 def ensure_facility_finance_access(user, facility):
     if not has_facility_finance_access(user, facility):
         raise PermissionDenied("You cannot view settlements for this facility.")
+
+
+def has_facility_payment_confirmation_access(user, facility) -> bool:
+    if is_platform_finance_user(user):
+        return True
+    if is_state_finance_user(user) and getattr(facility, "state_id", None) == effective_state_id(user):
+        return True
+    if getattr(user, "role", "") == UserRole.FACILITY_ADMIN and getattr(user, "organization_id", None) == facility.organization_id:
+        return True
+    if getattr(user, "organization_id", None) != facility.organization_id:
+        return False
+    return FacilityTeamService.has_permission(user=user, facility=facility, permission_key="finance.confirm_payment")
+
+
+def ensure_facility_payment_confirmation_access(user, facility):
+    if not has_facility_payment_confirmation_access(user, facility):
+        raise PermissionDenied("You do not have permission to confirm facility payments.")
 
 
 def has_employer_billing_access(user, employer, *, manage=False) -> bool:
@@ -128,6 +152,9 @@ def scope_payment_transactions_for_user(queryset, user):
     if user.role == UserRole.FACILITY_ADMIN:
         facility = facility_for_finance_user(user)
         return queryset.filter(metadata__facility_id=str(facility.id)) if facility else queryset.none()
+    facility = facility_for_finance_user(user)
+    if facility and has_facility_finance_access(user, facility):
+        return queryset.filter(metadata__facility_id=str(facility.id))
     if user.role == UserRole.EMPLOYER:
         filters = Q(payer_user=user)
         if user.organization_id:

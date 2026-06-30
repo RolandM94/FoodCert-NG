@@ -3,6 +3,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { AlertTriangle, Building2, ClipboardCheck, Flag, TrendingUp, Users } from "lucide-react";
 import { PortalShell } from "@/components/layout/portal-shell";
+import { EmbeddedAnalyticsActions } from "@/features/reports/embedded-analytics-actions";
 import { fetchFederalEnforcementDashboard } from "@/lib/api/inspections";
 
 type StateRow = { employer__state__name: string; total: number; this_month: number };
@@ -28,6 +29,8 @@ export default function Page() {
   return (
     <PortalShell role="federal_admin" title="Federal enforcement" description="National aggregate oversight of inspections, enforcement actions, and state-level compliance.">
       <div className="grid gap-5">
+        <EmbeddedAnalyticsActions moduleSource="inspections" openInDashboardBuilderHref="/federal/reports/dashboard-builder?module=inspections" />
+
         <section className="grid gap-3 grid-cols-2 md:grid-cols-4">
           {cardsConfig.map(({ key, label, icon: Icon, color }) => (
             <div key={key} className="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm">

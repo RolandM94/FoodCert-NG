@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowLeft, BarChart3, Building2, ClipboardCheck, FileText, ShieldCheck } from "lucide-react";
+import { ArrowLeft, BarChart3, Building2, ClipboardCheck, Clock3, FileText, ShieldCheck } from "lucide-react";
 import { PortalShell } from "@/components/layout/portal-shell";
 import { StatusBadge } from "@/components/status/status-badge";
 import { DataTable, StatusCell } from "@/components/ui/data-table";
@@ -20,6 +20,15 @@ function dateLabel(value?: string | null) {
 function text(value?: string | number | null) {
   if (value === null || value === undefined || value === "") return "Not set";
   return String(value);
+}
+
+function daysUntil(value?: string | null) {
+  if (!value) return null;
+  const today = new Date();
+  const target = new Date(value);
+  today.setHours(0, 0, 0, 0);
+  target.setHours(0, 0, 0, 0);
+  return Math.round((target.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
 }
 
 function checklistScore(row: FacilityAccreditationApplication) {
@@ -58,6 +67,172 @@ function StatCard({ icon: Icon, label, value }: { icon: typeof Building2; label:
       <p className="mt-3 text-xs font-bold uppercase tracking-wide text-neutral-500">{label}</p>
       <p className="mt-1 text-xl font-bold text-neutral-950">{value}</p>
     </div>
+  );
+}
+
+function ReadinessPill({ label, ready, detail }: { label: string; ready: boolean; detail: string }) {
+  return (
+    <div className={`rounded-lg border px-4 py-3 ${ready ? "border-brand-200 bg-brand-50" : "border-warning-200 bg-warning-50"}`}>
+      <div className="flex items-center justify-between gap-3">
+        <p className={`text-sm font-bold ${ready ? "text-brand-900" : "text-warning-900"}`}>{label}</p>
+        <span className={`rounded-full px-2.5 py-1 text-[11px] font-bold uppercase tracking-wide ${ready ? "bg-white text-brand-700" : "bg-white text-warning-700"}`}>
+          {ready ? "Ready" : "Attention"}
+        </span>
+      </div>
+      <p className={`mt-2 text-sm ${ready ? "text-brand-800" : "text-warning-800"}`}>{detail}</p>
+    </div>
+  );
+}
+
+function AccreditationDecisionSummary({
+  facility,
+  latestApplication,
+}: {
+  facility: MedicalFacility;
+  latestApplication?: FacilityAccreditationApplication;
+}) {
+  const expiryDelta = daysUntil(facility.accreditation_expiry_date);
+  const expiryLabel = expiryDelta === null
+    ? "Expiry date has not been set."
+    : expiryDelta < 0
+      ? `Expired ${Math.abs(expiryDelta)} day${Math.abs(expiryDelta) === 1 ? "" : "s"} ago.`
+      : expiryDelta === 0
+        ? "Expires today."
+        : `Expires in ${expiryDelta} day${expiryDelta === 1 ? "" : "s"}.`;
+
+  const readinessItems = [
+    {
+      label: "Public booking eligibility",
+      ready: facility.can_conduct_assessments,
+      detail: facility.can_conduct_assessments
+        ? "Facility can receive bookings and process assessments under the current approval state."
+        : "Facility should not receive new bookings until accreditation and activity conditions are restored.",
+    },
+    {
+      label: "Profile completeness",
+      ready: facility.profile_complete,
+      detail: facility.profile_complete
+        ? "Core operational and accreditation profile details are complete."
+        : "State should request missing profile records before relying on this facility in production.",
+    },
+    {
+      label: "Accreditation validity",
+      ready: expiryDelta === null ? facility.accreditation_status === "approved" : expiryDelta >= 0,
+      detail: expiryLabel,
+    },
+  ];
+
+  return (
+    <section className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
+      <div className="rounded-lg border border-neutral-200 bg-white p-5 shadow-sm">
+        <div className="flex items-center gap-2">
+          <ShieldCheck className="text-brand-700" size={18} />
+          <h2 className="text-base font-bold text-neutral-900">Accreditation decision summary</h2>
+        </div>
+        <dl className="mt-4 grid gap-4 sm:grid-cols-2">
+          <div>
+            <dt className="text-xs font-bold uppercase tracking-wide text-neutral-500">Current status</dt>
+            <dd className="mt-1"><StatusBadge status={facility.accreditation_status} /></dd>
+          </div>
+          <div>
+            <dt className="text-xs font-bold uppercase tracking-wide text-neutral-500">Approval owner</dt>
+            <dd className="mt-1 text-sm font-semibold text-neutral-900">{facility.approved_by_name || latestApplication?.reviewer_name || "Not assigned"}</dd>
+          </div>
+          <div>
+            <dt className="text-xs font-bold uppercase tracking-wide text-neutral-500">Accreditation start</dt>
+            <dd className="mt-1 text-sm font-semibold text-neutral-900">{dateLabel(facility.accreditation_start_date)}</dd>
+          </div>
+          <div>
+            <dt className="text-xs font-bold uppercase tracking-wide text-neutral-500">Accreditation expiry</dt>
+            <dd className="mt-1 text-sm font-semibold text-neutral-900">{dateLabel(facility.accreditation_expiry_date)}</dd>
+          </div>
+          <div>
+            <dt className="text-xs font-bold uppercase tracking-wide text-neutral-500">Assessment package price</dt>
+            <dd className="mt-1 text-sm font-semibold text-neutral-900">
+              {facility.standard_assessment_price ? `NGN ${Number(facility.standard_assessment_price).toLocaleString("en-NG")}` : "Not set"}
+            </dd>
+          </div>
+          <div>
+            <dt className="text-xs font-bold uppercase tracking-wide text-neutral-500">Latest decision note</dt>
+            <dd className="mt-1 text-sm text-neutral-700">{latestApplication?.review_comment || "No decision note recorded yet."}</dd>
+          </div>
+        </dl>
+      </div>
+
+      <div className="rounded-lg border border-neutral-200 bg-white p-5 shadow-sm">
+        <div className="flex items-center gap-2">
+          <Clock3 className="text-brand-700" size={18} />
+          <h2 className="text-base font-bold text-neutral-900">Operational readiness</h2>
+        </div>
+        <div className="mt-4 grid gap-3">
+          {readinessItems.map((item) => (
+            <ReadinessPill key={item.label} detail={item.detail} label={item.label} ready={item.ready} />
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function AccreditationTimeline({ applications }: { applications: FacilityAccreditationApplication[] }) {
+  const timeline = applications.flatMap((application) => {
+    const events = [
+      {
+        id: `${application.id}-created`,
+        label: application.is_renewal ? "Re-accreditation initiated" : "Application created",
+        date: application.created_at,
+        tone: "neutral",
+        detail: application.checklist_complete
+          ? `Checklist complete at ${checklistScore(application)}.`
+          : `Checklist still in progress at ${checklistScore(application)}.`,
+      },
+      application.submitted_at
+        ? {
+            id: `${application.id}-submitted`,
+            label: "Submitted to State",
+            date: application.submitted_at,
+            tone: "brand",
+            detail: "Application entered the State accreditation review queue.",
+          }
+        : null,
+      application.reviewed_at
+        ? {
+            id: `${application.id}-reviewed`,
+            label: application.application_status.replaceAll("_", " "),
+            date: application.reviewed_at,
+            tone: ["approved"].includes(application.application_status) ? "brand" : ["rejected", "suspended", "expired"].includes(application.application_status) ? "danger" : "warning",
+            detail: application.review_comment || "Reviewed without an additional comment.",
+          }
+        : null,
+    ].filter(Boolean) as Array<{ id: string; label: string; date: string; tone: "neutral" | "brand" | "warning" | "danger"; detail: string }>;
+    return events;
+  }).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+  return (
+    <section className="rounded-lg border border-neutral-200 bg-white p-5 shadow-sm">
+      <div className="flex items-center gap-2">
+        <ClipboardCheck className="text-brand-700" size={18} />
+        <h2 className="text-base font-bold text-neutral-900">Accreditation timeline</h2>
+      </div>
+      {timeline.length === 0 ? (
+        <p className="mt-4 text-sm text-neutral-500">No accreditation events have been recorded for this facility yet.</p>
+      ) : (
+        <div className="mt-4 space-y-4">
+          {timeline.map((event) => (
+            <div key={event.id} className="flex gap-4">
+              <div className={`mt-1 h-2.5 w-2.5 shrink-0 rounded-full ${event.tone === "brand" ? "bg-brand-600" : event.tone === "warning" ? "bg-warning-500" : event.tone === "danger" ? "bg-danger-500" : "bg-neutral-300"}`} />
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <p className="text-sm font-bold text-neutral-900 capitalize">{event.label}</p>
+                  <span className="text-xs font-semibold text-neutral-500">{dateLabel(event.date)}</span>
+                </div>
+                <p className="mt-1 text-sm text-neutral-600">{event.detail}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
   );
 }
 
@@ -122,6 +297,7 @@ export default function StateFacilityDetailPage() {
   const reports = (reportsQuery.data ?? [])
     .filter((report) => reportBelongsToFacility(report, facilityId))
     .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+  const latestApplication = applications[0];
 
   return (
     <PortalShell
@@ -130,9 +306,14 @@ export default function StateFacilityDetailPage() {
       description="Review the facility profile, accreditation cycles, reports, and monitoring history in one place."
     >
       <div className="mb-6">
-        <Link className="inline-flex items-center gap-2 rounded border border-neutral-200 bg-white px-3 py-2 text-sm font-bold text-neutral-700 shadow-sm hover:bg-neutral-50" href="/state/medical-facilities?tab=facilities">
-          <ArrowLeft size={16} /> Medical Facilities
-        </Link>
+        <div className="flex flex-wrap gap-3">
+          <Link className="inline-flex items-center gap-2 rounded border border-neutral-200 bg-white px-3 py-2 text-sm font-bold text-neutral-700 shadow-sm hover:bg-neutral-50" href="/state/medical-facilities?tab=facilities">
+            <ArrowLeft size={16} /> Medical Facilities
+          </Link>
+          <Link className="inline-flex items-center gap-2 rounded border border-neutral-200 bg-white px-3 py-2 text-sm font-bold text-neutral-700 shadow-sm hover:bg-neutral-50" href="/state/medical-facilities?tab=accreditation">
+            <ClipboardCheck size={16} /> Accreditation Queue
+          </Link>
+        </div>
       </div>
 
       {facilityQuery.isError ? (
@@ -161,7 +342,11 @@ export default function StateFacilityDetailPage() {
             <StatCard icon={BarChart3} label="Assessment ready" value={facility.can_conduct_assessments ? "Yes" : "No"} />
           </div>
 
+          <AccreditationDecisionSummary facility={facility} latestApplication={latestApplication} />
+
           <FacilityProfile facility={facility} />
+
+          <AccreditationTimeline applications={applications} />
 
           <section className="grid gap-3">
             <div className="flex items-center gap-2">

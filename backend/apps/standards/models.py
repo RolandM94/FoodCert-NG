@@ -21,6 +21,20 @@ class PolicyVersionType(models.TextChoices):
     EMERGENCY = "emergency", "Emergency"
 
 
+class PolicyCategory(models.TextChoices):
+    FOOD_HANDLER_ELIGIBILITY = "food_handler_eligibility", "Food Handler Eligibility Standard"
+    FOOD_ESTABLISHMENT_COVERAGE = "food_establishment_coverage", "Food Establishment Coverage Standard"
+    MEDICAL_TEST = "medical_test", "Medical Test Standard"
+    LABORATORY_INVESTIGATION = "laboratory_investigation", "Laboratory Investigation Standard"
+    VACCINATION = "vaccination", "Vaccination Standard"
+    HEALTH_DECLARATION = "health_declaration", "Health Declaration Standard"
+    FACILITY_ACCREDITATION = "facility_accreditation", "Facility Accreditation Standard"
+    CERTIFICATE = "certificate", "Certificate Standard"
+    REPORTING = "reporting", "Reporting Standard"
+    COMPLIANCE_ENFORCEMENT = "compliance_enforcement", "Compliance and Enforcement Standard"
+    ME_INDICATOR = "me_indicator", "M&E Indicator Standard"
+
+
 class RiskLevel(models.TextChoices):
     LOW = "low", "Low"
     MEDIUM = "medium", "Medium"
@@ -273,6 +287,13 @@ class PolicyVersion(BaseModel):
     title = models.CharField(max_length=255)
     description = models.TextField()
     version_type = models.CharField(max_length=16, choices=PolicyVersionType.choices)
+    policy_category = models.CharField(
+        max_length=40, choices=PolicyCategory.choices, blank=True, db_index=True,
+    )
+    legal_basis = models.TextField(blank=True)
+    scope = models.TextField(blank=True)
+    affected_entities = models.JSONField(default=list, blank=True)
+    review_date = models.DateField(null=True, blank=True)
     status = models.CharField(
         max_length=24, choices=PolicyVersionStatus.choices,
         default=PolicyVersionStatus.DRAFT, db_index=True,
@@ -414,6 +435,10 @@ class MedicalTestRule(BaseModel):
     requires_doctor_validation = models.BooleanField(default=True)
     requires_lab_validation = models.BooleanField(default=False)
     validity_days = models.IntegerField(null=True, blank=True)
+    condition = models.JSONField(default=dict, blank=True, help_text="Machine-readable condition, e.g. {\"field\": \"result\", \"operator\": \"in\", \"value\": [\"positive\"]}")
+    action = models.JSONField(default=dict, blank=True, help_text="Machine-readable action, e.g. {\"block_certification\": true, \"escalate\": \"doctor_review\"}")
+    severity = models.CharField(max_length=16, choices=Severity.choices, blank=True, default="")
+    effective_date = models.DateField(null=True, blank=True)
     applicable_categories = models.JSONField(default=list, blank=True)
     applicable_establishment_risk_levels = models.JSONField(default=list, blank=True)
     emergency_activation_rule = models.JSONField(null=True, blank=True)
@@ -441,6 +466,53 @@ class MedicalTestRule(BaseModel):
 
     def __str__(self) -> str:
         return f"{self.name} ({self.get_rule_type_display()})"
+
+    def evaluate(self, value):
+        """Evaluate this rule against a sample result value (rule preview/testing)."""
+        reasons = []
+        condition = self.condition or {}
+        operator = condition.get("operator")
+        target = condition.get("value")
+        matched = False
+        if operator == "in":
+            matched = value in (target or [])
+        elif operator == "not_in":
+            matched = value not in (target or [])
+        elif operator == "equals":
+            matched = value == target
+        elif operator in {"gt", "lt", "gte", "lte"}:
+            try:
+                numeric, threshold = float(value), float(target)
+                matched = {
+                    "gt": numeric > threshold,
+                    "lt": numeric < threshold,
+                    "gte": numeric >= threshold,
+                    "lte": numeric <= threshold,
+                }[operator]
+            except (TypeError, ValueError):
+                matched = False
+
+        blocks = False
+        if self.blocking_values and value in self.blocking_values:
+            blocks = True
+            reasons.append("Value is configured as a blocking value.")
+        if matched and (self.action or {}).get("block_certification"):
+            blocks = True
+            reasons.append("Condition matched a block_certification action.")
+        if matched and self.blocks_certification:
+            blocks = True
+            reasons.append("Condition matched and the rule blocks certification.")
+        if self.accepted_values and value not in self.accepted_values and not matched:
+            reasons.append("Value is not in the accepted values list.")
+
+        return {
+            "value": value,
+            "matched_condition": matched,
+            "blocks_certification": blocks,
+            "passed": not blocks,
+            "action": self.action or {},
+            "reasons": reasons,
+        }
 
 
 class PhysicalExaminationRule(BaseModel):
@@ -676,6 +748,66 @@ class FacilityRequirementRule(BaseModel):
 
     def __str__(self) -> str:
         return f"{self.requirement_name} ({self.get_category_display()})"
+
+
+class MedicalTestPackageComponentType(models.TextChoices):
+    HEALTH_DECLARATION_FORM = "health_declaration_form", "Health Declaration Form"
+    DOCTOR_DECLARATION_VALIDATION = "doctor_declaration_validation", "Doctor Declaration Validation"
+    PHYSICAL_EXAMINATION = "physical_examination", "Physical Examination"
+    VACCINATION_CERTIFICATE_REVIEW = "vaccination_certificate_review", "Vaccination Certificate Review"
+    STOOL_MICROSCOPY_CULTURE_SENSITIVITY = "stool_microscopy_culture_sensitivity", "Stool Microscopy, Culture and Sensitivity"
+    HEPATITIS_A_ANTIGEN = "hepatitis_a_antigen", "Hepatitis A Antigen"
+    ADDITIONAL_TESTS = "additional_tests", "Additional Tests (if clinically indicated)"
+    DOCTOR_FINAL_REVIEW = "doctor_final_review", "Doctor Final Review"
+    CERTIFICATE_OF_FITNESS = "certificate_of_fitness", "Certificate of Fitness / Temporary Unfit Report"
+    OTHER = "other", "Other"
+
+
+class MedicalTestPackage(BaseModel):
+    policy_version = models.ForeignKey(
+        PolicyVersion, on_delete=models.CASCADE, related_name="medical_test_packages",
+    )
+    name = models.CharField(max_length=255, default="Food Handler Medical Test Package")
+    code = models.CharField(max_length=64)
+    description = models.TextField(blank=True)
+    package_version = models.CharField(max_length=32, default="1.0")
+    status = models.CharField(
+        max_length=16, choices=StandardStatus.choices,
+        default=StandardStatus.DRAFT, db_index=True,
+    )
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL,
+        null=True, related_name="created_test_packages",
+    )
+
+    class Meta:
+        ordering = ["name"]
+        constraints = [
+            models.UniqueConstraint(fields=["policy_version", "code"], name="unique_test_package_code_per_version"),
+        ]
+        indexes = [models.Index(fields=["policy_version", "status"])]
+
+    def __str__(self) -> str:
+        return f"{self.name} v{self.package_version}"
+
+
+class MedicalTestPackageComponent(BaseModel):
+    package = models.ForeignKey(MedicalTestPackage, on_delete=models.CASCADE, related_name="components")
+    component_type = models.CharField(max_length=48, choices=MedicalTestPackageComponentType.choices)
+    label = models.CharField(max_length=255)
+    mandatory = models.BooleanField(default=True)
+    conditional = models.BooleanField(default=False)
+    order = models.PositiveIntegerField(default=0)
+    notes = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ["order", "label"]
+        constraints = [
+            models.UniqueConstraint(fields=["package", "component_type"], name="unique_component_type_per_package"),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.label} ({'mandatory' if self.mandatory else 'optional'})"
 
 
 class ReportingTemplate(BaseModel):

@@ -6,6 +6,7 @@ import { AlertTriangle, CalendarCheck, CheckCircle2, ClipboardList, Clock, FileS
 
 import { KPICard } from "@/components/dashboards";
 import { PortalShell } from "@/components/layout/portal-shell";
+import { EmbeddedAnalyticsActions } from "@/features/reports/embedded-analytics-actions";
 import { StatusBadge } from "@/components/status/status-badge";
 import { apiClient } from "@/lib/api/client";
 
@@ -50,6 +51,8 @@ export default function Page() {
   return (
     <PortalShell role="inspector" title="Inspector Dashboard" description="View assigned inspections, track progress, review findings, and manage enforcement notices.">
       <div className="grid gap-5">
+        <EmbeddedAnalyticsActions moduleSource="inspections" openInDashboardBuilderHref="/inspector/reports/dashboard-builder?module=inspections" />
+
         {loading ? <p className="rounded-lg border border-neutral-200 bg-white p-4 text-sm font-semibold text-neutral-600 shadow-sm">Loading dashboard...</p> : null}
         {error ? <div className="flex items-start gap-2 rounded-lg bg-danger-50 p-3 text-sm font-semibold text-danger-700"><Flag size={16} />{error}</div> : null}
 

@@ -189,6 +189,24 @@ class CertificateIssuanceTests(APITestCase):
         self.assertEqual(data(verify_response)["certificate_validity"], VerificationResult.VALID)
         self.assertEqual(data(verify_response)["certificate_number"], certificate.certificate_number)
 
+    def test_facility_admin_cannot_manually_issue_certificate(self):
+        certificate_request = CertificateRequest.objects.create(
+            assessment=self.assessment,
+            requested_by=self.doctor,
+            status=CertificateRequestStatus.APPROVED,
+            reviewed_by=self.state_admin,
+            reviewed_at=timezone.now(),
+        )
+        self.client.force_authenticate(self.facility_admin)
+
+        response = self.client.post(
+            "/api/certificates/generate/",
+            {"certificate_request": str(certificate_request.id)},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 403)
+
     def test_accreditation_certificates_are_owner_linked_and_publicly_verifiable(self):
         application = FacilityAccreditationApplication.objects.create(
             facility=self.facility,
@@ -378,7 +396,7 @@ class CertificateIssuanceTests(APITestCase):
             {"certificate_request": data(response)["id"]},
             format="json",
         )
-        self.assertEqual(blocked.status_code, 400)
+        self.assertEqual(blocked.status_code, 403)
 
     def test_clarification_approval_and_issue_sync_assessment_statuses(self):
         certificate_request = CertificateRequest.objects.create(
@@ -444,7 +462,7 @@ class CertificateIssuanceTests(APITestCase):
             {"certificate_request": certificate_request["id"]},
             format="json",
         )
-        self.assertEqual(blocked_generate.status_code, 400)
+        self.assertEqual(blocked_generate.status_code, 403)
 
         self.client.force_authenticate(self.state_admin)
         approve_response = self.client.patch(
@@ -531,6 +549,33 @@ class CertificateIssuanceTests(APITestCase):
         self.assertEqual(response.status_code, 201)
         certificate = Certificate.objects.get(id=data(response)["id"])
         self.assertEqual(certificate.template, national)
+
+    def test_certificate_generation_requires_active_template(self):
+        NationalPolicyConfig.objects.create(state_certificate_template_overrides_enabled=False)
+        CertificateTemplate.objects.create(
+            name="Inactive National Certificate",
+            scope=CertificateTemplateScope.NATIONAL,
+            ministry_name="Federal Ministry of Health",
+            is_default=True,
+            is_active=False,
+        )
+        certificate_request = CertificateRequest.objects.create(
+            assessment=self.assessment,
+            requested_by=self.doctor,
+            status="approved",
+            reviewed_by=self.state_admin,
+            reviewed_at=timezone.now(),
+        )
+        self.client.force_authenticate(self.state_admin)
+
+        response = self.client.post(
+            "/api/certificates/generate/",
+            {"certificate_request": str(certificate_request.id)},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("active certificate template", str(response.data).lower())
 
     def test_template_management_permissions_defaults_and_audit(self):
         federal_admin = User.objects.create_user(

@@ -3,6 +3,8 @@ from rest_framework.permissions import BasePermission
 
 from apps.accounts.models import UserRole
 from apps.ministries.models import MinistryStaffRole, MinistryType
+from apps.organizations.models import MembershipStatus, OrganizationType
+from apps.organizations.services_access import EffectiveAccessService
 
 
 STATE_MANAGEMENT_ROLES = {
@@ -50,6 +52,10 @@ FEDERAL_QUERY_ROLES = {
     MinistryStaffRole.FEDERAL_SUPER_ADMIN,
     MinistryStaffRole.NATIONAL_FOOD_SAFETY_OFFICER,
     MinistryStaffRole.NATIONAL_ME_OFFICER,
+}
+
+FEDERAL_PROFILE_ROLES = {
+    MinistryStaffRole.FEDERAL_SUPER_ADMIN,
 }
 
 
@@ -163,6 +169,10 @@ def can_manage_national_policy(user):
     return _federal_role_allowed(user, NATIONAL_POLICY_ROLES)
 
 
+def can_manage_federal_profile(user):
+    return _federal_role_allowed(user, FEDERAL_PROFILE_ROLES)
+
+
 def can_review_state_reports(user):
     return _federal_role_allowed(user, FEDERAL_REPORT_REVIEW_ROLES)
 
@@ -185,11 +195,73 @@ def can_access_state_scope(user, state_id=None, lga_id=None):
     return bool(user_state_id)
 
 
+def active_state_membership(user):
+    if not user or not user.is_authenticated:
+        return None
+    return (
+        user.memberships.select_related("organization", "role", "unit")
+        .filter(
+            status=MembershipStatus.ACTIVE,
+            organization__organization_type=OrganizationType.STATE_MINISTRY,
+        )
+        .first()
+    )
+
+
+def has_state_membership(user):
+    if not user or not user.is_authenticated:
+        return False
+    memberships = user.memberships.select_related("organization").filter(
+        organization__organization_type=OrganizationType.STATE_MINISTRY
+    )
+    if memberships.exists():
+        return memberships.filter(status=MembershipStatus.ACTIVE).exists()
+    return bool(effective_state_id(user))
+
+
+def has_state_permission(user, permission_code):
+    if getattr(user, "role", None) == UserRole.SUPER_ADMIN:
+        return True
+    membership = active_state_membership(user)
+    if membership:
+        result = EffectiveAccessService().check(user, permission_code, organization=membership.organization)
+        return result.allowed
+    memberships = user.memberships.filter(organization__organization_type=OrganizationType.STATE_MINISTRY)
+    if memberships.exists():
+        return False
+    return getattr(user, "role", None) == UserRole.STATE_ADMIN
+
+
+def can_access_restricted_medical_data(user):
+    return has_state_permission(user, "medical_data.restricted_view")
+
+
 class IsStateMinistryUser(BasePermission):
     message = "Only state ministry users can access this endpoint."
 
     def has_permission(self, request, view):
-        return is_state_ministry_user(request.user)
+        user = request.user
+        if not is_state_ministry_user(user):
+            self.message = "Only state ministry users can access this endpoint."
+            return False
+        memberships = user.memberships.select_related("organization").filter(
+            organization__organization_type=OrganizationType.STATE_MINISTRY
+        )
+        if memberships.exists() and not memberships.filter(status=MembershipStatus.ACTIVE).exists():
+            self.message = "Your State Ministry membership is inactive. Contact your administrator."
+            return False
+        if not has_state_membership(user):
+            self.message = "Your account is not assigned to an active State Ministry membership."
+            return False
+        permission_code_map = getattr(view, "state_permission_codes", {}) or {}
+        permission_code = permission_code_map.get(request.method) or getattr(view, "state_permission_code", "")
+        if permission_code and not has_state_permission(user, permission_code):
+            self.message = f"You do not have the required state permission: {permission_code}."
+            return False
+        if getattr(view, "requires_restricted_medical_oversight", False) and not can_access_restricted_medical_data(user):
+            self.message = "Restricted medical oversight permission is required for this data."
+            return False
+        return True
 
 
 class IsFederalMinistryUser(BasePermission):

@@ -16,7 +16,9 @@ import {
   HeartPulse,
   IdCard,
   Landmark,
+  LayoutDashboard,
   MapPin,
+  Megaphone,
   ReceiptText,
   QrCode,
   Scale,
@@ -24,7 +26,6 @@ import {
   ShieldCheck,
   Stethoscope,
   Syringe,
-  TrendingUp,
   UsersRound
 } from "lucide-react";
 import type { UserRole } from "@/types/auth";
@@ -63,7 +64,7 @@ export const PORTAL_NAV: Record<UserRole, PortalNavItem[]> = {
     { label: "Notifications", href: "/food-handler/notifications", icon: Bell }
   ],
   employer: [
-    { label: "Dashboard", href: "/employer/dashboard", icon: Activity },
+    { label: "Dashboard Analytics", href: "/employer/dashboard", icon: LayoutDashboard },
     { label: "Business Profile", href: "/employer/business-profile", icon: Building2 },
     { label: "Directory & Registry", href: "/employer/directory", icon: BookOpen },
     { label: "Compliance", href: "/employer/compliance", icon: ClipboardCheck },
@@ -80,23 +81,25 @@ export const PORTAL_NAV: Record<UserRole, PortalNavItem[]> = {
     { label: "Settings", href: "/employer/settings", icon: Settings }
   ],
   facility_admin: [
-    { label: "Dashboard", href: "/facility/dashboard", icon: Activity },
+    { label: "Dashboard", href: "/facility/dashboard", icon: LayoutDashboard },
     { label: "Profile", href: "/facility/profile", icon: Building2 },
     { label: "Stakeholder Management", href: "/facility/stakeholder-management", icon: UsersRound },
-    { label: "Directory & Registry", href: "/facility/directory", icon: BookOpen },
     { label: "Accreditation", href: "/facility/accreditation", icon: ShieldCheck },
     { label: "Appointments", href: "/facility/appointments", icon: CalendarDays },
     { label: "Assessments", href: "/facility/assessments", icon: Stethoscope },
-    { label: "Return-to-Work", href: "/facility/return-to-work-clearance", icon: HeartPulse },
     { label: "Forms", href: "/facility/forms", icon: FileStack },
     { label: "Lab Tests", href: "/facility/lab-tests", icon: FlaskConical },
+    { label: "Compliance", href: "/facility/compliance", icon: ClipboardCheck },
     { label: "Certificates", href: "/facility/certificates", icon: BadgeCheck },
     { label: "Settlements", href: "/facility/settlements", icon: Banknote },
     { label: "Reports", href: "/facility/reports", icon: BarChart3 },
+    { label: "Audit Logs", href: "/facility/audit-logs", icon: Bell },
   ],
   doctor: [
     { label: "Dashboard", href: "/doctor/dashboard", icon: Activity },
     { label: "Assessments", href: "/doctor/assessments", icon: Stethoscope },
+    { label: "Declarations", href: "/doctor/declarations", icon: ClipboardList },
+    { label: "Reviews", href: "/doctor/reviews", icon: FileCheck2 },
     { label: "Forms", href: "/doctor/forms", icon: FileStack }
   ],
   lab_staff: [
@@ -106,25 +109,25 @@ export const PORTAL_NAV: Record<UserRole, PortalNavItem[]> = {
     { label: "Forms", href: "/lab/forms", icon: FileStack }
   ],
   state_admin: [
-    { label: "Dashboard", href: "/state/dashboard", icon: Activity },
-    { label: "KPI Dashboard", href: "/state/kpi-dashboard", icon: TrendingUp },
+    { label: "Dashboard Analytics", href: "/state/dashboard", icon: LayoutDashboard },
     { label: "Directory & Registry", href: "/state/directory", icon: BookOpen },
     { label: "Medical Facilities", href: "/state/medical-facilities", icon: Building2 },
 
     { label: "Certificates", href: "/state/certificates", icon: FileCheck2 },
     { label: "Inspections & Enforcement", href: "/state/inspections-enforcement", icon: ClipboardCheck },
     { label: "Payments & Revenue", href: "/state/revenue", icon: Landmark },
+    { label: "Public Awareness", href: "/state/public-awareness", icon: Megaphone },
     { label: "Reports", href: "/state/reports", icon: BarChart3 },
+    { label: "Audit Logs", href: "/state/audit-logs", icon: Bell },
     { label: "Stakeholder Management", href: "/state/stakeholder-management", icon: UsersRound },
     { label: "Account Settings", href: "/state/account-settings", icon: Settings },
   ],
   federal_admin: [
-    { label: "Dashboard", href: "/federal/dashboard", icon: Activity },
-    { label: "KPI Dashboard", href: "/federal/standards/kpi-dashboard", icon: TrendingUp },
+    { label: "Dashboard Analytics", href: "/federal/dashboard", icon: LayoutDashboard },
     { label: "States Overview", href: "/federal/states", icon: MapPin },
     { label: "Standards & Policy", href: "/federal/standards-policy", icon: Scale },
     { label: "Directory & Registry", href: "/federal/directory", icon: BookOpen },
-    { label: "Reports & Analytics", href: "/federal/reports", icon: BarChart3 },
+    { label: "Reports", href: "/federal/reports", icon: BarChart3 },
     { label: "Account Settings", href: "/federal/account-settings", icon: Settings },
   ],
   inspector: [
@@ -133,10 +136,11 @@ export const PORTAL_NAV: Record<UserRole, PortalNavItem[]> = {
     { label: "Scan", href: "/inspector/scan", icon: QrCode },
     { label: "Businesses", href: "/inspector/businesses", icon: Building2 },
     { label: "Inspections", href: "/inspector/inspections", icon: ClipboardCheck },
-    { label: "New Inspection", href: "/inspector/inspections/new", icon: ClipboardList }
+    { label: "New Inspection", href: "/inspector/inspections/new", icon: ClipboardList },
+    { label: "Dashboard Builder", href: "/inspector/reports/dashboard-builder", icon: LayoutDashboard }
   ],
   super_admin: [
-    { label: "Dashboard", href: "/federal/dashboard", icon: Activity },
+    { label: "Dashboard Analytics", href: "/federal/dashboard", icon: LayoutDashboard },
     { label: "Directory & Registry", href: "/admin/directory", icon: BookOpen },
     { label: "States", href: "/federal/states", icon: MapPin },
     { label: "Standards & Policy", href: "/federal/standards-policy", icon: Scale },

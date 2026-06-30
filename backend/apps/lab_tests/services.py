@@ -4,7 +4,13 @@ from rest_framework.exceptions import PermissionDenied, ValidationError
 
 from apps.assessments.models import AssessmentStatus, StepStatus
 from apps.accounts.models import UserRole
-from apps.assessments.services import ensure_approved_facility, ensure_clinical_staff_for_facility, ensure_doctor_for_facility
+from apps.assessments.services import (
+    ensure_approved_facility,
+    ensure_assigned_doctor_for_assessment,
+    ensure_assigned_or_override_lab_staff_for_assessment,
+    ensure_clinical_staff_for_facility,
+    ensure_doctor_for_facility,
+)
 from apps.audit.models import AuditAction
 from apps.audit.services import log_action
 from apps.lab_tests.models import LabReviewRecommendation, LabTest, LabTestStatus, LabTestType
@@ -40,10 +46,15 @@ class LabTestService:
     def request_tests(cls, *, assessment, requested_by, tests, include_required=True):
         ensure_approved_facility(assessment.facility)
         ensure_clinical_staff_for_facility(requested_by, assessment.facility)
+        from apps.assessments.services import AssessmentService
+
+        AssessmentService.ensure_identity_clear_for_processing(assessment)
         requested_tests = cls.normalize_requested_tests(tests, include_required=include_required)
         created = [
             LabTest.objects.create(
                 assessment=assessment,
+                assigned_lab_staff=assessment.assigned_lab_staff,
+                assigned_lab_unit=assessment.assigned_lab_unit,
                 requested_by=requested_by,
                 test_type=item["test_type"],
                 test_name=item.get("test_name", ""),
@@ -98,6 +109,10 @@ class LabTestService:
     @transaction.atomic
     def mark_sample_collected(cls, *, lab_test, actor, lab_staff_notes=""):
         ensure_approved_facility(lab_test.assessment.facility)
+        from apps.assessments.services import AssessmentService
+
+        AssessmentService.ensure_identity_clear_for_processing(lab_test.assessment)
+        ensure_assigned_or_override_lab_staff_for_assessment(actor, lab_test.assessment)
         if actor.role != UserRole.LAB_STAFF:
             raise PermissionDenied("Only lab staff can collect samples.")
         if actor.organization_id != lab_test.assessment.facility.organization_id:
@@ -115,6 +130,10 @@ class LabTestService:
     def record_result(cls, *, lab_test, actor, status, result_value="", result_notes="", lab_staff_notes=""):
         ensure_approved_facility(lab_test.assessment.facility)
         ensure_clinical_staff_for_facility(actor, lab_test.assessment.facility)
+        from apps.assessments.services import AssessmentService
+
+        AssessmentService.ensure_identity_clear_for_processing(lab_test.assessment)
+        ensure_assigned_or_override_lab_staff_for_assessment(actor, lab_test.assessment)
         if status not in {LabTestStatus.POSITIVE, LabTestStatus.NEGATIVE, LabTestStatus.INCONCLUSIVE, LabTestStatus.REPEAT_REQUIRED}:
             raise ValidationError("Result status must be positive, negative, inconclusive, or repeat_required.")
         if actor.role != UserRole.LAB_STAFF:
@@ -156,6 +175,10 @@ class LabTestService:
     @transaction.atomic
     def upload_result_document(cls, *, lab_test, actor, result_document, lab_staff_notes=""):
         ensure_approved_facility(lab_test.assessment.facility)
+        from apps.assessments.services import AssessmentService
+
+        AssessmentService.ensure_identity_clear_for_processing(lab_test.assessment)
+        ensure_assigned_or_override_lab_staff_for_assessment(actor, lab_test.assessment)
         if actor.role != UserRole.LAB_STAFF:
             raise PermissionDenied("Only lab staff can upload result documents.")
         if actor.organization_id != lab_test.assessment.facility.organization_id:
@@ -174,6 +197,10 @@ class LabTestService:
     @transaction.atomic
     def submit_to_doctor(cls, *, lab_test, actor, lab_staff_notes=""):
         ensure_approved_facility(lab_test.assessment.facility)
+        from apps.assessments.services import AssessmentService
+
+        AssessmentService.ensure_identity_clear_for_processing(lab_test.assessment)
+        ensure_assigned_or_override_lab_staff_for_assessment(actor, lab_test.assessment)
         if actor.role != UserRole.LAB_STAFF:
             raise PermissionDenied("Only lab staff can submit lab results to the doctor.")
         if actor.organization_id != lab_test.assessment.facility.organization_id:
@@ -209,7 +236,10 @@ class LabTestService:
     def review(cls, *, lab_test, doctor, doctor_review_notes="", doctor_recommendation=""):
         assessment = lab_test.assessment
         ensure_approved_facility(assessment.facility)
-        ensure_doctor_for_facility(doctor, assessment.facility)
+        ensure_assigned_doctor_for_assessment(doctor, assessment)
+        from apps.assessments.services import AssessmentService
+
+        AssessmentService.ensure_identity_clear_for_processing(assessment)
         if lab_test.status not in {LabTestStatus.POSITIVE, LabTestStatus.NEGATIVE, LabTestStatus.INCONCLUSIVE, LabTestStatus.REPEAT_REQUIRED, LabTestStatus.SUBMITTED_TO_DOCTOR}:
             raise ValidationError("Lab result must be submitted before doctor review.")
         was_flagged = lab_test.calculate_flagged() or lab_test.is_flagged

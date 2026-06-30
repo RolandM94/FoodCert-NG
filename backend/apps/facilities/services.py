@@ -4,10 +4,199 @@ from datetime import timedelta
 from django.db import transaction
 from django.utils import timezone
 
+from apps.accounts.models import UserRole
 from apps.audit.models import AuditAction
 from apps.audit.services import log_action
-from apps.facilities.models import AccreditationStatus, MedicalFacility
+from apps.facilities.models import (
+    AccreditationStatus,
+    FacilityProfessionalCategory,
+    FacilityRole,
+    FacilityRolePermission,
+    FacilityStaffProfile,
+    FacilityTeamMemberStatus,
+    MedicalFacility,
+)
 from apps.policy.models import StatePolicyConfig, default_medical_facility_settings
+
+
+FACILITY_PROTECTED_PERMISSION_RULES = {
+    "declaration.validate": {FacilityProfessionalCategory.DOCTOR},
+    "physical_exam.create": {FacilityProfessionalCategory.DOCTOR},
+    "doctor_review.final_decision": {FacilityProfessionalCategory.DOCTOR},
+    "lab_results.create": {
+        FacilityProfessionalCategory.LAB_TECHNICIAN,
+        FacilityProfessionalCategory.LAB_SCIENTIST,
+        FacilityProfessionalCategory.LAB_SUPERVISOR,
+    },
+    "lab_results.submit": {
+        FacilityProfessionalCategory.LAB_TECHNICIAN,
+        FacilityProfessionalCategory.LAB_SCIENTIST,
+        FacilityProfessionalCategory.LAB_SUPERVISOR,
+    },
+}
+
+
+DEFAULT_FACILITY_ROLE_TEMPLATES = [
+    {
+        "code": "facility_owner_super_admin",
+        "name": "Facility Owner / Super Admin",
+        "description": "Full control of the facility account and workflow.",
+        "professional_category": FacilityProfessionalCategory.ADMIN,
+        "permissions": [
+            "facility.profile.view",
+            "facility.profile.edit",
+            "facility.team.invite",
+            "facility.team.remove",
+            "facility.roles.create",
+            "facility.roles.edit",
+            "facility.roles.assign_permissions",
+            "appointments.view",
+            "appointments.confirm",
+            "appointments.cancel",
+            "assessment.check_in",
+            "assessment.verify_identity",
+            "declaration.view",
+            "lab_requests.view",
+            "certificates.view",
+            "unfit_reports.view",
+            "finance.view_payments",
+            "finance.confirm_payment",
+            "compliance.view_dashboard",
+            "audit_logs.view",
+        ],
+    },
+    {
+        "code": "facility_administrator",
+        "name": "Facility Administrator",
+        "description": "Manages facility setup, bookings, and team administration.",
+        "professional_category": FacilityProfessionalCategory.ADMIN,
+        "permissions": [
+            "facility.profile.view",
+            "facility.profile.edit",
+            "facility.team.invite",
+            "facility.team.remove",
+            "facility.roles.create",
+            "facility.roles.edit",
+            "facility.roles.assign_permissions",
+            "appointments.view",
+            "appointments.confirm",
+            "appointments.cancel",
+            "assessment.check_in",
+            "assessment.verify_identity",
+            "declaration.view",
+            "lab_requests.view",
+            "certificates.view",
+            "finance.view_payments",
+            "compliance.view_dashboard",
+            "audit_logs.view",
+        ],
+    },
+    {
+        "code": "front_desk_reception_officer",
+        "name": "Front Desk / Reception Officer",
+        "description": "Handles appointment intake, check-in, and identity verification.",
+        "professional_category": FacilityProfessionalCategory.FRONT_DESK,
+        "permissions": [
+            "appointments.view",
+            "appointments.confirm",
+            "appointments.cancel",
+            "assessment.check_in",
+            "assessment.verify_identity",
+        ],
+    },
+    {
+        "code": "medical_doctor",
+        "name": "Medical Doctor",
+        "description": "Reviews declarations, conducts exams, and confirms final decisions.",
+        "professional_category": FacilityProfessionalCategory.DOCTOR,
+        "permissions": [
+            "appointments.view",
+            "declaration.view",
+            "declaration.validate",
+            "declaration.request_correction",
+            "physical_exam.create",
+            "lab_requests.view",
+            "lab_results.review",
+            "doctor_review.view",
+            "doctor_review.final_decision",
+            "certificates.view",
+            "unfit_reports.view",
+        ],
+    },
+    {
+        "code": "lab_technician_lab_scientist",
+        "name": "Lab Technician / Lab Scientist",
+        "description": "Collects samples and records lab results for doctor review.",
+        "professional_category": FacilityProfessionalCategory.LAB_TECHNICIAN,
+        "permissions": [
+            "appointments.view",
+            "lab_requests.view",
+            "lab_results.create",
+            "lab_results.submit",
+        ],
+    },
+    {
+        "code": "lab_supervisor",
+        "name": "Lab Supervisor",
+        "description": "Oversees laboratory result entry and review readiness.",
+        "professional_category": FacilityProfessionalCategory.LAB_SUPERVISOR,
+        "permissions": [
+            "appointments.view",
+            "lab_requests.view",
+            "lab_results.create",
+            "lab_results.submit",
+            "lab_results.review",
+        ],
+    },
+    {
+        "code": "finance_billing_officer",
+        "name": "Finance / Billing Officer",
+        "description": "Handles payments, confirmations, and receipts.",
+        "professional_category": FacilityProfessionalCategory.FINANCE,
+        "permissions": [
+            "appointments.view",
+            "finance.view_payments",
+            "finance.confirm_payment",
+        ],
+    },
+    {
+        "code": "records_officer",
+        "name": "Records Officer",
+        "description": "Manages operational records and generated outputs.",
+        "professional_category": FacilityProfessionalCategory.RECORDS,
+        "permissions": [
+            "appointments.view",
+            "declaration.view",
+            "lab_requests.view",
+            "certificates.view",
+            "unfit_reports.view",
+        ],
+    },
+    {
+        "code": "compliance_officer",
+        "name": "Compliance Officer",
+        "description": "Monitors facility compliance and audit trails.",
+        "professional_category": FacilityProfessionalCategory.COMPLIANCE,
+        "permissions": [
+            "appointments.view",
+            "compliance.view_dashboard",
+            "audit_logs.view",
+        ],
+    },
+    {
+        "code": "viewer_auditor",
+        "name": "Viewer / Auditor",
+        "description": "Read-only oversight of approved facility workflow records.",
+        "professional_category": FacilityProfessionalCategory.VIEWER,
+        "permissions": [
+            "appointments.view",
+            "certificates.view",
+            "unfit_reports.view",
+            "compliance.view_dashboard",
+            "audit_logs.view",
+        ],
+    },
+]
 
 
 class FacilityProfileService:
@@ -22,6 +211,25 @@ class FacilityProfileService:
         ).first()
 
     @classmethod
+    def get_facility_membership_for_user(cls, user):
+        if not getattr(user, "is_authenticated", False):
+            return None
+        if getattr(user, "role", "") == UserRole.FACILITY_ADMIN:
+            return cls.get_for_user(user)
+        profile = FacilityStaffProfile.objects.select_related(
+            "facility",
+            "facility__organization",
+            "facility__state",
+            "facility__lga",
+            "facility__approved_by",
+        ).filter(
+            user=user,
+            is_active=True,
+            status=FacilityTeamMemberStatus.ACTIVE,
+        ).first()
+        return getattr(profile, "facility", None)
+
+    @classmethod
     @transaction.atomic
     def update_profile(cls, *, facility, actor, data):
         for field, value in data.items():
@@ -29,6 +237,91 @@ class FacilityProfileService:
         facility.save()
         log_action(action=AuditAction.UPDATE, actor=actor, target=facility, metadata={"event": "facility_profile_updated"})
         return facility
+
+
+class FacilityTeamService:
+    @staticmethod
+    def has_permission(*, user, facility, permission_key):
+        if getattr(user, "role", "") == UserRole.SUPER_ADMIN:
+            return True
+        if getattr(user, "organization_id", None) != facility.organization_id:
+            return False
+        if getattr(user, "role", "") == UserRole.FACILITY_ADMIN:
+            return True
+        profile = FacilityStaffProfile.objects.select_related("role").filter(
+            user=user,
+            facility=facility,
+            is_active=True,
+            status=FacilityTeamMemberStatus.ACTIVE,
+        ).first()
+        if not profile or not profile.role_id:
+            return False
+        return profile.role.permissions.filter(permission_key=permission_key, allowed=True).exists()
+
+    @staticmethod
+    def protected_permissions_for_category(professional_category):
+        return {
+            permission
+            for permission, categories in FACILITY_PROTECTED_PERMISSION_RULES.items()
+            if professional_category not in categories
+        }
+
+    @staticmethod
+    def validate_permission_assignment(*, professional_category, permission_keys):
+        blocked_permissions = [
+            permission_key
+            for permission_key in permission_keys
+            if permission_key in FACILITY_PROTECTED_PERMISSION_RULES
+            and professional_category not in FACILITY_PROTECTED_PERMISSION_RULES[permission_key]
+        ]
+        if blocked_permissions:
+            allowed_categories = {
+                permission_key: sorted(FACILITY_PROTECTED_PERMISSION_RULES[permission_key])
+                for permission_key in blocked_permissions
+            }
+            raise ValueError(
+                {
+                    "blocked_permissions": blocked_permissions,
+                    "allowed_categories": allowed_categories,
+                }
+            )
+
+    @classmethod
+    @transaction.atomic
+    def ensure_default_roles(cls, *, facility, actor=None):
+        roles = []
+        for definition in DEFAULT_FACILITY_ROLE_TEMPLATES:
+            role, created = FacilityRole.objects.update_or_create(
+                facility=facility,
+                name=definition["name"],
+                defaults={
+                    "description": definition["description"],
+                    "professional_category": definition["professional_category"],
+                    "is_system_default": True,
+                    "is_custom": False,
+                    "created_by": actor,
+                },
+            )
+            cls.validate_permission_assignment(
+                professional_category=definition["professional_category"],
+                permission_keys=definition["permissions"],
+            )
+            role.permissions.exclude(permission_key__in=definition["permissions"]).delete()
+            for permission_key in definition["permissions"]:
+                FacilityRolePermission.objects.update_or_create(
+                    role=role,
+                    permission_key=permission_key,
+                    defaults={"allowed": True},
+                )
+            roles.append(role)
+            if created:
+                log_action(
+                    action=AuditAction.CREATE,
+                    actor=actor,
+                    target=role,
+                    metadata={"event": "facility_default_role_seeded", "facility_role_code": definition["code"]},
+                )
+        return roles
 
 
 class FacilityAccreditationService:
@@ -125,9 +418,38 @@ class FacilityAccreditationService:
         )
         return renewal
 
+    @staticmethod
+    def federal_minimum_rules():
+        """Active mandatory federal facility accreditation criteria, if any are published."""
+        from apps.standards.services import ActivePolicyRuleService
+
+        active = ActivePolicyRuleService.get_active_policy_version()
+        if not active:
+            return []
+        return list(active.facility_requirement_rules.filter(mandatory=True))
+
+    @classmethod
+    def assert_meets_federal_minimum(cls, application):
+        """Block approval when the federal minimum accreditation criteria are not satisfied.
+
+        Federal criteria are enforced as the state-level baseline: when the Federal
+        Ministry has published mandatory facility requirement rules, the application's
+        accreditation checklist (which encodes the federal minimum) must be complete.
+        """
+        from rest_framework.exceptions import ValidationError
+
+        if not cls.federal_minimum_rules():
+            return
+        if not application.checklist_complete:
+            raise ValidationError(
+                "This facility does not meet the Federal minimum accreditation criteria. "
+                "All mandatory accreditation checklist items must be satisfied before approval."
+            )
+
     @classmethod
     @transaction.atomic
     def approve(cls, *, application, reviewer, review_comment=""):
+        cls.assert_meets_federal_minimum(application)
         today = timezone.localdate()
         application.application_status = AccreditationStatus.APPROVED
         application.reviewer = reviewer

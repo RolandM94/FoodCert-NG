@@ -122,7 +122,15 @@ export default function Page() {
 
         <section className="rounded-lg border border-neutral-200 bg-white shadow-sm">
           <div className="border-b border-neutral-200 p-4">
-            <h2 className="text-sm font-bold text-neutral-900">Issued Certificates</h2>
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h2 className="text-sm font-bold text-neutral-900">Issued Certificates</h2>
+                <p className="text-xs text-neutral-500">Temporary unfit and return-to-work cases now live in a separate protected workspace.</p>
+              </div>
+              <Link className="rounded border border-neutral-200 px-3 py-2 text-xs font-bold text-neutral-700" href="/facility/assessments?queue=temporary-unfit">
+                Open Temporary Unfit Reports
+              </Link>
+            </div>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm">

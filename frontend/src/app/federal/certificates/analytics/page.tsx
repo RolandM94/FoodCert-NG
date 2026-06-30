@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Activity, AlertTriangle, BarChart3 } from "lucide-react";
 import { PortalShell } from "@/components/layout/portal-shell";
 import { DataTable } from "@/components/ui/data-table";
+import { EmbeddedAnalyticsActions } from "@/features/reports/embedded-analytics-actions";
 import { fetchFederalCertificateAnalytics } from "@/lib/api/federal";
 
 export default function Page() {
@@ -16,6 +17,12 @@ export default function Page() {
   return (
     <PortalShell role="federal_admin" title="Certificate analytics" description="Aggregate trust monitoring for federal oversight, with sensitive certificate details kept out of the default view.">
       <div className="grid gap-5">
+        <EmbeddedAnalyticsActions
+          moduleSource="certificates"
+          addToDashboardHref="/federal/dashboard/worksheet-builder?module=certificates"
+          openInDashboardBuilderHref="/federal/dashboard/canvas-builder?module=certificates"
+        />
+
         <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           {[
             ["Total certificates", analytics?.cards.total ?? 0],

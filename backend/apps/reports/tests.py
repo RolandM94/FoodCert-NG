@@ -1,3 +1,4 @@
+from datetime import timedelta
 from decimal import Decimal
 
 from django.contrib.auth import get_user_model
@@ -7,7 +8,21 @@ from django.utils import timezone
 from rest_framework.test import APITestCase
 
 from apps.accounts.models import UserRole, UserStatus
-from apps.assessments.models import FitnessDecision, MedicalAssessment, StepStatus
+from apps.audit.models import AuditAction, AuditLog
+from apps.assessments.models import (
+    Appointment,
+    AppointmentStatus,
+    AssessmentFormScope,
+    AssessmentFormStatus,
+    AssessmentFormTemplate,
+    AssessmentFormTemplateAdoption,
+    AssessmentFormType,
+    AssessmentOwnerLevel,
+    FitnessDecision,
+    HealthDeclaration,
+    MedicalAssessment,
+    StepStatus,
+)
 from apps.certificates.models import Certificate, CertificateRequest, CertificateRequestStatus, CertificateStatus
 from apps.employers.models import Employer, EstablishmentCategory
 from apps.facilities.models import AccreditationStatus, FacilityType, MedicalFacility, OwnershipType
@@ -21,6 +36,15 @@ from apps.organizations.models import Organization, OrganizationType, Organizati
 from apps.payments.models import PaymentStatus, PaymentTransaction
 from apps.ministries.models import StateReport, StateReportStatus
 from apps.reports.models import (
+    AnalyticsDataset,
+    DashboardAlertEvent,
+    DashboardAlertRule,
+    DashboardExportJob,
+    AnalyticsWidget,
+    AnalyticsWorksheet,
+    DashboardCanvas,
+    DashboardCanvasBlock,
+    DashboardTemplate,
     DashboardWidget,
     DataQualityIssue,
     DataQualityIssueSeverity,
@@ -29,12 +53,14 @@ from apps.reports.models import (
     GeneratedReportStatus,
     MEIndicator,
     MEIndicatorValue,
+    PublishedDashboard,
     ReportSchedule,
     ReportTemplate,
     ReportType,
     ScheduledReport,
     ScheduledReportFrequency,
 )
+from apps.reports.dataset_registry import REDACTED_VALUE, sync_analytics_datasets
 from apps.reports.privacy_serializers import (
     AdminReportSerializer,
     EmployerSafeComplianceSerializer,
@@ -58,6 +84,1395 @@ def data(response):
     if isinstance(response.data, list):
         return response.data
     return response.data.get("data", response.data)
+
+
+class FlexibleDashboardArchitectureTests(APITestCase):
+    def setUp(self):
+        self.lagos = State.objects.create(name="Lagos", code="LA")
+        self.org = Organization.objects.create(name="Dash Org", organization_type=OrganizationType.EMPLOYER, state=self.lagos)
+        self.other_org = Organization.objects.create(name="Other Dash Org", organization_type=OrganizationType.EMPLOYER, state=self.lagos)
+        self.federal_admin = User.objects.create_user("fed-dash", "fed-dash@example.com", "StrongPass123!", role=UserRole.FEDERAL_ADMIN)
+        self.employer_user = User.objects.create_user(
+            "emp-dash",
+            "emp-dash@example.com",
+            "StrongPass123!",
+            role=UserRole.EMPLOYER,
+            organization=self.org,
+            state=self.lagos,
+        )
+        self.employer = Employer.objects.create(
+            user=self.employer_user,
+            organization=self.org,
+            business_name="Dash Org Foods",
+            establishment_category=EstablishmentCategory.RESTAURANT_CAFE,
+            contact_person_name="Dash Manager",
+            contact_person_phone="08000000001",
+            contact_person_email="dash-manager@example.com",
+            address="1 Marina, Lagos",
+            state=self.lagos,
+            number_of_food_handlers=1,
+        )
+        self.other_employer = Employer.objects.create(
+            organization=self.other_org,
+            business_name="Other Foods",
+            establishment_category=EstablishmentCategory.BAKERY,
+            contact_person_name="Other Manager",
+            contact_person_phone="08000000002",
+            contact_person_email="other-manager@example.com",
+            address="2 Marina, Lagos",
+            state=self.lagos,
+            number_of_food_handlers=1,
+        )
+
+    def test_dataset_registry_and_dashboard_architecture_records_can_be_created(self):
+        self.client.force_authenticate(self.federal_admin)
+        dataset_response = self.client.post(
+            "/api/analytics/datasets/",
+            {
+                "code": "certificates_dataset",
+                "name": "Certificates",
+                "description": "Approved certificate analytics dataset.",
+                "module_source": "certificates",
+                "allowed_account_types": ["federal", "state", "employer"],
+                "allowed_roles": ["federal_admin", "state_admin", "employer"],
+                "available_fields": ["certificate_number", "status", "issue_date"],
+                "field_labels": {"certificate_number": "Certificate Number"},
+                "field_types": {"certificate_number": "string", "issue_date": "date"},
+                "sensitive_fields": [],
+                "default_filters": {"status": "active"},
+                "joinable_datasets": ["food_handlers"],
+                "aggregation_rules": {"status": ["count"]},
+                "required_permissions": ["dashboard.view"],
+                "privacy_level": "internal",
+                "is_active": True,
+            },
+            format="json",
+        )
+
+        self.assertEqual(dataset_response.status_code, 201, dataset_response.data)
+        dataset_id = data(dataset_response)["id"]
+
+        worksheet_response = self.client.post(
+            "/api/analytics/worksheets/",
+            {
+                "name": "Active certificates by status",
+                "description": "Certificate coverage worksheet.",
+                "dataset": dataset_id,
+                "scope_type": "private",
+                "metrics": [{"field": "certificate_number", "aggregation": "count"}],
+                "dimensions": [{"field": "status"}],
+                "filters": [{"field": "status", "operator": "eq", "value": "active"}],
+                "aggregations": ["count"],
+                "derived_fields": [],
+                "query_rules": {"limit": 10},
+                "chart_recommendation": "bar",
+            },
+            format="json",
+        )
+        self.assertEqual(worksheet_response.status_code, 201, worksheet_response.data)
+        worksheet_id = data(worksheet_response)["id"]
+
+        widget_response = self.client.post(
+            "/api/analytics/widgets/",
+            {
+                "worksheet": worksheet_id,
+                "scope_type": "private",
+                "title": "Active certificates",
+                "widget_type": "bar_chart",
+                "visual_config": {"color": "green"},
+                "filter_behavior": {"inherits_global_filters": True},
+                "refresh_behavior": {"mode": "manual"},
+                "export_options": {"csv": True},
+            },
+            format="json",
+        )
+        self.assertEqual(widget_response.status_code, 201, widget_response.data)
+        widget_id = data(widget_response)["id"]
+
+        canvas_response = self.client.post(
+            "/api/analytics/dashboard-canvases/",
+            {
+                "name": "Employer Compliance Canvas",
+                "description": "Draft employer analytics canvas.",
+                "scope_type": "private",
+                "layout_config": {"columns": 12},
+                "global_filters": [{"field": "status"}],
+            },
+            format="json",
+        )
+        self.assertEqual(canvas_response.status_code, 201, canvas_response.data)
+        canvas_id = data(canvas_response)["id"]
+
+        block_response = self.client.post(
+            "/api/analytics/dashboard-blocks/",
+            {
+                "canvas": canvas_id,
+                "widget": widget_id,
+                "block_type": "widget",
+                "title": "Certificate widget block",
+                "content": {},
+                "position": {"x": 0, "y": 0, "w": 6, "h": 4},
+                "sort_order": 1,
+            },
+            format="json",
+        )
+        self.assertEqual(block_response.status_code, 201, block_response.data)
+
+        published_response = self.client.post(
+            "/api/analytics/published-dashboards/",
+            {
+                "canvas": canvas_id,
+                "version_label": "v1",
+                "visibility_scope": "organization",
+                "share_settings": {"allow_export": True},
+                "snapshot": {"widgets": 1},
+            },
+            format="json",
+        )
+        self.assertEqual(published_response.status_code, 201, published_response.data)
+        published_id = data(published_response)["id"]
+
+        template_response = self.client.post(
+            "/api/analytics/dashboard-templates/",
+            {
+                "name": "Employer Compliance Template",
+                "description": "Template for employer dashboards.",
+                "scope_type": "organization",
+                "source_canvas": canvas_id,
+                "source_published_dashboard": published_id,
+                "template_config": {"layout": "default"},
+            },
+            format="json",
+        )
+        self.assertEqual(template_response.status_code, 201, template_response.data)
+        self.assertTrue(AnalyticsDataset.objects.filter(id=dataset_id).exists())
+
+    def test_dataset_field_type_compatibility_and_override_requires_confirmation(self):
+        self.client.force_authenticate(self.federal_admin)
+        dataset = AnalyticsDataset.objects.get(code="employers")
+
+        compatibility_response = self.client.post(
+            f"/api/analytics/datasets/{dataset.id}/field-type-compatibility/",
+            {"field": "business_name", "target_type": "number_whole"},
+            format="json",
+        )
+        self.assertEqual(compatibility_response.status_code, 200)
+        self.assertEqual(data(compatibility_response)["field"], "business_name")
+        self.assertGreaterEqual(data(compatibility_response)["incompatibleRows"], 1)
+        self.assertTrue(data(compatibility_response)["requiresConfirmation"])
+
+        save_response = self.client.post(
+            f"/api/analytics/datasets/{dataset.id}/change-field-type/",
+            {"field": "business_name", "target_type": "number_whole"},
+            format="json",
+        )
+        self.assertEqual(save_response.status_code, 409)
+        self.assertIn("compatibility", data(save_response))
+
+        confirmed_response = self.client.post(
+            f"/api/analytics/datasets/{dataset.id}/change-field-type/",
+            {"field": "business_name", "target_type": "number_whole", "force": True},
+            format="json",
+        )
+        self.assertEqual(confirmed_response.status_code, 200)
+        payload = data(confirmed_response)
+        self.assertEqual(payload["dataset"]["field_types"]["business_name"], "number_whole")
+        self.assertEqual(payload["dataset"]["field_type_metadata"]["business_name"]["inferredType"], "string")
+        self.assertEqual(payload["dataset"]["field_type_metadata"]["business_name"]["type"], "number_whole")
+
+    def test_dataset_field_type_override_survives_registry_sync(self):
+        dataset = AnalyticsDataset.objects.get(code="employers")
+        dataset.field_type_metadata = {
+            "business_name": {"inferredType": "string", "type": "number_whole"},
+        }
+        dataset.field_types = {"business_name": "number_whole"}
+        dataset.save(update_fields=["field_type_metadata", "field_types", "updated_at"])
+
+        sync_analytics_datasets()
+
+        dataset.refresh_from_db()
+        self.assertEqual(dataset.field_type_metadata["business_name"]["inferredType"], "string")
+        self.assertEqual(dataset.field_type_metadata["business_name"]["type"], "number_whole")
+        self.assertEqual(dataset.field_types["business_name"], "number_whole")
+        self.assertTrue(AnalyticsWorksheet.objects.filter(id=worksheet_id, dataset_id=dataset_id).exists())
+        self.assertTrue(AnalyticsWidget.objects.filter(id=widget_id, worksheet_id=worksheet_id).exists())
+        self.assertTrue(DashboardCanvas.objects.filter(id=canvas_id).exists())
+        self.assertTrue(DashboardCanvasBlock.objects.filter(canvas_id=canvas_id, widget_id=widget_id).exists())
+        self.assertTrue(PublishedDashboard.objects.filter(id=published_id, canvas_id=canvas_id).exists())
+        self.assertTrue(DashboardTemplate.objects.filter(source_canvas_id=canvas_id).exists())
+
+    def test_dataset_listing_is_filtered_by_account_type(self):
+        AnalyticsDataset.objects.create(
+            code="federal_only_dataset",
+            name="Federal Aggregate",
+            description="Federal aggregate dashboard dataset.",
+            module_source="federal_reports",
+            allowed_account_types=["federal"],
+            allowed_roles=["federal_admin"],
+            available_fields=["state_name"],
+            is_active=True,
+        )
+        AnalyticsDataset.objects.create(
+            code="employer_dataset",
+            name="Employer Certificates",
+            description="Employer scoped dataset.",
+            module_source="certificates",
+            allowed_account_types=["employer"],
+            allowed_roles=["employer"],
+            available_fields=["status"],
+            is_active=True,
+        )
+
+        self.client.force_authenticate(self.employer_user)
+        response = self.client.get("/api/analytics/datasets/")
+
+        self.assertEqual(response.status_code, 200, response.data)
+        rows = data(response)
+        codes = {row["code"] for row in rows}
+        self.assertIn("employer_dataset", codes)
+        self.assertNotIn("federal_only_dataset", codes)
+
+    def test_canvas_publish_action_creates_snapshot_and_shared_access(self):
+        dataset = AnalyticsDataset.objects.create(
+            code="employer_dashboard_dataset",
+            name="Employer Dashboard Dataset",
+            description="Employer dashboard snapshot dataset.",
+            module_source="reports",
+            allowed_account_types=["employer"],
+            allowed_roles=["employer"],
+            available_fields=["status", "state_name", "certificate_count"],
+            field_labels={"status": "Status", "state_name": "State", "certificate_count": "Certificate Count"},
+            field_types={"status": "string", "state_name": "string", "certificate_count": "number"},
+            sensitive_fields=[],
+            aggregation_rules={"certificate_count": ["sum"]},
+            is_active=True,
+        )
+        worksheet = AnalyticsWorksheet.objects.create(
+            owner=self.employer_user,
+            organization=self.org,
+            state=self.lagos,
+            account_type="employer",
+            scope_type="private",
+            name="Certificate Summary",
+            description="Worksheet preview for publication.",
+            dataset=dataset,
+            metrics=[{"field": "certificate_count", "aggregation": "sum", "label": "Certificates"}],
+            dimensions=[{"field": "status"}],
+            filters=[],
+            aggregations=["sum"],
+            derived_fields=[],
+            query_rules={},
+            chart_recommendation="bar_chart",
+            preview_output={
+                "chart_recommendation": "bar_chart",
+                "total_rows": 2,
+                "dimensions": ["status"],
+                "metrics": [{"field": "certificate_count", "aggregation": "sum", "label": "Certificates", "value": 42}],
+                "rows": [
+                    {"status": "active", "certificate_count": 30},
+                    {"status": "expired", "certificate_count": 12},
+                ],
+            },
+        )
+        widget = AnalyticsWidget.objects.create(
+            owner=self.employer_user,
+            organization=self.org,
+            state=self.lagos,
+            account_type="employer",
+            scope_type="private",
+            worksheet=worksheet,
+            title="Certificates by status",
+            widget_type="bar_chart",
+            visual_config={"color": "green"},
+            filter_behavior={"inherits_global_filters": True},
+            refresh_behavior={"mode": "manual"},
+            export_options={"csv": True, "json": True},
+        )
+        canvas = DashboardCanvas.objects.create(
+            owner=self.employer_user,
+            organization=self.org,
+            state=self.lagos,
+            account_type="employer",
+            scope_type="private",
+            name="Employer Compliance Canvas",
+            description="Shared employer dashboard",
+            layout_config={"columns": 12},
+            global_filters=[{"field": "status", "label": "Status", "mode": "select"}],
+        )
+        DashboardCanvasBlock.objects.create(
+            canvas=canvas,
+            widget=widget,
+            block_type="widget",
+            title="Certificates by status",
+            content={},
+            position={"w": 6, "h": 320},
+            sort_order=0,
+        )
+
+        teammate = User.objects.create_user(
+            "emp-peer",
+            "emp-peer@example.com",
+            "StrongPass123!",
+            role=UserRole.EMPLOYER,
+            organization=self.org,
+            state=self.lagos,
+        )
+        outsider = User.objects.create_user(
+            "emp-outsider",
+            "emp-outsider@example.com",
+            "StrongPass123!",
+            role=UserRole.EMPLOYER,
+            organization=self.other_org,
+            state=self.lagos,
+        )
+
+        self.client.force_authenticate(self.employer_user)
+        publish_response = self.client.post(
+            f"/api/analytics/dashboard-canvases/{canvas.id}/publish/",
+            {
+                "version_label": "Q2 release",
+                "visibility_scope": "selected_users",
+                "share_settings": {
+                    "user_ids": [str(teammate.id)],
+                    "organization_ids": [str(self.org.id)],
+                },
+            },
+            format="json",
+        )
+
+        self.assertEqual(publish_response.status_code, 201, publish_response.data)
+        published = PublishedDashboard.objects.get(id=data(publish_response)["id"])
+        self.assertEqual(published.version_label, "Q2 release")
+        self.assertEqual(published.snapshot["canvas"]["name"], "Employer Compliance Canvas")
+        self.assertEqual(published.snapshot["blocks"][0]["preview"]["widget_type"], "bar_chart")
+        canvas.refresh_from_db()
+        self.assertFalse(canvas.is_draft)
+
+        self.client.force_authenticate(teammate)
+        shared_response = self.client.get(f"/api/analytics/published-dashboards/{published.id}/")
+        self.assertEqual(shared_response.status_code, 200, shared_response.data)
+
+        self.client.force_authenticate(outsider)
+        denied_response = self.client.get(f"/api/analytics/published-dashboards/{published.id}/")
+        self.assertEqual(denied_response.status_code, 403, denied_response.data)
+        self.assertTrue(
+            AuditLog.objects.filter(
+                action=AuditAction.UPDATE,
+                target_type="PublishedDashboard",
+                target_id=str(published.id),
+                metadata__event="dashboard_published",
+            ).exists()
+        )
+
+    def test_published_dashboard_export_and_share_events_are_audited(self):
+        dataset = AnalyticsDataset.objects.create(
+            code="employer_export_dataset",
+            name="Employer Export Dataset",
+            description="Dataset for export controls.",
+            module_source="reports",
+            allowed_account_types=["employer"],
+            allowed_roles=["employer"],
+            available_fields=["status", "certificate_count"],
+            field_labels={"status": "Status", "certificate_count": "Certificate Count"},
+            field_types={"status": "string", "certificate_count": "number"},
+            sensitive_fields=[],
+            aggregation_rules={"certificate_count": ["sum"]},
+            is_active=True,
+        )
+        worksheet = AnalyticsWorksheet.objects.create(
+            owner=self.employer_user,
+            organization=self.org,
+            state=self.lagos,
+            account_type="employer",
+            scope_type="private",
+            name="Export Worksheet",
+            description="Worksheet preview for export checks.",
+            dataset=dataset,
+            metrics=[{"field": "certificate_count", "aggregation": "sum", "label": "Certificates"}],
+            dimensions=[{"field": "status"}],
+            filters=[],
+            aggregations=["sum"],
+            derived_fields=[],
+            query_rules={},
+            chart_recommendation="table",
+            preview_output={
+                "chart_recommendation": "table",
+                "total_rows": 2,
+                "dimensions": ["status"],
+                "metrics": [{"field": "certificate_count", "aggregation": "sum", "label": "Certificates", "value": 42}],
+                "rows": [
+                    {"status": "active", "certificate_count": 30},
+                    {"status": "expired", "certificate_count": 12},
+                ],
+            },
+        )
+        widget = AnalyticsWidget.objects.create(
+            owner=self.employer_user,
+            organization=self.org,
+            state=self.lagos,
+            account_type="employer",
+            scope_type="private",
+            worksheet=worksheet,
+            title="Exportable widget",
+            widget_type="table",
+            visual_config={},
+            filter_behavior={"inherits_global_filters": True},
+            refresh_behavior={"mode": "manual"},
+            export_options={"csv": True, "xlsx": True, "png": True},
+        )
+        canvas = DashboardCanvas.objects.create(
+            owner=self.employer_user,
+            organization=self.org,
+            state=self.lagos,
+            account_type="employer",
+            scope_type="private",
+            name="Export Canvas",
+            description="Dashboard for export tests",
+            layout_config={"columns": 12},
+            global_filters=[],
+        )
+        block = DashboardCanvasBlock.objects.create(
+            canvas=canvas,
+            widget=widget,
+            block_type="widget",
+            title="Export widget block",
+            content={},
+            position={"w": 6, "h": 320},
+            sort_order=0,
+        )
+
+        self.client.force_authenticate(self.employer_user)
+        publish_response = self.client.post(
+            f"/api/analytics/dashboard-canvases/{canvas.id}/publish/",
+            {
+                "version_label": "Export release",
+                "visibility_scope": "organization",
+                "share_settings": {"allow_export": True},
+            },
+            format="json",
+        )
+        self.assertEqual(publish_response.status_code, 201, publish_response.data)
+        published_id = data(publish_response)["id"]
+
+        export_response = self.client.post(
+            f"/api/analytics/published-dashboards/{published_id}/export/",
+            {"format": "csv", "block_id": str(block.id)},
+            format="json",
+        )
+        self.assertEqual(export_response.status_code, 200, export_response.data)
+        self.assertEqual(data(export_response)["target"], "widget")
+        self.assertEqual(len(data(export_response)["payload"]["rows"]), 2)
+
+        share_response = self.client.post(
+            f"/api/analytics/published-dashboards/{published_id}/share-event/",
+            {"event": "link_copied"},
+            format="json",
+        )
+        self.assertEqual(share_response.status_code, 200, share_response.data)
+
+        sharing_update = self.client.patch(
+            f"/api/analytics/published-dashboards/{published_id}/sharing/",
+            {"visibility_scope": "selected_users", "share_settings": {"user_ids": [str(self.employer_user.id)], "allow_export": False}},
+            format="json",
+        )
+        self.assertEqual(sharing_update.status_code, 200, sharing_update.data)
+
+        blocked_export = self.client.post(
+            f"/api/analytics/published-dashboards/{published_id}/export/",
+            {"format": "png", "block_id": str(block.id)},
+            format="json",
+        )
+        self.assertEqual(blocked_export.status_code, 403, blocked_export.data)
+
+        self.assertTrue(
+            AuditLog.objects.filter(
+                action=AuditAction.UPDATE,
+                target_type="PublishedDashboard",
+                target_id=str(published_id),
+                metadata__event="published_dashboard_exported",
+            ).exists()
+        )
+        self.assertTrue(
+            AuditLog.objects.filter(
+                action=AuditAction.UPDATE,
+                target_type="PublishedDashboard",
+                target_id=str(published_id),
+                metadata__event="link_copied",
+            ).exists()
+        )
+        self.assertTrue(
+            AuditLog.objects.filter(
+                action=AuditAction.UPDATE,
+                target_type="PublishedDashboard",
+                target_id=str(published_id),
+                metadata__event="published_dashboard_sharing_updated",
+            ).exists()
+        )
+
+    def test_widget_refresh_and_large_export_job_flow(self):
+        dataset = AnalyticsDataset.objects.create(
+            code="employer_large_export_dataset",
+            name="Employer Large Export Dataset",
+            description="Dataset for refresh and export jobs.",
+            module_source="reports",
+            allowed_account_types=["employer"],
+            allowed_roles=["employer"],
+            available_fields=["status", "certificate_count"],
+            field_labels={"status": "Status", "certificate_count": "Certificate Count"},
+            field_types={"status": "string", "certificate_count": "number"},
+            sensitive_fields=[],
+            aggregation_rules={"certificate_count": ["sum"]},
+            is_active=True,
+        )
+        rows = [{"status": f"state-{index}", "certificate_count": index} for index in range(60)]
+        worksheet = AnalyticsWorksheet.objects.create(
+            owner=self.employer_user,
+            organization=self.org,
+            state=self.lagos,
+            account_type="employer",
+            scope_type="private",
+            name="Large Worksheet",
+            description="Worksheet for refresh/export job checks.",
+            dataset=dataset,
+            metrics=[{"field": "certificate_count", "aggregation": "sum", "label": "Certificates"}],
+            dimensions=[{"field": "status"}],
+            filters=[],
+            aggregations=["sum"],
+            derived_fields=[],
+            query_rules={},
+            chart_recommendation="table",
+            preview_output={
+                "chart_recommendation": "table",
+                "total_rows": 60,
+                "dimensions": ["status"],
+                "metrics": [{"field": "certificate_count", "aggregation": "sum", "label": "Certificates", "value": 1770}],
+                "rows": rows,
+            },
+        )
+        widget = AnalyticsWidget.objects.create(
+            owner=self.employer_user,
+            organization=self.org,
+            state=self.lagos,
+            account_type="employer",
+            scope_type="private",
+            worksheet=worksheet,
+            title="Large Export Widget",
+            widget_type="table",
+            visual_config={},
+            filter_behavior={"inherits_global_filters": True},
+            refresh_behavior={"mode": "manual"},
+            export_options={"csv": True, "json": True, "png": True},
+        )
+        canvas = DashboardCanvas.objects.create(
+            owner=self.employer_user,
+            organization=self.org,
+            state=self.lagos,
+            account_type="employer",
+            scope_type="private",
+            name="Large Export Canvas",
+            description="Canvas with many blocks",
+            layout_config={"columns": 12},
+            global_filters=[],
+        )
+        block = DashboardCanvasBlock.objects.create(
+            canvas=canvas,
+            widget=widget,
+            block_type="widget",
+            title="Large export block",
+            content={},
+            position={"w": 12, "h": 320},
+            sort_order=0,
+        )
+
+        self.client.force_authenticate(self.employer_user)
+        refresh_response = self.client.post(f"/api/analytics/widgets/{widget.id}/refresh/", {}, format="json")
+        self.assertEqual(refresh_response.status_code, 200, refresh_response.data)
+        self.assertEqual(data(refresh_response)["preview"]["widget_type"], "table")
+
+        publish_response = self.client.post(
+            f"/api/analytics/dashboard-canvases/{canvas.id}/publish/",
+            {"visibility_scope": "organization", "share_settings": {"allow_export": True}},
+            format="json",
+        )
+        self.assertEqual(publish_response.status_code, 201, publish_response.data)
+        published_id = data(publish_response)["id"]
+
+        export_response = self.client.post(
+            f"/api/analytics/published-dashboards/{published_id}/export/",
+            {"format": "csv", "block_id": str(block.id)},
+            format="json",
+        )
+        self.assertEqual(export_response.status_code, 202, export_response.data)
+        job_id = data(export_response)["job_id"]
+        job = DashboardExportJob.objects.get(id=job_id)
+        self.assertIn(job.status, {"pending", "processing", "completed"})
+
+        job_response = self.client.get(f"/api/analytics/dashboard-export-jobs/{job_id}/")
+        self.assertEqual(job_response.status_code, 200, job_response.data)
+        self.assertEqual(data(job_response)["export_format"], "csv")
+
+    def test_ai_assistant_endpoints_return_reviewable_suggestions(self):
+        dataset = AnalyticsDataset.objects.create(
+            code="employer_ai_dataset",
+            name="Employer AI Dataset",
+            description="Dataset for AI assistant tests.",
+            module_source="reports",
+            allowed_account_types=["employer"],
+            allowed_roles=["employer"],
+            available_fields=["status", "state_name", "certificate_count", "issued_at"],
+            field_labels={"status": "Status", "state_name": "State", "certificate_count": "Certificate Count", "issued_at": "Issued At"},
+            field_types={"status": "string", "state_name": "string", "certificate_count": "number", "issued_at": "date"},
+            sensitive_fields=[],
+            aggregation_rules={"certificate_count": ["sum", "count"]},
+            is_active=True,
+        )
+        worksheet = AnalyticsWorksheet.objects.create(
+            owner=self.employer_user,
+            organization=self.org,
+            state=self.lagos,
+            account_type="employer",
+            scope_type="private",
+            name="Compliance Trend",
+            description="Trend worksheet",
+            dataset=dataset,
+            metrics=[{"field": "certificate_count", "aggregation": "sum", "label": "Certificates"}],
+            dimensions=[{"field": "state_name"}],
+            filters=[{"field": "status", "operator": "eq", "value": "active"}],
+            aggregations=["sum"],
+            derived_fields=[],
+            query_rules={},
+            chart_recommendation="bar",
+            preview_output={
+                "chart_recommendation": "bar",
+                "total_rows": 1,
+                "dimensions": ["state_name"],
+                "metrics": [{"field": "certificate_count", "aggregation": "sum", "label": "Certificates", "value": 12}],
+                "rows": [{"state_name": "Lagos", "certificate_count": 12, "status": "active"}],
+            },
+        )
+        widget = AnalyticsWidget.objects.create(
+            owner=self.employer_user,
+            organization=self.org,
+            state=self.lagos,
+            account_type="employer",
+            scope_type="private",
+            worksheet=worksheet,
+            title="Compliance by state",
+            widget_type="bar_chart",
+            visual_config={"color": "#16a34a"},
+            filter_behavior={"inherits_global_filters": True},
+            refresh_behavior={"mode": "manual"},
+            export_options={"csv": True, "json": True},
+        )
+        canvas = DashboardCanvas.objects.create(
+            owner=self.employer_user,
+            organization=self.org,
+            state=self.lagos,
+            account_type="employer",
+            scope_type="private",
+            name="Compliance Canvas",
+            description="Canvas for assistant explanation",
+            layout_config={"columns": 12},
+            global_filters=[],
+        )
+        DashboardCanvasBlock.objects.create(
+            canvas=canvas,
+            widget=widget,
+            block_type="widget",
+            title=widget.title,
+            content={},
+            position={"w": 6, "h": 320},
+            sort_order=0,
+        )
+
+        self.client.force_authenticate(self.employer_user)
+
+        worksheet_suggestion = self.client.post(
+            "/api/analytics/datasets/generate-worksheet/",
+            {"dataset": str(dataset.id), "prompt": "Create a monthly trend of certificate performance by state"},
+            format="json",
+        )
+        self.assertEqual(worksheet_suggestion.status_code, 200, worksheet_suggestion.data)
+        self.assertEqual(data(worksheet_suggestion)["dataset"], str(dataset.id))
+        self.assertIn("reasoning", data(worksheet_suggestion))
+
+        widget_suggestion = self.client.post(
+            "/api/analytics/worksheets/generate-widget/",
+            {"worksheet": str(worksheet.id), "prompt": "Show this as a trend chart"},
+            format="json",
+        )
+        self.assertEqual(widget_suggestion.status_code, 200, widget_suggestion.data)
+        self.assertEqual(data(widget_suggestion)["worksheet"], str(worksheet.id))
+        self.assertIn(data(widget_suggestion)["widget_type"], {"line_chart", "bar_chart"})
+
+        dashboard_suggestion = self.client.post(
+            "/api/analytics/dashboard-canvases/generate-dashboard/",
+            {"prompt": "Create an executive summary with filters and insights", "widget_ids": [str(widget.id)]},
+            format="json",
+        )
+        self.assertEqual(dashboard_suggestion.status_code, 200, dashboard_suggestion.data)
+        self.assertTrue(data(dashboard_suggestion)["blocks"])
+
+        widget_explanation = self.client.post(
+            "/api/analytics/widgets/explain/",
+            {"widget": str(widget.id), "prompt": "Explain the current widget"},
+            format="json",
+        )
+        self.assertEqual(widget_explanation.status_code, 200, widget_explanation.data)
+        self.assertIn("summary", data(widget_explanation))
+
+        canvas_explanation = self.client.post(
+            f"/api/analytics/dashboard-canvases/{canvas.id}/explain/",
+            {"prompt": "Summarize the current dashboard"},
+            format="json",
+        )
+        self.assertEqual(canvas_explanation.status_code, 200, canvas_explanation.data)
+        self.assertIn("recommended_actions", data(canvas_explanation))
+
+    def test_dashboard_alert_rules_create_evaluate_and_notify_with_scope(self):
+        dataset = AnalyticsDataset.objects.create(
+            code="employer_alert_dataset",
+            name="Employer Alert Dataset",
+            description="Dataset for dashboard alert rules.",
+            module_source="reports",
+            allowed_account_types=["employer"],
+            allowed_roles=["employer"],
+            available_fields=["status", "certificate_count"],
+            field_labels={"status": "Status", "certificate_count": "Certificate Count"},
+            field_types={"status": "string", "certificate_count": "number"},
+            sensitive_fields=[],
+            aggregation_rules={"certificate_count": ["sum"]},
+            is_active=True,
+        )
+        worksheet = AnalyticsWorksheet.objects.create(
+            owner=self.employer_user,
+            organization=self.org,
+            state=self.lagos,
+            account_type="employer",
+            scope_type="private",
+            name="Alert Worksheet",
+            description="Worksheet for alert rules",
+            dataset=dataset,
+            metrics=[{"field": "certificate_count", "aggregation": "sum", "label": "Certificates"}],
+            dimensions=[{"field": "status"}],
+            filters=[],
+            aggregations=["sum"],
+            derived_fields=[],
+            query_rules={},
+            chart_recommendation="kpi_card",
+            preview_output={
+                "chart_recommendation": "kpi_card",
+                "total_rows": 2,
+                "dimensions": ["status"],
+                "metrics": [{"field": "certificate_count", "aggregation": "sum", "label": "Certificates", "value": 12}],
+                "rows": [{"status": "active", "certificate_count": 12}],
+            },
+        )
+        widget = AnalyticsWidget.objects.create(
+            owner=self.employer_user,
+            organization=self.org,
+            state=self.lagos,
+            account_type="employer",
+            scope_type="private",
+            worksheet=worksheet,
+            title="Certificate KPI",
+            widget_type="kpi_card",
+            visual_config={"color": "green"},
+            filter_behavior={"inherits_global_filters": True},
+            refresh_behavior={"mode": "manual"},
+            export_options={"csv": True},
+        )
+        teammate = User.objects.create_user(
+            "alert-peer",
+            "alert-peer@example.com",
+            "StrongPass123!",
+            role=UserRole.EMPLOYER,
+            organization=self.org,
+            state=self.lagos,
+        )
+        outsider = User.objects.create_user(
+            "alert-outsider",
+            "alert-outsider@example.com",
+            "StrongPass123!",
+            role=UserRole.EMPLOYER,
+            organization=self.other_org,
+            state=self.lagos,
+        )
+
+        self.client.force_authenticate(self.employer_user)
+        create_response = self.client.post(
+            "/api/analytics/dashboard-alerts/",
+            {
+                "widget": str(widget.id),
+                "name": "Certificate floor alert",
+                "metric_key": "metric:certificate_count",
+                "metric_label": "Certificates",
+                "operator": "lt",
+                "threshold_value": "20",
+                "notification_channels": ["in_app"],
+                "recipient_user_ids": [str(teammate.id), str(outsider.id)],
+            },
+            format="json",
+        )
+        self.assertEqual(create_response.status_code, 201, create_response.data)
+        rule_id = data(create_response)["id"]
+        rule = DashboardAlertRule.objects.get(id=rule_id)
+        self.assertEqual(rule.owner_id, self.employer_user.id)
+        self.assertEqual(rule.account_type, "employer")
+
+        evaluate_response = self.client.post(f"/api/analytics/dashboard-alerts/{rule_id}/evaluate/", {}, format="json")
+        self.assertEqual(evaluate_response.status_code, 200, evaluate_response.data)
+        event = DashboardAlertEvent.objects.get(id=data(evaluate_response)["id"])
+        self.assertEqual(event.status, "triggered")
+        self.assertEqual(event.notification_count, 2)
+        self.assertTrue(Notification.objects.filter(recipient=self.employer_user, related_object_type="DashboardAlertRule", related_object_id=rule.id).exists())
+        self.assertTrue(Notification.objects.filter(recipient=teammate, related_object_type="DashboardAlertRule", related_object_id=rule.id).exists())
+        self.assertFalse(Notification.objects.filter(recipient=outsider, related_object_type="DashboardAlertRule", related_object_id=rule.id).exists())
+
+        history_response = self.client.get(f"/api/analytics/dashboard-alert-events/?widget={widget.id}")
+        self.assertEqual(history_response.status_code, 200, history_response.data)
+        self.assertGreaterEqual(len(data(history_response)), 1)
+
+        self.assertTrue(
+            AuditLog.objects.filter(
+                action=AuditAction.CREATE,
+                target_type="DashboardAlertRule",
+                target_id=str(rule.id),
+                metadata__event="dashboard_alert_created",
+            ).exists()
+        )
+        self.assertTrue(
+            AuditLog.objects.filter(
+                action=AuditAction.UPDATE,
+                target_type="DashboardAlertRule",
+                target_id=str(rule.id),
+                metadata__event="dashboard_alert_evaluated",
+            ).exists()
+        )
+
+    def test_dashboard_privacy_and_audit_controls_cover_ai_and_lifecycle_actions(self):
+        dataset = AnalyticsDataset.objects.create(
+            code="employer_private_dataset",
+            name="Employer Private Dataset",
+            description="Dataset with restricted fields.",
+            module_source="reports",
+            allowed_account_types=["employer"],
+            allowed_roles=["employer"],
+            available_fields=["status", "certificate_count", "phone"],
+            field_labels={"status": "Status", "certificate_count": "Certificate Count", "phone": "Phone"},
+            field_types={"status": "string", "certificate_count": "number", "phone": "string"},
+            sensitive_fields=["phone"],
+            aggregation_rules={"certificate_count": ["sum"]},
+            is_active=True,
+        )
+
+        self.client.force_authenticate(self.employer_user)
+        blocked_ai = self.client.post(
+            "/api/analytics/datasets/generate-worksheet/",
+            {"dataset": str(dataset.id), "prompt": "Build a worksheet that exposes phone details"},
+            format="json",
+        )
+        self.assertEqual(blocked_ai.status_code, 403, blocked_ai.data)
+        self.assertTrue(
+            AuditLog.objects.filter(
+                action=AuditAction.SECURITY_EVENT,
+                target_type="AnalyticsDataset",
+                target_id=str(dataset.id),
+                metadata__event="analytics_dataset_ai_worksheet_request_blocked",
+            ).exists()
+        )
+
+        worksheet_response = self.client.post(
+            "/api/analytics/worksheets/",
+            {
+                "name": "Safe Worksheet",
+                "description": "Only safe fields",
+                "dataset": str(dataset.id),
+                "scope_type": "private",
+                "metrics": [{"field": "certificate_count", "aggregation": "sum", "label": "Certificates"}],
+                "dimensions": [{"field": "status"}],
+                "filters": [],
+                "aggregations": ["sum"],
+                "derived_fields": [],
+                "query_rules": {},
+                "chart_recommendation": "bar_chart",
+                "preview_output": {
+                    "chart_recommendation": "bar_chart",
+                    "total_rows": 2,
+                    "dimensions": ["status"],
+                    "metrics": [{"field": "certificate_count", "aggregation": "sum", "label": "Certificates", "value": 24}],
+                    "rows": [{"status": "active", "certificate_count": 24}],
+                },
+            },
+            format="json",
+        )
+        self.assertEqual(worksheet_response.status_code, 201, worksheet_response.data)
+        worksheet_id = data(worksheet_response)["id"]
+
+        widget_response = self.client.post(
+            "/api/analytics/widgets/",
+            {
+                "worksheet": worksheet_id,
+                "title": "Safe Widget",
+                "widget_type": "bar_chart",
+                "scope_type": "private",
+                "visual_config": {"color": "#16a34a"},
+                "filter_behavior": {"inherits_global_filters": True},
+                "refresh_behavior": {"mode": "manual"},
+                "export_options": {"csv": True, "json": True},
+            },
+            format="json",
+        )
+        self.assertEqual(widget_response.status_code, 201, widget_response.data)
+        widget_id = data(widget_response)["id"]
+
+        canvas_response = self.client.post(
+            "/api/analytics/dashboard-canvases/",
+            {
+                "name": "Safe Canvas",
+                "description": "Audit lifecycle test",
+                "scope_type": "private",
+                "layout_config": {"columns": 12},
+                "global_filters": [],
+            },
+            format="json",
+        )
+        self.assertEqual(canvas_response.status_code, 201, canvas_response.data)
+        canvas_id = data(canvas_response)["id"]
+
+        block_response = self.client.post(
+            "/api/analytics/dashboard-blocks/",
+            {
+                "canvas": canvas_id,
+                "widget": widget_id,
+                "block_type": "widget",
+                "title": "Safe Block",
+                "content": {},
+                "position": {"x": 0, "y": 0, "w": 6, "h": 4},
+                "sort_order": 1,
+            },
+            format="json",
+        )
+        self.assertEqual(block_response.status_code, 201, block_response.data)
+
+        self.assertEqual(self.client.get(f"/api/analytics/worksheets/{worksheet_id}/").status_code, 200)
+        self.assertEqual(self.client.get(f"/api/analytics/widgets/{widget_id}/").status_code, 200)
+        self.assertEqual(self.client.get(f"/api/analytics/dashboard-canvases/{canvas_id}/").status_code, 200)
+
+        widget_ai = self.client.post(
+            "/api/analytics/worksheets/generate-widget/",
+            {"worksheet": worksheet_id, "prompt": "Turn this into a trend chart"},
+            format="json",
+        )
+        self.assertEqual(widget_ai.status_code, 200, widget_ai.data)
+
+        canvas_ai = self.client.post(
+            "/api/analytics/dashboard-canvases/generate-dashboard/",
+            {"prompt": "Create an executive summary dashboard", "widget_ids": [widget_id]},
+            format="json",
+        )
+        self.assertEqual(canvas_ai.status_code, 200, canvas_ai.data)
+
+        publish_response = self.client.post(
+            f"/api/analytics/dashboard-canvases/{canvas_id}/publish/",
+            {"visibility_scope": "organization", "share_settings": {"allow_export": True}},
+            format="json",
+        )
+        self.assertEqual(publish_response.status_code, 201, publish_response.data)
+        published_id = data(publish_response)["id"]
+
+        published_view = self.client.get(f"/api/analytics/published-dashboards/{published_id}/")
+        self.assertEqual(published_view.status_code, 200, published_view.data)
+
+        templates_response = self.client.get("/api/analytics/dashboard-templates/")
+        self.assertEqual(templates_response.status_code, 200, templates_response.data)
+        employer_template = next(template for template in data(templates_response) if template["account_type"] == "employer")
+        use_template = self.client.post(f"/api/analytics/dashboard-templates/{employer_template['id']}/use-template/", {}, format="json")
+        self.assertEqual(use_template.status_code, 201, use_template.data)
+
+        for event_name in [
+            "analytics_worksheet_created",
+            "analytics_widget_created",
+            "dashboard_canvas_created",
+            "dashboard_block_created",
+            "analytics_worksheet_viewed",
+            "analytics_widget_viewed",
+            "dashboard_canvas_viewed",
+            "analytics_widget_ai_requested",
+            "dashboard_canvas_ai_requested",
+            "published_dashboard_viewed",
+            "dashboard_template_cloned",
+        ]:
+            self.assertTrue(AuditLog.objects.filter(metadata__event=event_name).exists(), event_name)
+
+    def test_dashboard_templates_are_seeded_and_can_be_cloned(self):
+        self.client.force_authenticate(self.federal_admin)
+
+        list_response = self.client.get("/api/analytics/dashboard-templates/")
+        self.assertEqual(list_response.status_code, 200, list_response.data)
+        templates = data(list_response)
+        self.assertTrue(any(template["account_type"] == "federal" for template in templates))
+
+        system_template = next(template for template in templates if template["is_system_template"])
+        use_response = self.client.post(f"/api/analytics/dashboard-templates/{system_template['id']}/use-template/", {}, format="json")
+        self.assertEqual(use_response.status_code, 201, use_response.data)
+        canvas_id = data(use_response)["id"]
+
+        canvas = DashboardCanvas.objects.get(id=canvas_id)
+        self.assertEqual(canvas.owner_id, self.federal_admin.id)
+        self.assertEqual(canvas.account_type, "federal")
+        self.assertTrue(DashboardCanvasBlock.objects.filter(canvas=canvas).exists())
+
+    def test_seeded_dataset_catalogue_exposes_scoped_samples_with_redaction(self):
+        own_handler_user = User.objects.create_user(
+            "handler-one",
+            "handler-one@example.com",
+            "StrongPass123!",
+            role=UserRole.FOOD_HANDLER,
+            organization=self.org,
+            state=self.lagos,
+        )
+        other_handler_user = User.objects.create_user(
+            "handler-two",
+            "handler-two@example.com",
+            "StrongPass123!",
+            role=UserRole.FOOD_HANDLER,
+            organization=self.other_org,
+            state=self.lagos,
+        )
+        FoodHandlerProfile.objects.create(
+            user=own_handler_user,
+            full_name="Own Handler",
+            date_of_birth=timezone.localdate() - timedelta(days=9000),
+            gender=Gender.MALE,
+            nin="12345678901",
+            phone="08012345678",
+            email="own-handler@example.com",
+            home_address="12 Broad Street",
+            state=self.lagos,
+            employer=self.employer,
+            food_handler_category=FoodHandlerCategory.KITCHEN_STAFF,
+            system_identifier="OWN-001",
+            current_status=FoodHandlerStatus.FIT,
+        )
+        FoodHandlerProfile.objects.create(
+            user=other_handler_user,
+            full_name="Other Handler",
+            date_of_birth=timezone.localdate() - timedelta(days=8000),
+            gender=Gender.FEMALE,
+            nin="99887766554",
+            phone="08087654321",
+            email="other-handler@example.com",
+            home_address="34 Broad Street",
+            state=self.lagos,
+            employer=self.other_employer,
+            food_handler_category=FoodHandlerCategory.BAKERY_WORKER,
+            system_identifier="OTH-001",
+            current_status=FoodHandlerStatus.FIT,
+        )
+
+        self.client.force_authenticate(self.federal_admin)
+        dataset_response = self.client.get("/api/analytics/datasets/")
+        self.assertEqual(dataset_response.status_code, 200, dataset_response.data)
+        codes = {row["code"] for row in data(dataset_response)}
+        self.assertIn("food_handlers", codes)
+        self.assertIn("indicators", codes)
+        self.assertIn("indicator_targets", codes)
+        self.assertIn("indicator_results", codes)
+        self.assertIn("indicator_performance", codes)
+
+        dataset = AnalyticsDataset.objects.get(code="food_handlers")
+        self.client.force_authenticate(self.employer_user)
+        sample_response = self.client.get(f"/api/analytics/datasets/{dataset.id}/sample/")
+
+        self.assertEqual(sample_response.status_code, 200, sample_response.data)
+        payload = data(sample_response)
+        self.assertEqual(payload["row_count"], 1)
+        self.assertEqual(payload["rows"][0]["full_name"], "Own Handler")
+        self.assertEqual(payload["rows"][0]["nin"], REDACTED_VALUE)
+        self.assertEqual(payload["rows"][0]["email"], REDACTED_VALUE)
+
+    def test_indicator_dataset_exposes_examples_and_ai_prompt_hints(self):
+        indicator = MEIndicator.objects.create(
+            code="certification_coverage",
+            name="Certification Coverage",
+            description="Percent of food handlers with active certificates.",
+            category="certification",
+            numerator_definition="Certified handlers",
+            denominator_definition="Registered handlers",
+            formula="certified_handlers / registered_handlers * 100",
+            data_sources=["certificates", "food_handlers"],
+            reporting_frequency="monthly",
+            disaggregation_fields=["state", "organization"],
+            target_value=Decimal("85.00"),
+            visualization_type="trend_card",
+            is_active=True,
+        )
+        MEIndicatorValue.objects.create(
+            indicator=indicator,
+            state=self.lagos,
+            organization=self.org,
+            period_start=timezone.localdate() - timedelta(days=30),
+            period_end=timezone.localdate(),
+            numerator_value=Decimal("85"),
+            denominator_value=Decimal("100"),
+            calculated_value=Decimal("85"),
+        )
+
+        self.client.force_authenticate(self.employer_user)
+        seeded_response = self.client.get("/api/analytics/datasets/")
+        self.assertEqual(seeded_response.status_code, 200, seeded_response.data)
+        dataset = AnalyticsDataset.objects.get(code="indicator_performance")
+
+        examples_response = self.client.get(f"/api/analytics/datasets/{dataset.id}/worksheet-examples/")
+        prompt_response = self.client.get(f"/api/analytics/datasets/{dataset.id}/ai-prompt/")
+        sample_response = self.client.get(f"/api/analytics/datasets/{dataset.id}/sample/")
+
+        self.assertEqual(examples_response.status_code, 200, examples_response.data)
+        self.assertEqual(prompt_response.status_code, 200, prompt_response.data)
+        self.assertEqual(sample_response.status_code, 200, sample_response.data)
+
+        examples = data(examples_response)["examples"]
+        self.assertTrue(any(example["key"] == "facility_performance_snapshot" for example in examples))
+
+        prompt_payload = data(prompt_response)
+        self.assertEqual(prompt_payload["dataset"], "indicator_performance")
+        self.assertIn("Do not infer or fabricate", prompt_payload["ai_prompt_hints"]["analysis_rules"][1])
+
+        sample_payload = data(sample_response)
+        self.assertEqual(sample_payload["row_count"], 1)
+        self.assertEqual(sample_payload["rows"][0]["owner_name"], "Dash Org")
+        self.assertEqual(sample_payload["rows"][0]["source_module"], "certificates, food_handlers")
+        self.assertEqual(sample_payload["rows"][0]["achievement_percentage"], 100.0)
+
+    def test_worksheet_preview_returns_metric_cards_for_allowed_fields(self):
+        self.client.force_authenticate(self.federal_admin)
+        dataset_response = self.client.get("/api/analytics/datasets/")
+        self.assertEqual(dataset_response.status_code, 200, dataset_response.data)
+        dataset = AnalyticsDataset.objects.get(code="employers")
+
+        preview_response = self.client.post(
+            "/api/analytics/worksheets/preview/",
+            {
+                "name": "Employer compliance snapshot",
+                "description": "Preview employer compliance states.",
+                "dataset": str(dataset.id),
+                "scope_type": "private",
+                "metrics": [{"field": "number_of_food_handlers", "aggregation": "sum", "label": "Handlers"}],
+                "dimensions": [{"field": "business_name"}, {"field": "compliance_status"}],
+                "filters": [{"field": "business_name", "operator": "contains", "value": "Dash"}],
+                "aggregations": ["sum"],
+                "derived_fields": [],
+                "query_rules": {"limit": 10},
+                "chart_recommendation": "bar",
+            },
+            format="json",
+        )
+
+        self.assertEqual(preview_response.status_code, 200, preview_response.data)
+        payload = data(preview_response)
+        self.assertEqual(payload["dataset_code"], "employers")
+        self.assertEqual(payload["total_rows"], 1)
+        self.assertEqual(payload["metrics"][0]["value"], 1.0)
+        self.assertEqual(payload["rows"][0]["business_name"], "Dash Org Foods")
+
+    def test_worksheet_validation_blocks_sensitive_dataset_fields(self):
+        self.client.force_authenticate(self.federal_admin)
+        self.client.get("/api/analytics/datasets/")
+        dataset = AnalyticsDataset.objects.get(code="food_handlers")
+
+        response = self.client.post(
+            "/api/analytics/worksheets/preview/",
+            {
+                "name": "Sensitive preview",
+                "description": "",
+                "dataset": str(dataset.id),
+                "scope_type": "private",
+                "metrics": [{"field": "nin", "aggregation": "count"}],
+                "dimensions": [{"field": "full_name"}],
+                "filters": [],
+                "aggregations": ["count"],
+                "derived_fields": [],
+                "query_rules": {},
+                "chart_recommendation": "table",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400, response.data)
+        self.assertIn("worksheet", response.data)
+
+    def test_worksheet_preview_groups_dimensions_and_aggregates_measures(self):
+        self.client.force_authenticate(self.federal_admin)
+        self.client.get("/api/analytics/datasets/")
+        Employer.objects.create(
+            organization=Organization.objects.create(name="Dash Org Annex", organization_type=OrganizationType.EMPLOYER, state=self.lagos),
+            business_name="Dash Org Foods",
+            establishment_category=EstablishmentCategory.RESTAURANT_CAFE,
+            contact_person_name="Annex Manager",
+            contact_person_phone="08000000003",
+            contact_person_email="annex-manager@example.com",
+            address="3 Marina, Lagos",
+            state=self.lagos,
+            number_of_food_handlers=4,
+            compliance_status="compliant",
+        )
+        dataset = AnalyticsDataset.objects.get(code="employers")
+
+        preview_response = self.client.post(
+            "/api/analytics/worksheets/preview/",
+            {
+                "name": "Employer grouped preview",
+                "description": "Group employer rows and sum handlers.",
+                "dataset": str(dataset.id),
+                "scope_type": "private",
+                "metrics": [{"field": "number_of_food_handlers", "aggregation": "sum", "label": "Handlers"}],
+                "dimensions": [{"field": "business_name"}],
+                "filters": [{"field": "business_name", "operator": "contains", "value": "Dash Org Foods"}],
+                "aggregations": ["sum"],
+                "derived_fields": [],
+                "query_rules": {"limit": 10},
+                "chart_recommendation": "bar",
+            },
+            format="json",
+        )
+
+        self.assertEqual(preview_response.status_code, 200, preview_response.data)
+        payload = data(preview_response)
+        self.assertEqual(payload["total_rows"], 2)
+        self.assertEqual(len(payload["rows"]), 1)
+        self.assertEqual(payload["rows"][0]["business_name"], "Dash Org Foods")
+        self.assertEqual(payload["rows"][0]["number_of_food_handlers"], 5.0)
+
+    def test_worksheet_validation_rejects_line_chart_without_time_dimension(self):
+        self.client.force_authenticate(self.federal_admin)
+        self.client.get("/api/analytics/datasets/")
+        dataset = AnalyticsDataset.objects.get(code="employers")
+
+        response = self.client.post(
+            "/api/analytics/worksheets/preview/",
+            {
+                "name": "Invalid line worksheet",
+                "description": "",
+                "dataset": str(dataset.id),
+                "scope_type": "private",
+                "metrics": [{"field": "number_of_food_handlers", "aggregation": "sum", "label": "Handlers"}],
+                "dimensions": [{"field": "business_name"}],
+                "filters": [],
+                "aggregations": ["sum"],
+                "derived_fields": [],
+                "query_rules": {},
+                "chart_recommendation": "line",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400, response.data)
+        self.assertIn("worksheet", response.data)
+        self.assertTrue(any("time-based dimension" in message for message in response.data["worksheet"]))
+
+    def test_worksheet_validation_rejects_map_chart_without_geographic_dimension(self):
+        self.client.force_authenticate(self.federal_admin)
+        self.client.get("/api/analytics/datasets/")
+        dataset = AnalyticsDataset.objects.get(code="employers")
+
+        response = self.client.post(
+            "/api/analytics/worksheets/preview/",
+            {
+                "name": "Invalid map worksheet",
+                "description": "",
+                "dataset": str(dataset.id),
+                "scope_type": "private",
+                "metrics": [{"field": "number_of_food_handlers", "aggregation": "sum", "label": "Handlers"}],
+                "dimensions": [{"field": "business_name"}],
+                "filters": [],
+                "aggregations": ["sum"],
+                "derived_fields": [],
+                "query_rules": {},
+                "chart_recommendation": "map",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400, response.data)
+        self.assertIn("worksheet", response.data)
+        self.assertTrue(any("geographic dimension" in message for message in response.data["worksheet"]))
+
+    def test_employer_scope_applies_before_preview_aggregation(self):
+        self.client.force_authenticate(self.employer_user)
+        self.client.get("/api/analytics/datasets/")
+        dataset = AnalyticsDataset.objects.get(code="employers")
+
+        preview_response = self.client.post(
+            "/api/analytics/worksheets/preview/",
+            {
+                "name": "Employer scope preview",
+                "description": "Ensure employer scope is applied before aggregation.",
+                "dataset": str(dataset.id),
+                "scope_type": "private",
+                "metrics": [{"field": "number_of_food_handlers", "aggregation": "sum", "label": "Handlers"}],
+                "dimensions": [{"field": "business_name"}],
+                "filters": [],
+                "aggregations": ["sum"],
+                "derived_fields": [],
+                "query_rules": {},
+                "chart_recommendation": "bar",
+            },
+            format="json",
+        )
+
+        self.assertEqual(preview_response.status_code, 200, preview_response.data)
+        payload = data(preview_response)
+        self.assertEqual(payload["total_rows"], 1)
+        self.assertEqual(payload["rows"][0]["business_name"], "Dash Org Foods")
+
+    def test_widget_preview_renders_from_saved_worksheet_preview(self):
+        self.client.force_authenticate(self.federal_admin)
+        self.client.get("/api/analytics/datasets/")
+        dataset = AnalyticsDataset.objects.get(code="employers")
+        worksheet = AnalyticsWorksheet.objects.create(
+            owner=self.federal_admin,
+            account_type="federal",
+            name="Employer worksheet",
+            description="",
+            dataset=dataset,
+            metrics=[{"field": "number_of_food_handlers", "aggregation": "sum", "label": "Handlers"}],
+            dimensions=[{"field": "business_name"}],
+            filters=[],
+            aggregations=["sum"],
+            derived_fields=[],
+            query_rules={"limit": 10},
+            chart_recommendation="bar",
+            preview_output={
+                "dataset_code": "employers",
+                "chart_recommendation": "bar",
+                "total_rows": 1,
+                "dimensions": ["business_name"],
+                "metrics": [{"field": "number_of_food_handlers", "aggregation": "sum", "label": "Handlers", "value": 1}],
+                "rows": [{"business_name": "Dash Org Foods", "number_of_food_handlers": 1}],
+            },
+        )
+
+        response = self.client.post(
+            "/api/analytics/widgets/preview/",
+            {
+                "worksheet": str(worksheet.id),
+                "scope_type": "private",
+                "title": "Employer handler count",
+                "widget_type": "kpi_card",
+                "visual_config": {"accent": "emerald"},
+                "filter_behavior": {},
+                "refresh_behavior": {"mode": "manual"},
+                "export_options": {"csv": True, "json": True, "png": False},
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200, response.data)
+        payload = data(response)
+        self.assertEqual(payload["widget_type"], "kpi_card")
+        self.assertEqual(payload["preview"]["cards"][0]["value"], 1)
+        self.assertEqual(payload["export_formats"], ["csv", "json", "pdf"])
 
 
 class DashboardReportingTests(APITestCase):
@@ -246,6 +1661,46 @@ class DashboardReportingTests(APITestCase):
         )
 
     def test_employer_dashboard_is_scoped_and_omits_medical_detail(self):
+        pending_assessment = MedicalAssessment.objects.create(
+            food_handler=self.uncertified_handler,
+            employer=self.employer,
+            facility=self.facility,
+            doctor=self.doctor,
+            declaration_status=StepStatus.PENDING,
+            physical_exam_status=StepStatus.PENDING,
+            lab_status=StepStatus.SUBMITTED,
+            vaccination_status=StepStatus.PENDING,
+            final_decision=FitnessDecision.PENDING,
+            status="declaration_submitted",
+        )
+        expired_assessment = MedicalAssessment.objects.create(
+            food_handler=self.uncertified_handler,
+            employer=self.employer,
+            facility=self.facility,
+            doctor=self.doctor,
+            declaration_status=StepStatus.REVIEWED,
+            physical_exam_status=StepStatus.COMPLETED,
+            lab_status=StepStatus.REVIEWED,
+            vaccination_status=StepStatus.REVIEWED,
+            final_decision=FitnessDecision.FIT,
+            signed_at=timezone.now() - timezone.timedelta(days=200),
+            status="certificate_issued",
+        )
+        Certificate.objects.create(
+            certificate_number="FCN-LA-OLD002",
+            food_handler=self.uncertified_handler,
+            assessment=expired_assessment,
+            employer=self.employer,
+            facility=self.facility,
+            doctor=self.doctor,
+            issuing_state=self.lagos,
+            issued_by_state_user=self.state_admin,
+            issue_date=timezone.localdate() - timedelta(days=365),
+            expiry_date=timezone.localdate() - timedelta(days=5),
+            status=CertificateStatus.EXPIRED,
+            verification_url="http://localhost:3000/verify/FCN-LA-OLD002",
+            digital_signature_hash="hash-expired",
+        )
         self.client.force_authenticate(self.employer_user)
 
         response = self.client.get("/api/dashboard/employer/")
@@ -255,6 +1710,11 @@ class DashboardReportingTests(APITestCase):
         self.assertEqual(payload["cards"]["total_food_handlers"], 2)
         self.assertEqual(payload["cards"]["valid_certificates"], 1)
         self.assertEqual(payload["cards"]["compliance_percentage"], 50.0)
+        self.assertEqual(payload["cards"]["staff_pending_declaration"], 1)
+        self.assertEqual(payload["cards"]["staff_pending_test"], 1)
+        self.assertEqual(payload["cards"]["certified_staff"], 1)
+        self.assertEqual(payload["cards"]["expired_certificate_staff"], 1)
+        self.assertEqual(payload["cards"]["temporarily_unfit_staff"], 1)
         self.assertNotIn("doctor_notes", str(payload))
         self.assertNotIn("lab_tests", str(payload))
 
@@ -285,6 +1745,22 @@ class DashboardReportingTests(APITestCase):
         self.assertEqual(national_summary["inspections_conducted"], 1)
 
     def test_food_handler_dashboard_returns_personal_workflow_state(self):
+        appointment = Appointment.objects.create(
+            food_handler=self.food_handler,
+            facility=self.facility,
+            doctor=self.doctor,
+            appointment_date=timezone.now() + timezone.timedelta(days=2),
+            status=AppointmentStatus.CONFIRMED,
+        )
+        self.assessment.appointment = appointment
+        self.assessment.save(update_fields=["appointment", "updated_at"])
+        HealthDeclaration.objects.create(
+            assessment=self.assessment,
+            certified_true=True,
+            submitted_at=timezone.now() - timezone.timedelta(days=1),
+            validated_by_doctor=self.doctor,
+            validated_at=timezone.now(),
+        )
         IllnessReport.objects.create(
             food_handler=self.food_handler,
             employer=self.employer,
@@ -301,7 +1777,10 @@ class DashboardReportingTests(APITestCase):
         payload = data(response)
         self.assertEqual(payload["food_handler"]["system_identifier"], "FCN-REP001")
         self.assertEqual(payload["cards"]["certificate_status"], CertificateStatus.ACTIVE)
+        self.assertEqual(payload["cards"]["declaration_status"], StepStatus.VALIDATED)
+        self.assertEqual(payload["cards"]["appointment_status"], AppointmentStatus.CONFIRMED)
         self.assertEqual(payload["cards"]["assessment_status"], "certificate_issued")
+        self.assertEqual(payload["cards"]["report_status"], "certificate_issued")
         self.assertEqual(payload["cards"]["vaccination_status"], "current")
         self.assertEqual(payload["cards"]["renewal_status"], "current")
         self.assertEqual(payload["cards"]["return_to_work_status"], "pending")
@@ -793,6 +2272,73 @@ class DashboardReportingTests(APITestCase):
             food_handler_category=FoodHandlerCategory.FOOD_PREPARER,
             system_identifier="FCN-OYO001",
         )
+        national_template_v1 = AssessmentFormTemplate.objects.create(
+            name="Federal Declaration",
+            description="Federal declaration v1",
+            form_type=AssessmentFormType.HEALTH_DECLARATION,
+            scope=AssessmentFormScope.NATIONAL,
+            owner_level=AssessmentOwnerLevel.FEDERAL,
+            version=1,
+            status=AssessmentFormStatus.PUBLISHED,
+        )
+        national_template_v2 = AssessmentFormTemplate.objects.create(
+            name="Federal Declaration",
+            description="Federal declaration v2",
+            form_type=AssessmentFormType.HEALTH_DECLARATION,
+            scope=AssessmentFormScope.NATIONAL,
+            owner_level=AssessmentOwnerLevel.FEDERAL,
+            version=2,
+            status=AssessmentFormStatus.ACTIVE,
+            base_template=national_template_v1,
+            parent_template=national_template_v1,
+        )
+        state_template = AssessmentFormTemplate.objects.create(
+            name="Lagos Declaration",
+            description="State adopted declaration",
+            form_type=AssessmentFormType.HEALTH_DECLARATION,
+            scope=AssessmentFormScope.STATE,
+            state=self.lagos,
+            owner_level=AssessmentOwnerLevel.STATE,
+            owner_id=self.lagos.id,
+            version=1,
+            status=AssessmentFormStatus.ACTIVE,
+            parent_template=national_template_v2,
+            base_template=national_template_v1,
+        )
+        facility_template = AssessmentFormTemplate.objects.create(
+            name="Mainland Declaration",
+            description="Facility adopted declaration",
+            form_type=AssessmentFormType.HEALTH_DECLARATION,
+            scope=AssessmentFormScope.FACILITY,
+            state=self.lagos,
+            facility=self.facility,
+            owner_level=AssessmentOwnerLevel.FACILITY,
+            owner_id=self.facility.id,
+            version=1,
+            status=AssessmentFormStatus.ACTIVE,
+            parent_template=state_template,
+            base_template=national_template_v1,
+        )
+        HealthDeclaration.objects.create(
+            assessment=self.assessment,
+            certified_true=True,
+            risk_flag=True,
+            submitted_at=timezone.now(),
+            validated_by_doctor=self.doctor,
+            validated_at=timezone.now(),
+        )
+        AssessmentFormTemplateAdoption.objects.create(
+            parent_template=national_template_v2,
+            child_template=state_template,
+            adopted_by_level=AssessmentOwnerLevel.STATE,
+            adopted_by_id=self.lagos.id,
+        )
+        AssessmentFormTemplateAdoption.objects.create(
+            parent_template=state_template,
+            child_template=facility_template,
+            adopted_by_level=AssessmentOwnerLevel.FACILITY,
+            adopted_by_id=self.facility.id,
+        )
         self.client.force_authenticate(self.state_admin)
 
         response = self.client.get("/api/dashboard/state/")
@@ -805,14 +2351,85 @@ class DashboardReportingTests(APITestCase):
         self.assertEqual(payload["cards"]["return_to_work_pending"], 1)
         self.assertEqual(payload["cards"]["certificates_expiring_soon"], 1)
         self.assertEqual(payload["cards"]["overall_compliance_status"], "compliant")
+        self.assertEqual(payload["cards"]["facilities_adopted_state_template"], 1)
+        self.assertEqual(payload["cards"]["facilities_using_latest_template"], 1)
+        self.assertEqual(payload["cards"]["declarations_submitted_in_state"], 1)
+        self.assertEqual(payload["cards"]["pending_facility_adoption"], 0)
         self.assertIn("score", payload["cards"]["performance_rating"])
         self.assertEqual(payload["charts"]["lga_drill_down"][0]["lga_name"], "Ikeja")
         self.assertEqual(payload["charts"]["enforcement_notices_by_status"][0]["total"], 1)
         self.assertIn("illness_trends", payload["charts"])
         self.assertIn("assessment_volume_by_facility", payload["charts"])
         self.assertIn("revenue_trend", payload["charts"])
+        self.assertEqual(payload["charts"]["high_risk_declaration_trends"][0]["total"], 1)
 
     def test_federal_dashboard_requires_federal_role(self):
+        national_template_v1 = AssessmentFormTemplate.objects.create(
+            name="Federal Declaration",
+            description="Federal declaration v1",
+            form_type=AssessmentFormType.HEALTH_DECLARATION,
+            scope=AssessmentFormScope.NATIONAL,
+            owner_level=AssessmentOwnerLevel.FEDERAL,
+            version=1,
+            status=AssessmentFormStatus.PUBLISHED,
+        )
+        national_template_v2 = AssessmentFormTemplate.objects.create(
+            name="Federal Declaration",
+            description="Federal declaration v2",
+            form_type=AssessmentFormType.HEALTH_DECLARATION,
+            scope=AssessmentFormScope.NATIONAL,
+            owner_level=AssessmentOwnerLevel.FEDERAL,
+            version=2,
+            status=AssessmentFormStatus.ACTIVE,
+            base_template=national_template_v1,
+            parent_template=national_template_v1,
+        )
+        lagos_template = AssessmentFormTemplate.objects.create(
+            name="Lagos Declaration",
+            description="Lagos adopted declaration",
+            form_type=AssessmentFormType.HEALTH_DECLARATION,
+            scope=AssessmentFormScope.STATE,
+            state=self.lagos,
+            owner_level=AssessmentOwnerLevel.STATE,
+            owner_id=self.lagos.id,
+            version=1,
+            status=AssessmentFormStatus.ACTIVE,
+            parent_template=national_template_v2,
+            base_template=national_template_v1,
+        )
+        oyo_template = AssessmentFormTemplate.objects.create(
+            name="Oyo Declaration",
+            description="Oyo adopted declaration",
+            form_type=AssessmentFormType.HEALTH_DECLARATION,
+            scope=AssessmentFormScope.STATE,
+            state=self.oyo,
+            owner_level=AssessmentOwnerLevel.STATE,
+            owner_id=self.oyo.id,
+            version=1,
+            status=AssessmentFormStatus.ACTIVE,
+            parent_template=national_template_v1,
+            base_template=national_template_v1,
+        )
+        HealthDeclaration.objects.create(
+            assessment=self.assessment,
+            certified_true=True,
+            risk_flag=True,
+            submitted_at=timezone.now(),
+            validated_by_doctor=self.doctor,
+            validated_at=timezone.now(),
+        )
+        AssessmentFormTemplateAdoption.objects.create(
+            parent_template=national_template_v2,
+            child_template=lagos_template,
+            adopted_by_level=AssessmentOwnerLevel.STATE,
+            adopted_by_id=self.lagos.id,
+        )
+        AssessmentFormTemplateAdoption.objects.create(
+            parent_template=national_template_v1,
+            child_template=oyo_template,
+            adopted_by_level=AssessmentOwnerLevel.STATE,
+            adopted_by_id=self.oyo.id,
+        )
         self.client.force_authenticate(self.employer_user)
         blocked = self.client.get("/api/dashboard/federal/")
         self.assertEqual(blocked.status_code, 403)
@@ -824,6 +2441,10 @@ class DashboardReportingTests(APITestCase):
         self.assertIn("national_certification_coverage", payload["cards"])
         self.assertEqual(payload["cards"]["states_with_active_implementation"], 2)
         self.assertEqual(payload["cards"]["states_with_overdue_reports"], 2)
+        self.assertEqual(payload["cards"]["states_adopted_federal_declaration_template"], 2)
+        self.assertEqual(payload["cards"]["states_using_latest_federal_template_version"], 1)
+        self.assertEqual(payload["cards"]["states_pending_federal_template_adoption"], 0)
+        self.assertEqual(payload["cards"]["declarations_submitted_nationally"], 1)
         self.assertIn("national_vaccination_coverage", payload["cards"])
         self.assertIn("national_inspection_count", payload["cards"])
         self.assertIn("national_illness_reports", payload["cards"])
@@ -834,6 +2455,7 @@ class DashboardReportingTests(APITestCase):
         self.assertIn("facility_accreditation_by_state", payload["charts"])
         self.assertIn("vaccination_coverage_by_state", payload["charts"])
         self.assertIn("state_report_submission_status", payload["charts"])
+        self.assertEqual(payload["charts"]["risk_flag_trends_by_state"][0]["total"], 1)
 
     def test_analytics_endpoints_return_chart_payloads(self):
         OrganizationUnit.objects.create(
@@ -866,14 +2488,21 @@ class DashboardReportingTests(APITestCase):
             payload = data(response)
             self.assertIn("cards", payload, endpoint)
             self.assertIn("charts", payload, endpoint)
+            self.assertIn("dashboard_integration", payload, endpoint)
+            self.assertTrue(payload["dashboard_integration"]["shared_engine"], endpoint)
+            self.assertIn("widget_builder", payload["dashboard_integration"]["supported_workspaces"], endpoint)
 
         certificate_payload = data(self.client.get("/api/analytics/certificates/", {"state": str(self.oyo.id)}))
         self.assertEqual(certificate_payload["cards"]["issued"], 1)
         self.assertIn("issuance_trend", certificate_payload["charts"])
+        self.assertEqual(certificate_payload["dashboard_integration"]["module_key"], "certificates")
+        self.assertEqual(certificate_payload["dashboard_integration"]["dataset_sources"], ["certificates"])
         inspections_payload = data(self.client.get("/api/analytics/inspections/", {"date_to": timezone.localdate()}))
         self.assertEqual(inspections_payload["cards"]["inspections"], 1)
+        self.assertEqual(inspections_payload["dashboard_integration"]["module_key"], "inspections")
         employers_payload = data(self.client.get("/api/analytics/employers/"))
         self.assertEqual(employers_payload["charts"]["branch_by_state"][0]["total"], 1)
+        self.assertEqual(employers_payload["dashboard_integration"]["module_key"], "employers")
 
     def test_finance_analytics_require_finance_role(self):
         self.client.force_authenticate(self.employer_user)
@@ -892,13 +2521,97 @@ class DashboardReportingTests(APITestCase):
         self.assertEqual(data(settlements)["cards"]["paid"], 1)
 
     def test_facility_dashboard_reports_settlements_and_accreditation(self):
+        appointment = Appointment.objects.create(
+            food_handler=self.uncertified_handler,
+            facility=self.facility,
+            doctor=self.doctor,
+            appointment_date=timezone.now() + timezone.timedelta(days=1),
+            status=AppointmentStatus.CONFIRMED,
+        )
+        MedicalAssessment.objects.create(
+            food_handler=self.uncertified_handler,
+            employer=self.employer,
+            facility=self.facility,
+            doctor=self.doctor,
+            appointment=appointment,
+            declaration_status=StepStatus.PENDING,
+            physical_exam_status=StepStatus.PENDING,
+            lab_status=StepStatus.PENDING,
+            vaccination_status=StepStatus.PENDING,
+            final_decision=FitnessDecision.PENDING,
+            status="appointment_booked",
+        )
+        submitted_assessment = MedicalAssessment.objects.create(
+            food_handler=self.food_handler,
+            employer=self.employer,
+            facility=self.facility,
+            doctor=self.doctor,
+            declaration_status=StepStatus.SUBMITTED,
+            physical_exam_status=StepStatus.PENDING,
+            lab_status=StepStatus.PENDING,
+            vaccination_status=StepStatus.PENDING,
+            final_decision=FitnessDecision.PENDING,
+            status="declaration_submitted",
+        )
+        HealthDeclaration.objects.create(
+            assessment=submitted_assessment,
+            certified_true=True,
+            submitted_at=timezone.now() - timezone.timedelta(hours=6),
+            reopened_by=self.doctor,
+            reopened_at=timezone.now() - timezone.timedelta(hours=3),
+            clarification_requested_by=self.doctor,
+            clarification_requested_at=timezone.now() - timezone.timedelta(hours=2),
+            clarification_reason="Please correct symptoms.",
+        )
+        national_template = AssessmentFormTemplate.objects.create(
+            name="Federal Declaration",
+            description="Federal declaration",
+            form_type=AssessmentFormType.HEALTH_DECLARATION,
+            scope=AssessmentFormScope.NATIONAL,
+            owner_level=AssessmentOwnerLevel.FEDERAL,
+            version=1,
+            status=AssessmentFormStatus.PUBLISHED,
+        )
+        state_template = AssessmentFormTemplate.objects.create(
+            name="Lagos Declaration",
+            description="State declaration",
+            form_type=AssessmentFormType.HEALTH_DECLARATION,
+            scope=AssessmentFormScope.STATE,
+            state=self.lagos,
+            owner_level=AssessmentOwnerLevel.STATE,
+            owner_id=self.lagos.id,
+            version=1,
+            status=AssessmentFormStatus.PUBLISHED,
+            parent_template=national_template,
+            base_template=national_template,
+        )
+        AssessmentFormTemplate.objects.create(
+            name="Mainland Declaration",
+            description="Facility declaration",
+            form_type=AssessmentFormType.HEALTH_DECLARATION,
+            scope=AssessmentFormScope.FACILITY,
+            state=self.lagos,
+            facility=self.facility,
+            owner_level=AssessmentOwnerLevel.FACILITY,
+            owner_id=self.facility.id,
+            version=3,
+            status=AssessmentFormStatus.ACTIVE,
+            parent_template=state_template,
+            base_template=national_template,
+        )
         self.client.force_authenticate(self.facility_admin)
 
         response = self.client.get("/api/dashboard/facility/")
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(data(response)["cards"]["settled_amount"], "10000")
-        self.assertEqual(data(response)["cards"]["accreditation_status"], AccreditationStatus.APPROVED)
+        payload = data(response)
+        self.assertEqual(payload["cards"]["settled_amount"], "10000")
+        self.assertEqual(payload["cards"]["accreditation_status"], AccreditationStatus.APPROVED)
+        self.assertEqual(payload["cards"]["active_declaration_template_version"], "v3")
+        self.assertEqual(payload["cards"]["pending_declarations"], 1)
+        self.assertEqual(payload["cards"]["declarations_requiring_doctor_validation"], 1)
+        self.assertEqual(payload["cards"]["declarations_reopened_for_correction"], 1)
+        self.assertEqual(payload["cards"]["appointments_blocked_missing_declaration"], 1)
 
     def test_report_export_creates_csv_file_and_generated_record(self):
         self.client.force_authenticate(self.employer_user)

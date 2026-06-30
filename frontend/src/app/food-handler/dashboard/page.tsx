@@ -26,6 +26,15 @@ function latestByDate<T extends { created_at: string }>(rows: T[]) {
   return [...rows].sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at))[0];
 }
 
+function reportStatus(assessment?: MedicalAssessment, certificate?: Certificate | null) {
+  if (certificate) return "certificate_issued";
+  if (!assessment) return "not_available";
+  if (assessment.final_decision === "temporarily_not_fit") return "return_to_work_report_available";
+  if (assessment.final_decision === "not_fit") return "summary_report_available";
+  if (assessment.final_decision === "fit") return "certificate_pending";
+  return "assessment_in_progress";
+}
+
 export default function Page() {
   const router = useRouter();
   const [profile, setProfile] = useState<FoodHandlerProfile | null>(null);
@@ -67,6 +76,10 @@ export default function Page() {
 
   const latestAssessment = useMemo(() => latestByDate(assessments), [assessments]);
   const latestCertificate = useMemo(() => latestByDate(certificates), [certificates]);
+  const currentReportStatus = useMemo(
+    () => reportStatus(latestAssessment, latestCertificate),
+    [latestAssessment, latestCertificate],
+  );
 
   return (
     <PortalShell role="food_handler" title="Certification Dashboard" description="Track profile, identity, assessment, fitness decision, and certificate status.">
@@ -79,6 +92,13 @@ export default function Page() {
           <div className="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm"><ClipboardList className="text-brand-700" size={18} /><p className="mt-2 text-xs font-bold uppercase text-neutral-500">Assessment</p><div className="mt-2">{latestAssessment ? <AssessmentStatusBadge status={latestAssessment.status} /> : <StatusBadge status="not_started" />}</div></div>
           <div className="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm"><FileCheck2 className="text-brand-700" size={18} /><p className="mt-2 text-xs font-bold uppercase text-neutral-500">Next action</p><p className="text-sm font-bold text-neutral-900">{snapshot?.next_action.label || "Create assessment"}</p></div>
           <div className="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm"><BadgeCheck className="text-brand-700" size={18} /><p className="mt-2 text-xs font-bold uppercase text-neutral-500">Certificate</p><StatusBadge status={latestCertificate?.effective_status || "not_issued"} /></div>
+        </section>
+
+        <section className="grid gap-3 md:grid-cols-3 xl:grid-cols-4">
+          <div className="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm"><ClipboardList className="text-brand-700" size={18} /><p className="mt-2 text-xs font-bold uppercase text-neutral-500">Declaration</p><div className="mt-2"><StatusBadge status={latestAssessment?.declaration_status || "pending"} /></div></div>
+          <div className="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm"><CalendarDays className="text-brand-700" size={18} /><p className="mt-2 text-xs font-bold uppercase text-neutral-500">Appointment</p><div className="mt-2"><StatusBadge status={latestAssessment?.appointment_status || "not_booked"} /></div></div>
+          <div className="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm"><FileCheck2 className="text-brand-700" size={18} /><p className="mt-2 text-xs font-bold uppercase text-neutral-500">Report status</p><div className="mt-2"><StatusBadge status={currentReportStatus} /></div></div>
+          <div className="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm"><BadgeCheck className="text-brand-700" size={18} /><p className="mt-2 text-xs font-bold uppercase text-neutral-500">Fitness decision</p><div className="mt-2"><StatusBadge status={latestAssessment?.final_decision || "pending"} /></div></div>
         </section>
 
         {snapshot ? (

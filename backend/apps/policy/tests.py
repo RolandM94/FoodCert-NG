@@ -1,4 +1,5 @@
 from django.contrib.auth import get_user_model
+from django.utils import timezone
 from rest_framework.test import APITestCase
 
 from apps.accounts.models import UserRole
@@ -170,3 +171,57 @@ class StateMedicalFacilitySettingsTests(APITestCase):
         self.assertIn("own_org_event", events)
         self.assertIn("legacy_state_event", events)
         self.assertNotIn("other_org_event", events)
+
+    def test_state_audit_logs_support_extended_filters_and_scope_fields(self):
+        inspector = User.objects.create_user(
+            "lagos-inspector",
+            "inspector@example.com",
+            "StrongPass123!",
+            role=UserRole.INSPECTOR,
+            state=self.lagos,
+            first_name="Ife",
+            last_name="Inspector",
+        )
+        log = AuditLog.objects.create(
+            actor=inspector,
+            action=AuditAction.WORKFLOW_TRANSITION,
+            state=self.lagos,
+            metadata={
+                "event": "public_notice_published",
+                "entity": "BroadcastMessage",
+                "facility_id": "facility-123",
+                "facility_name": "Mainland Diagnostics",
+                "lga_id": "lga-ikeja",
+                "lga_name": "Ikeja",
+            },
+            target_type="BroadcastMessage",
+            target_id="broadcast-123",
+        )
+        self.client.force_authenticate(self.state_admin)
+
+        response = self.client.get(
+            "/api/state-policy-configs/my-audit-logs/",
+            {
+                "actor": "Ife",
+                "role": UserRole.INSPECTOR,
+                "action": AuditAction.WORKFLOW_TRANSITION,
+                "entity": "BroadcastMessage",
+                "date_from": timezone.localdate().isoformat(),
+                "date_to": timezone.localdate().isoformat(),
+                "lga": "Ikeja",
+                "facility": "Mainland",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        rows = payload(response)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["id"], str(log.id))
+        self.assertEqual(rows[0]["actor_role"], "Inspector")
+        self.assertEqual(rows[0]["module"], "Public Awareness")
+        self.assertEqual(rows[0]["event"], "Public notice published")
+        self.assertEqual(rows[0]["entity"], "BroadcastMessage")
+        self.assertEqual(rows[0]["entity_label"], "BroadcastMessage")
+        self.assertEqual(rows[0]["lga_name"], "Ikeja")
+        self.assertEqual(rows[0]["facility_name"], "Mainland Diagnostics")
+        self.assertEqual(rows[0]["risk_level"], "medium")

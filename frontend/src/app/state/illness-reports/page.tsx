@@ -3,7 +3,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { AlertTriangle, Download, HeartPulse } from "lucide-react";
 import { useSearchParams } from "next/navigation";
-import { useState } from "react";
+import { Suspense, useState } from "react";
 import { PortalShell } from "@/components/layout/portal-shell";
 import { DataTable } from "@/components/ui/data-table";
 import { IllnessExclusionStatusBadge, ReturnToWorkStatusBadge } from "@/components/ui/illness-status-badges";
@@ -15,7 +15,7 @@ function dateLabel(value?: string | null) {
   return new Date(value).toLocaleDateString("en-NG", { dateStyle: "medium" });
 }
 
-export default function Page() {
+function StateIllnessReportsPageContent() {
   const searchParams = useSearchParams();
   const [clearanceStatus, setClearanceStatus] = useState("");
   const [exceptionFilter, setExceptionFilter] = useState(searchParams.get("filter") || "active_exclusions");
@@ -105,5 +105,13 @@ export default function Page() {
         </section>
       </div>
     </PortalShell>
+  );
+}
+
+export default function Page() {
+  return (
+    <Suspense fallback={null}>
+      <StateIllnessReportsPageContent />
+    </Suspense>
   );
 }

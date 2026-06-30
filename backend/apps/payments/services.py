@@ -340,6 +340,33 @@ class PaymentService:
     def _receipt_number(cls):
         return cls._reference("RCT")
 
+    @staticmethod
+    def workflow_status(*, transaction_obj):
+        if not transaction_obj:
+            return "unpaid"
+        metadata = transaction_obj.metadata or {}
+        override_status = str(metadata.get("payment_override_status", "")).strip().lower()
+        if override_status in {"unpaid", "pending", "paid", "failed", "waived", "refunded"}:
+            return override_status
+        if metadata.get("payment_waived"):
+            return "waived"
+        if transaction_obj.status == PaymentStatus.SUCCESS:
+            return "paid"
+        if transaction_obj.status == PaymentStatus.REFUNDED:
+            return "refunded"
+        if transaction_obj.status in {PaymentStatus.FAILED, PaymentStatus.CANCELLED}:
+            return "failed"
+        return "pending"
+
+    @classmethod
+    def can_confirm_at_facility(cls, *, transaction_obj):
+        if not transaction_obj:
+            return False
+        if cls.workflow_status(transaction_obj=transaction_obj) in {"paid", "waived", "refunded"}:
+            return False
+        metadata = transaction_obj.metadata or {}
+        return bool(metadata.get("pay_at_facility_allowed"))
+
     @classmethod
     def receipt_for_payment(cls, *, transaction_obj: PaymentTransaction):
         metadata = transaction_obj.metadata or {}
@@ -392,6 +419,44 @@ class PaymentService:
                 status=AssessmentStatus.PAYMENT_CONFIRMED,
                 updated_at=timezone.now(),
             )
+
+    @classmethod
+    def confirm_payment_at_facility(cls, *, transaction_obj: PaymentTransaction, actor, facility, notes="", payment_method="cash"):
+        metadata = transaction_obj.metadata or {}
+        if str(metadata.get("facility_id") or "") != str(facility.id):
+            raise ValueError("This payment does not belong to the selected facility.")
+        if not cls.can_confirm_at_facility(transaction_obj=transaction_obj):
+            raise ValueError("This payment is not enabled for pay-at-facility confirmation.")
+
+        paid_at = timezone.now()
+        transaction_obj.status = PaymentStatus.SUCCESS
+        transaction_obj.paid_at = paid_at
+        if not transaction_obj.provider_reference:
+            transaction_obj.provider_reference = cls._reference("FACPAY")
+        transaction_obj.metadata = {
+            **metadata,
+            "payment_method": payment_method or metadata.get("payment_method") or "cash",
+            "payment_override_status": "paid",
+            "facility_payment_confirmed": True,
+            "facility_payment_confirmed_at": paid_at.isoformat(),
+            "facility_payment_confirmed_by": str(actor.id),
+            "facility_payment_notes": notes,
+            "confirmation_channel": "facility",
+        }
+        transaction_obj.save(update_fields=["status", "paid_at", "provider_reference", "metadata", "updated_at"])
+        cls._post_successful_payment(transaction_obj=transaction_obj, actor=actor)
+        receipt = getattr(transaction_obj, "receipt", None)
+        log_action(
+            action=AuditAction.PAYMENT_EVENT,
+            actor=actor,
+            target=transaction_obj,
+            metadata={
+                "event": "facility_payment_confirmed",
+                "facility_id": str(facility.id),
+                "receipt_number": receipt.receipt_number if receipt else "",
+            },
+        )
+        return transaction_obj
 
     @classmethod
     def allocations_for_bulk_payment(cls, *, transaction_obj: PaymentTransaction):

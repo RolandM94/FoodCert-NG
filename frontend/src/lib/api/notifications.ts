@@ -201,3 +201,8 @@ export async function sendBroadcast(id: string): Promise<BroadcastMessage> {
   const response = await apiClient.post<ApiEnvelope<BroadcastMessage>>(`/admin/broadcasts/${id}/send/`);
   return unwrap(response.data);
 }
+
+export async function archiveBroadcast(id: string): Promise<BroadcastMessage> {
+  const response = await apiClient.post<ApiEnvelope<BroadcastMessage>>(`/admin/broadcasts/${id}/archive/`);
+  return unwrap(response.data);
+}

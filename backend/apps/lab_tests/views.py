@@ -1,4 +1,5 @@
 from drf_spectacular.utils import extend_schema
+from django.db.models import Q
 from rest_framework import viewsets
 from rest_framework.decorators import action
 from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
@@ -20,6 +21,8 @@ class LabTestViewSet(viewsets.ReadOnlyModelViewSet):
         "assessment__food_handler",
         "assessment__facility",
         "assessment__facility__organization",
+        "assigned_lab_staff",
+        "assigned_lab_unit",
         "requested_by",
         "resulted_by",
         "reviewed_by",
@@ -151,7 +154,10 @@ class LabRequestViewSet(LabTestViewSet):
         queryset = super().get_queryset()
         user = self.request.user
         if user.role == UserRole.LAB_STAFF:
-            return queryset.filter(assessment__facility__organization=user.organization)
+            filters = Q(assigned_lab_staff=user)
+            if getattr(user, "unit_id", None):
+                filters |= Q(assigned_lab_unit_id=user.unit_id, assigned_lab_staff__isnull=True)
+            return queryset.filter(filters)
         if user.role == UserRole.DOCTOR:
             return queryset.filter(assessment__doctor=user)
         return queryset

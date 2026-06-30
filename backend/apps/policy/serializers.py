@@ -1,3 +1,4 @@
+from django.utils.text import capfirst
 from rest_framework import serializers
 
 from apps.audit.models import AuditLog
@@ -153,9 +154,19 @@ class StatePolicyConfigSerializer(serializers.ModelSerializer):
 class StateAuditLogSerializer(serializers.ModelSerializer):
     actor_name = serializers.CharField(source="actor.get_full_name", read_only=True)
     actor_email = serializers.EmailField(source="actor.email", read_only=True)
+    actor_role = serializers.SerializerMethodField()
     module = serializers.SerializerMethodField()
     event = serializers.SerializerMethodField()
     status = serializers.SerializerMethodField()
+    entity = serializers.SerializerMethodField()
+    entity_label = serializers.SerializerMethodField()
+    risk_level = serializers.SerializerMethodField()
+    organization_name = serializers.CharField(source="organization.name", read_only=True)
+    state_name = serializers.CharField(source="state.name", read_only=True)
+    lga_id = serializers.SerializerMethodField()
+    lga_name = serializers.SerializerMethodField()
+    facility_id = serializers.SerializerMethodField()
+    facility_name = serializers.SerializerMethodField()
 
     class Meta:
         model = AuditLog
@@ -164,22 +175,99 @@ class StateAuditLogSerializer(serializers.ModelSerializer):
             "created_at",
             "actor_name",
             "actor_email",
+            "actor_role",
             "action",
             "module",
             "event",
+            "entity",
+            "entity_label",
             "target_type",
             "target_id",
             "status",
+            "risk_level",
+            "organization_name",
+            "state_name",
+            "lga_id",
+            "lga_name",
+            "facility_id",
+            "facility_name",
             "ip_address",
             "user_agent",
             "metadata",
         )
 
+    def get_actor_role(self, obj):
+        if not obj.actor:
+            return ""
+        return getattr(obj.actor, "get_role_display", lambda: obj.actor.role)()
+
     def get_module(self, obj):
-        return obj.metadata.get("module") or obj.target_type or "Platform"
+        metadata_module = obj.metadata.get("module")
+        if metadata_module:
+            return metadata_module
+        event = str(obj.metadata.get("event") or "").lower()
+        target_type = (obj.target_type or "").lower()
+        if "template" in event or "form" in event:
+            return "Forms"
+        if "broadcast" in event or "notice" in event:
+            return "Public Awareness"
+        if "report" in event or "indicator" in event:
+            return "Reporting & M&E"
+        if "inspection" in event or "enforcement" in event:
+            return "Compliance"
+        if "facility" in event or "accredit" in event:
+            return "Medical Facilities"
+        if "fee" in event or obj.action == "payment_event":
+            return "Fees & Payments"
+        if "policy" in event:
+            return "Standards & Policy"
+        if "membership" in event or "invite" in event or "role" in event or target_type in {"organizationmembership", "role"}:
+            return "Stakeholder Management"
+        return obj.target_type or "Platform"
 
     def get_event(self, obj):
-        return obj.metadata.get("event") or obj.get_action_display()
+        raw_event = obj.metadata.get("event")
+        if raw_event:
+            return capfirst(str(raw_event).replace("_", " "))
+        return obj.get_action_display()
 
     def get_status(self, obj):
         return obj.metadata.get("status") or "success"
+
+    def get_entity(self, obj):
+        return obj.metadata.get("entity") or obj.target_type or "Platform"
+
+    def get_entity_label(self, obj):
+        entity = self.get_entity(obj)
+        return capfirst(str(entity).replace("_", " "))
+
+    def get_risk_level(self, obj):
+        if obj.action in {"security_event", "medical_record_access"}:
+            return "high"
+        if obj.action in {"delete", "role_change", "payment_event", "workflow_transition"}:
+            return "medium"
+        return "low"
+
+    def get_lga_id(self, obj):
+        return (
+            obj.metadata.get("lga_id")
+            or obj.metadata.get("branch_lga_id")
+            or ""
+        )
+
+    def get_lga_name(self, obj):
+        return (
+            obj.metadata.get("lga_name")
+            or obj.metadata.get("branch_lga_name")
+            or ""
+        )
+
+    def get_facility_id(self, obj):
+        return obj.metadata.get("facility_id") or ""
+
+    def get_facility_name(self, obj):
+        return (
+            obj.metadata.get("facility_name")
+            or obj.metadata.get("facility")
+            or ""
+        )

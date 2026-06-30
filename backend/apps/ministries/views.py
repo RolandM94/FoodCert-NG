@@ -23,7 +23,7 @@ from apps.facilities.models import AccreditationStatus, FacilityAccreditationApp
 from apps.facilities.serializers import FacilityAccreditationApplicationSerializer, MedicalFacilitySerializer
 from apps.facilities.services import FacilityAccreditationService
 from apps.ministries.permissions import IsFederalMinistryUser, IsStateMinistryUser, can_manage_state_users
-from apps.ministries.permissions import can_assign_inspections, can_manage_federal_queries, can_manage_national_policy, can_manage_state_fees, can_review_facility_accreditation, can_submit_state_reports, can_validate_certificates
+from apps.ministries.permissions import can_assign_inspections, can_manage_federal_profile, can_manage_federal_queries, can_manage_national_policy, can_manage_state_fees, can_review_facility_accreditation, can_review_state_reports, can_submit_state_reports, can_validate_certificates
 from apps.ministries.serializers import (
     DashboardQuerySerializer,
     OrganizationUnitSerializer,
@@ -46,14 +46,22 @@ from apps.ministries.serializers import (
     FederalCertificateRegistrySerializer,
     FederalEmployerRegistrySerializer,
     FederalFacilityRegistrySerializer,
+    ComplianceAlertSerializer,
+    ComplianceAlertCreateSerializer,
+    ComplianceAlertActionSerializer,
+    PublicNoticeSerializer,
+    PublicNoticeActionSerializer,
+    FederalProfileSerializer,
+    FederalReportReviewSerializer,
     NationalPolicyConfigSerializer,
     StatePolicyConfigSerializer,
     FederalStateQueryCreateSerializer,
     FederalStateQueryResponseSerializer,
     FederalStateQuerySerializer,
 )
-from apps.ministries.models import FederalStateQuery, StateReport
-from apps.ministries.services import FederalFinanceService, FederalOversightService, FederalPerformanceService, MinistryDashboardService, StateReportService, get_state_ministry_organization
+from apps.ministries.compliance import ComplianceDetectionService
+from apps.ministries.models import ComplianceAlert, ComplianceAlertStatus, FederalProfile, FederalStateQuery, PublicNotice, StateReport
+from apps.ministries.services import FederalFinanceService, FederalOversightService, FederalPerformanceService, MinistryDashboardService, PublicNoticeService, StateReportService, get_state_ministry_organization
 from apps.organizations.models import OrganizationUnit
 from apps.organizations.services import create_unit, deactivate_unit, update_unit
 from apps.payments.models import ActiveStatus, AssessmentFee, PaymentTransaction, RefundRequest
@@ -97,6 +105,14 @@ class FederalDashboardView(APIView):
     @extend_schema(responses=dict)
     def get(self, request):
         return Response(MinistryDashboardService.federal_dashboard(request.user))
+
+
+class FederalDashboardWidgetsView(APIView):
+    permission_classes = [IsAuthenticated, IsActiveUser, IsFederalMinistryUser]
+
+    @extend_schema(responses=dict)
+    def get(self, request):
+        return Response(FederalOversightService.dashboard_widgets())
 
 
 class FederalStatePerformanceView(APIView):
@@ -345,20 +361,79 @@ class FederalFacilityRegistryView(APIView):
 
     @extend_schema(responses=FederalFacilityRegistrySerializer(many=True))
     def get(self, request):
-        queryset = MedicalFacility.objects.select_related("state", "lga").order_by("state__name", "facility_name")
-        state = request.query_params.get("state")
-        if state:
-            queryset = queryset.filter(state_id=state)
-        status_filter = request.query_params.get("status")
-        if status_filter:
-            queryset = queryset.filter(accreditation_status=status_filter)
-        facility_type = request.query_params.get("facility_type")
-        if facility_type:
-            queryset = queryset.filter(facility_type=facility_type)
-        search = request.query_params.get("search")
-        if search:
-            queryset = queryset.filter(Q(facility_name__icontains=search) | Q(license_number__icontains=search))
+        today = timezone.localdate()
+        queryset = (
+            MedicalFacility.objects.select_related("state", "lga")
+            .annotate(
+                assessments_count=Count("assessments", distinct=True),
+                certificates_count=Count("certificates", distinct=True),
+                temporary_unfit_count=Count(
+                    "assessments",
+                    filter=Q(assessments__final_decision="temporarily_not_fit"),
+                    distinct=True,
+                ),
+            )
+            .order_by("state__name", "facility_name")
+        )
+        params = request.query_params
+        if params.get("state"):
+            queryset = queryset.filter(state_id=params["state"])
+        if params.get("lga"):
+            queryset = queryset.filter(lga_id=params["lga"])
+        if params.get("status"):
+            queryset = queryset.filter(accreditation_status=params["status"])
+        if params.get("facility_type"):
+            queryset = queryset.filter(facility_type=params["facility_type"])
+        expiry = params.get("accreditation_expiry")
+        if expiry == "expired":
+            queryset = queryset.filter(accreditation_expiry_date__lt=today)
+        elif expiry:
+            try:
+                days = int(expiry)
+                queryset = queryset.filter(
+                    accreditation_expiry_date__gte=today,
+                    accreditation_expiry_date__lte=today + timezone.timedelta(days=days),
+                )
+            except ValueError:
+                raise ValidationError("accreditation_expiry must be a number of days or 'expired'.")
+        min_volume = params.get("min_assessment_volume")
+        if min_volume:
+            try:
+                queryset = queryset.filter(assessments_count__gte=int(min_volume))
+            except ValueError:
+                raise ValidationError("min_assessment_volume must be a number.")
+        if params.get("search"):
+            queryset = queryset.filter(Q(facility_name__icontains=params["search"]) | Q(license_number__icontains=params["search"]))
         return Response(FederalFacilityRegistrySerializer(queryset[:500], many=True).data)
+
+
+class FederalFacilityFlagView(APIView):
+    permission_classes = [IsAuthenticated, IsActiveUser, IsFederalMinistryUser]
+
+    def post(self, request, pk):
+        if not can_manage_federal_queries(request.user):
+            raise PermissionDenied("You cannot flag facilities for state review.")
+        facility = get_object_or_404(MedicalFacility.objects.select_related("state"), pk=pk)
+        subject = request.data.get("subject", "").strip() or f"Facility review requested: {facility.facility_name}"
+        description = request.data.get("description", "").strip()
+        if not facility.state_id:
+            raise ValidationError("Facility is not assigned to a state.")
+        query = FederalStateQuery.objects.create(
+            state=facility.state,
+            subject=subject,
+            description=description,
+            category="facility_oversight",
+            priority=request.data.get("priority", "high"),
+            raised_by=request.user,
+        )
+        log_action(
+            action=AuditAction.WORKFLOW_TRANSITION,
+            actor=request.user,
+            target=query,
+            state=facility.state,
+            metadata={"event": "facility_flagged_for_state_review", "facility_id": str(facility.id)},
+        )
+        return Response(FederalStateQuerySerializer(query).data, status=status.HTTP_201_CREATED)
 
 
 class FederalEmployerRegistryView(APIView):
@@ -396,6 +471,30 @@ class FederalFoodHandlerSummaryView(APIView):
                 "by_status": list(handlers.values("current_status").annotate(total=Count("id")).order_by("current_status")),
             }
         )
+
+
+class FederalProfileView(APIView):
+    permission_classes = [IsAuthenticated, IsActiveUser, IsFederalMinistryUser]
+
+    def get_object(self):
+        profile = FederalProfile.objects.order_by("-created_at").first()
+        if profile:
+            return profile
+        return FederalProfile.objects.create()
+
+    @extend_schema(responses=FederalProfileSerializer)
+    def get(self, request):
+        return Response(FederalProfileSerializer(self.get_object()).data)
+
+    @extend_schema(request=FederalProfileSerializer, responses=FederalProfileSerializer)
+    def patch(self, request):
+        if not can_manage_federal_profile(request.user):
+            raise PermissionDenied("You cannot manage the federal ministry profile.")
+        serializer = FederalProfileSerializer(self.get_object(), data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        profile = serializer.save(updated_by=request.user)
+        log_action(action=AuditAction.UPDATE, actor=request.user, target=profile, metadata={"event": "federal_profile_updated"})
+        return Response(FederalProfileSerializer(profile).data)
 
 
 class FederalPolicyView(APIView):
@@ -457,6 +556,12 @@ class FederalAuditLogView(APIView):
                 action=request.query_params.get("action", ""),
                 state=request.query_params.get("state", ""),
                 search=request.query_params.get("search", ""),
+                entity_type=request.query_params.get("entity_type", ""),
+                entity_id=request.query_params.get("entity_id", ""),
+                actor=request.query_params.get("actor", ""),
+                role=request.query_params.get("role", ""),
+                date_from=request.query_params.get("date_from", ""),
+                date_to=request.query_params.get("date_to", ""),
             )
         )
 
@@ -527,6 +632,240 @@ class FederalQueryCloseView(APIView):
         return Response(FederalStateQuerySerializer(FederalOversightService.close_query(query=query, actor=request.user)).data)
 
 
+class FederalReportListView(APIView):
+    permission_classes = [IsAuthenticated, IsActiveUser, IsFederalMinistryUser]
+
+    @extend_schema(responses=StateReportSerializer(many=True))
+    def get(self, request):
+        queryset = FederalOversightService.submitted_reports(
+            state=request.query_params.get("state"),
+            status=request.query_params.get("status"),
+        )
+        return Response(StateReportSerializer(queryset[:500], many=True).data)
+
+
+class FederalReportReviewView(APIView):
+    permission_classes = [IsAuthenticated, IsActiveUser, IsFederalMinistryUser]
+    action_name = ""
+
+    @extend_schema(request=FederalReportReviewSerializer, responses=StateReportSerializer)
+    def patch(self, request, pk):
+        if not can_review_state_reports(request.user):
+            raise PermissionDenied("You cannot review state reports.")
+        report = get_object_or_404(StateReport.objects.select_related("state"), pk=pk)
+        serializer = FederalReportReviewSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        report = FederalOversightService.review_report(
+            report=report,
+            actor=request.user,
+            action=self.action_name,
+            comment=serializer.validated_data.get("comment", ""),
+        )
+        return Response(StateReportSerializer(report).data)
+
+
+class FederalReportAcceptView(FederalReportReviewView):
+    action_name = "accept"
+
+
+class FederalReportReturnView(FederalReportReviewView):
+    action_name = "return"
+
+
+class FederalReportEscalateView(FederalReportReviewView):
+    action_name = "escalate"
+
+
+class FederalComplianceAlertListCreateView(APIView):
+    permission_classes = [IsAuthenticated, IsActiveUser, IsFederalMinistryUser]
+
+    def get_queryset(self):
+        queryset = ComplianceAlert.objects.select_related("state", "created_by", "resolved_by").order_by("-created_at")
+        params = self.request.query_params
+        if params.get("status"):
+            queryset = queryset.filter(status=params["status"])
+        if params.get("alert_type"):
+            queryset = queryset.filter(alert_type=params["alert_type"])
+        if params.get("severity"):
+            queryset = queryset.filter(severity=params["severity"])
+        if params.get("state"):
+            queryset = queryset.filter(state_id=params["state"])
+        if params.get("auto_generated") in {"true", "false"}:
+            queryset = queryset.filter(auto_generated=params["auto_generated"] == "true")
+        return queryset
+
+    @extend_schema(responses=ComplianceAlertSerializer(many=True))
+    def get(self, request):
+        return Response(ComplianceAlertSerializer(self.get_queryset()[:500], many=True).data)
+
+    @extend_schema(request=ComplianceAlertCreateSerializer, responses={201: ComplianceAlertSerializer})
+    def post(self, request):
+        if not can_manage_federal_queries(request.user):
+            raise PermissionDenied("You cannot create compliance alerts.")
+        serializer = ComplianceAlertCreateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        alert = serializer.save(auto_generated=False, created_by=request.user, last_detected_at=timezone.now())
+        log_action(action=AuditAction.WORKFLOW_TRANSITION, actor=request.user, target=alert, state=alert.state, metadata={"event": "compliance_alert_created"})
+        return Response(ComplianceAlertSerializer(alert).data, status=status.HTTP_201_CREATED)
+
+
+class FederalComplianceScanView(APIView):
+    permission_classes = [IsAuthenticated, IsActiveUser, IsFederalMinistryUser]
+
+    @extend_schema(responses=dict)
+    def post(self, request):
+        if not can_manage_federal_queries(request.user):
+            raise PermissionDenied("You cannot run the compliance scan.")
+        return Response(ComplianceDetectionService.scan(actor=request.user))
+
+
+class FederalComplianceAlertActionView(APIView):
+    permission_classes = [IsAuthenticated, IsActiveUser, IsFederalMinistryUser]
+    action_name = ""
+
+    @extend_schema(request=ComplianceAlertActionSerializer, responses=ComplianceAlertSerializer)
+    def patch(self, request, pk):
+        if not can_manage_federal_queries(request.user):
+            raise PermissionDenied("You cannot manage compliance alerts.")
+        alert = get_object_or_404(ComplianceAlert.objects.select_related("state"), pk=pk)
+        serializer = ComplianceAlertActionSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        note = serializer.validated_data.get("note", "")
+        if self.action_name == "acknowledge":
+            alert.status = ComplianceAlertStatus.ACKNOWLEDGED
+            alert.acknowledged_by = request.user
+        elif self.action_name == "in_review":
+            alert.status = ComplianceAlertStatus.IN_REVIEW
+        elif self.action_name == "resolve":
+            alert.status = ComplianceAlertStatus.RESOLVED
+            alert.resolved_by = request.user
+            alert.resolved_at = timezone.now()
+            alert.resolution_note = note
+        elif self.action_name == "dismiss":
+            alert.status = ComplianceAlertStatus.DISMISSED
+            alert.resolved_by = request.user
+            alert.resolved_at = timezone.now()
+            alert.resolution_note = note
+        else:
+            raise ValidationError("Unsupported compliance alert action.")
+        alert.save()
+        log_action(action=AuditAction.WORKFLOW_TRANSITION, actor=request.user, target=alert, state=alert.state, metadata={"event": f"compliance_alert_{self.action_name}", "note": note})
+        return Response(ComplianceAlertSerializer(alert).data)
+
+
+class FederalComplianceAlertAcknowledgeView(FederalComplianceAlertActionView):
+    action_name = "acknowledge"
+
+
+class FederalComplianceAlertReviewView(FederalComplianceAlertActionView):
+    action_name = "in_review"
+
+
+class FederalComplianceAlertResolveView(FederalComplianceAlertActionView):
+    action_name = "resolve"
+
+
+class FederalComplianceAlertDismissView(FederalComplianceAlertActionView):
+    action_name = "dismiss"
+
+
+class FederalPublicNoticeListCreateView(APIView):
+    permission_classes = [IsAuthenticated, IsActiveUser, IsFederalMinistryUser]
+
+    def get_queryset(self):
+        queryset = PublicNotice.objects.select_related("created_by", "published_by").order_by("-created_at")
+        params = self.request.query_params
+        if params.get("status"):
+            queryset = queryset.filter(status=params["status"])
+        return queryset
+
+    @extend_schema(responses=PublicNoticeSerializer(many=True))
+    def get(self, request):
+        return Response(PublicNoticeSerializer(self.get_queryset()[:500], many=True).data)
+
+    @extend_schema(request=PublicNoticeSerializer, responses={201: PublicNoticeSerializer})
+    def post(self, request):
+        if not can_manage_federal_queries(request.user):
+            raise PermissionDenied("You cannot create public notices.")
+        serializer = PublicNoticeSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        notice = serializer.save(created_by=request.user)
+        log_action(action=AuditAction.CREATE, actor=request.user, target=notice, metadata={"event": "public_notice_created"})
+        return Response(PublicNoticeSerializer(notice).data, status=status.HTTP_201_CREATED)
+
+
+class FederalPublicNoticeDetailView(APIView):
+    permission_classes = [IsAuthenticated, IsActiveUser, IsFederalMinistryUser]
+
+    def get_object(self, pk):
+        return get_object_or_404(PublicNotice.objects.select_related("created_by", "published_by"), pk=pk)
+
+    @extend_schema(responses=PublicNoticeSerializer)
+    def get(self, request, pk):
+        return Response(PublicNoticeSerializer(self.get_object(pk)).data)
+
+    @extend_schema(request=PublicNoticeSerializer, responses=PublicNoticeSerializer)
+    def patch(self, request, pk):
+        if not can_manage_federal_queries(request.user):
+            raise PermissionDenied("You cannot edit public notices.")
+        notice = self.get_object(pk)
+        if notice.status not in {"draft", "submitted"}:
+            raise ValidationError("Only draft or submitted notices can be edited.")
+        serializer = PublicNoticeSerializer(notice, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        notice = serializer.save()
+        log_action(action=AuditAction.UPDATE, actor=request.user, target=notice, metadata={"event": "public_notice_updated"})
+        return Response(PublicNoticeSerializer(notice).data)
+
+
+class FederalPublicNoticeActionView(APIView):
+    permission_classes = [IsAuthenticated, IsActiveUser, IsFederalMinistryUser]
+    action_name = ""
+
+    @extend_schema(request=PublicNoticeActionSerializer, responses=PublicNoticeSerializer)
+    def patch(self, request, pk):
+        if not can_manage_federal_queries(request.user):
+            raise PermissionDenied("You cannot manage public notices.")
+        notice = get_object_or_404(PublicNotice, pk=pk)
+        serializer = PublicNoticeActionSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        notice = PublicNoticeService.transition(
+            notice=notice, actor=request.user, action=self.action_name,
+            comment=serializer.validated_data.get("comment", ""),
+        )
+        return Response(PublicNoticeSerializer(notice).data)
+
+
+class FederalPublicNoticeSubmitView(FederalPublicNoticeActionView):
+    action_name = "submit"
+
+
+class FederalPublicNoticeApproveView(FederalPublicNoticeActionView):
+    action_name = "approve"
+
+
+class FederalPublicNoticePublishView(FederalPublicNoticeActionView):
+    action_name = "publish"
+
+
+class FederalPublicNoticeArchiveView(FederalPublicNoticeActionView):
+    action_name = "archive"
+
+
+class FederalStateAdoptionReminderView(APIView):
+    permission_classes = [IsAuthenticated, IsActiveUser, IsFederalMinistryUser]
+
+    @extend_schema(responses=dict)
+    def post(self, request, state_id):
+        if not can_manage_federal_queries(request.user):
+            raise PermissionDenied("You cannot send state adoption reminders.")
+        from apps.locations.models import State
+
+        state = get_object_or_404(State, pk=state_id)
+        result = FederalOversightService.send_adoption_reminder(state=state, actor=request.user)
+        return Response(result)
+
+
 class StateOrganizationMixin:
     def get_state_organization(self):
         organization = get_state_ministry_organization(self.request.user)
@@ -542,6 +881,7 @@ class StateOrganizationMixin:
 
 class StateUnitListCreateView(StateOrganizationMixin, APIView):
     permission_classes = [IsAuthenticated, IsActiveUser, IsStateMinistryUser]
+    state_permission_codes = {"GET": "unit.view", "POST": "unit.create"}
 
     @extend_schema(responses=OrganizationUnitSerializer(many=True))
     def get(self, request):
@@ -560,6 +900,7 @@ class StateUnitListCreateView(StateOrganizationMixin, APIView):
 
 class StateUnitDetailView(StateOrganizationMixin, APIView):
     permission_classes = [IsAuthenticated, IsActiveUser, IsStateMinistryUser]
+    state_permission_codes = {"GET": "unit.view", "PATCH": "unit.update", "DELETE": "unit.deactivate"}
 
     def get_object(self, pk):
         return get_object_or_404(self.get_unit_queryset(), pk=pk)
@@ -588,6 +929,7 @@ class StateUnitDetailView(StateOrganizationMixin, APIView):
 
 class StateUserListView(APIView):
     permission_classes = [IsAuthenticated, IsActiveUser, IsStateMinistryUser]
+    state_permission_code = "user.view"
 
     @extend_schema(responses=StateMinistryUserSerializer(many=True))
     def get(self, request):
@@ -602,6 +944,7 @@ class StateUserListView(APIView):
 
 class StateInviteListCreateView(StateOrganizationMixin, APIView):
     permission_classes = [IsAuthenticated, IsActiveUser, IsStateMinistryUser]
+    state_permission_codes = {"GET": "invite.view", "POST": "invite.create"}
 
     @extend_schema(responses=StateMinistryInviteSerializer(many=True))
     def get(self, request):
@@ -636,6 +979,7 @@ class StateInviteListCreateView(StateOrganizationMixin, APIView):
 
 class StateInviteDetailView(StateOrganizationMixin, APIView):
     permission_classes = [IsAuthenticated, IsActiveUser, IsStateMinistryUser]
+    state_permission_codes = {"GET": "invite.view", "DELETE": "invite.revoke"}
 
     def get_object(self, pk):
         return get_object_or_404(
@@ -725,6 +1069,7 @@ class StateFacilityMixin:
 
 class StateFacilityListView(StateFacilityMixin, APIView):
     permission_classes = [IsAuthenticated, IsActiveUser, IsStateMinistryUser]
+    state_permission_code = "facility.accredit"
 
     @extend_schema(responses=MedicalFacilitySerializer(many=True))
     def get(self, request):
@@ -733,6 +1078,7 @@ class StateFacilityListView(StateFacilityMixin, APIView):
 
 class StateFacilityApplicationListView(StateFacilityMixin, APIView):
     permission_classes = [IsAuthenticated, IsActiveUser, IsStateMinistryUser]
+    state_permission_code = "facility.accredit"
 
     @extend_schema(responses=FacilityAccreditationApplicationSerializer(many=True))
     def get(self, request):
@@ -741,6 +1087,7 @@ class StateFacilityApplicationListView(StateFacilityMixin, APIView):
 
 class StateFacilityApplicationActionView(StateFacilityMixin, APIView):
     permission_classes = [IsAuthenticated, IsActiveUser, IsStateMinistryUser]
+    state_permission_code = "facility.accredit"
     action_name = ""
 
     @extend_schema(responses=FacilityAccreditationApplicationSerializer)
@@ -752,6 +1099,7 @@ class StateFacilityApplicationActionView(StateFacilityMixin, APIView):
 
 class StateFacilityActionView(StateFacilityMixin, APIView):
     permission_classes = [IsAuthenticated, IsActiveUser, IsStateMinistryUser]
+    state_permission_code = "facility.accredit"
     action_name = ""
 
     @extend_schema(responses=FacilityAccreditationApplicationSerializer)
@@ -795,6 +1143,7 @@ class StateFacilityApplicationReinstateView(StateFacilityApplicationActionView):
 
 class StateAssessmentFeeListCreateView(APIView):
     permission_classes = [IsAuthenticated, IsActiveUser, IsStateMinistryUser]
+    state_permission_codes = {"GET": "payment.view", "POST": "state.fee.manage"}
 
     def get_queryset(self):
         user = self.request.user
@@ -868,6 +1217,8 @@ class StateAssessmentFeeListCreateView(APIView):
 
 
 class StateAssessmentFeeDetailView(StateAssessmentFeeListCreateView):
+    state_permission_codes = {"PATCH": "state.fee.manage", "POST": "state.fee.manage"}
+
     def get_object(self, pk):
         return get_object_or_404(self.get_queryset(), pk=pk)
 
@@ -977,6 +1328,8 @@ class StateCertificateValidationMixin:
 
 class StateCertificateValidationListView(StateCertificateValidationMixin, APIView):
     permission_classes = [IsAuthenticated, IsActiveUser, IsStateMinistryUser]
+    state_permission_code = "certificate.validate"
+    requires_restricted_medical_oversight = True
 
     @extend_schema(responses=StateCertificateValidationSerializer(many=True))
     def get(self, request):
@@ -985,6 +1338,8 @@ class StateCertificateValidationListView(StateCertificateValidationMixin, APIVie
 
 class StateCertificateValidationDetailView(StateCertificateValidationMixin, APIView):
     permission_classes = [IsAuthenticated, IsActiveUser, IsStateMinistryUser]
+    state_permission_code = "certificate.validate"
+    requires_restricted_medical_oversight = True
 
     @extend_schema(responses=StateCertificateValidationSerializer)
     def get(self, request, pk):
@@ -993,6 +1348,8 @@ class StateCertificateValidationDetailView(StateCertificateValidationMixin, APIV
 
 class StateCertificateValidationApproveView(StateCertificateValidationMixin, APIView):
     permission_classes = [IsAuthenticated, IsActiveUser, IsStateMinistryUser]
+    state_permission_code = "certificate.validate"
+    requires_restricted_medical_oversight = True
 
     @extend_schema(request=StateCertificateValidationActionSerializer, responses=StateCertificateValidationSerializer)
     def patch(self, request, pk):
@@ -1008,6 +1365,8 @@ class StateCertificateValidationApproveView(StateCertificateValidationMixin, API
 
 class StateCertificateValidationRejectView(StateCertificateValidationMixin, APIView):
     permission_classes = [IsAuthenticated, IsActiveUser, IsStateMinistryUser]
+    state_permission_code = "certificate.validate"
+    requires_restricted_medical_oversight = True
 
     @extend_schema(request=StateCertificateValidationActionSerializer, responses=StateCertificateValidationSerializer)
     def patch(self, request, pk):
@@ -1025,6 +1384,8 @@ class StateCertificateValidationRejectView(StateCertificateValidationMixin, APIV
 
 class StateCertificateValidationClarificationView(StateCertificateValidationMixin, APIView):
     permission_classes = [IsAuthenticated, IsActiveUser, IsStateMinistryUser]
+    state_permission_code = "certificate.validate"
+    requires_restricted_medical_oversight = True
 
     @extend_schema(request=StateCertificateValidationActionSerializer, responses=StateCertificateValidationSerializer)
     def patch(self, request, pk):
@@ -1149,6 +1510,7 @@ class StateCertificateReplaceView(StateCertificateRegistryMixin, APIView):
 
 class StateCertificateAuditView(StateCertificateRegistryMixin, APIView):
     permission_classes = [IsAuthenticated, IsActiveUser, IsStateMinistryUser]
+    state_permission_code = "certificate.validate"
 
     def get(self, request, pk):
         certificate = self.get_object(pk)
@@ -1167,6 +1529,7 @@ class StateCertificateAuditView(StateCertificateRegistryMixin, APIView):
 
 class StateCertificateExportView(StateCertificateRegistryMixin, APIView):
     permission_classes = [IsAuthenticated, IsActiveUser, IsStateMinistryUser]
+    state_permission_code = "report.export"
 
     def get(self, request):
         response = HttpResponse(content_type="text/csv")
@@ -1522,6 +1885,7 @@ class StateInspectionMixin(StateMonitoringMixin):
 
 class StateInspectionListView(StateInspectionMixin, APIView):
     permission_classes = [IsAuthenticated, IsActiveUser, IsStateMinistryUser]
+    state_permission_codes = {"GET": "inspection.conduct", "POST": "inspection.assign"}
 
     @extend_schema(responses=StateInspectionSerializer(many=True))
     def get(self, request):
@@ -1560,6 +1924,7 @@ class StateInspectionListView(StateInspectionMixin, APIView):
 
 class StateInspectionDetailView(StateInspectionMixin, APIView):
     permission_classes = [IsAuthenticated, IsActiveUser, IsStateMinistryUser]
+    state_permission_code = "inspection.conduct"
 
     @extend_schema(responses=StateInspectionSerializer)
     def get(self, request, pk):
@@ -1568,6 +1933,7 @@ class StateInspectionDetailView(StateInspectionMixin, APIView):
 
 class StateInspectionReviewView(StateInspectionMixin, APIView):
     permission_classes = [IsAuthenticated, IsActiveUser, IsStateMinistryUser]
+    state_permission_code = "inspection.assign"
 
     @extend_schema(request=StateInspectionReviewSerializer, responses=StateInspectionSerializer)
     def patch(self, request, pk):
@@ -1584,6 +1950,7 @@ class StateInspectionReviewView(StateInspectionMixin, APIView):
 
 class StateInspectionCloseView(StateInspectionMixin, APIView):
     permission_classes = [IsAuthenticated, IsActiveUser, IsStateMinistryUser]
+    state_permission_code = "inspection.assign"
 
     @extend_schema(request=StateInspectionCloseSerializer, responses=StateInspectionSerializer)
     def patch(self, request, pk):
@@ -1620,6 +1987,7 @@ class StateReportMixin(StateMonitoringMixin):
 
 class StateReportListView(StateReportMixin, APIView):
     permission_classes = [IsAuthenticated, IsActiveUser, IsStateMinistryUser]
+    state_permission_code = "state.report.manage"
 
     @extend_schema(responses=StateReportSerializer(many=True))
     def get(self, request):
@@ -1628,6 +1996,7 @@ class StateReportListView(StateReportMixin, APIView):
 
 class StateReportGenerateView(StateReportMixin, APIView):
     permission_classes = [IsAuthenticated, IsActiveUser, IsStateMinistryUser]
+    state_permission_code = "state.report.manage"
 
     @extend_schema(request=StateReportGenerateSerializer, responses={201: StateReportSerializer})
     def post(self, request):
@@ -1645,6 +2014,7 @@ class StateReportGenerateView(StateReportMixin, APIView):
 
 class StateReportSubmitView(StateReportMixin, APIView):
     permission_classes = [IsAuthenticated, IsActiveUser, IsStateMinistryUser]
+    state_permission_code = "state.report.manage"
 
     @extend_schema(responses=StateReportSerializer)
     def patch(self, request, pk):
@@ -1655,6 +2025,7 @@ class StateReportSubmitView(StateReportMixin, APIView):
 
 class StateRevenueView(StateMonitoringMixin, APIView):
     permission_classes = [IsAuthenticated, IsActiveUser, IsStateMinistryUser]
+    state_permission_code = "payment.view"
 
     @extend_schema(responses=dict)
     def get(self, request):
@@ -1669,6 +2040,7 @@ class StateRevenueView(StateMonitoringMixin, APIView):
 
 class StateFinanceDashboardView(StateMonitoringMixin, APIView):
     permission_classes = [IsAuthenticated, IsActiveUser, IsStateMinistryUser]
+    state_permission_code = "payment.view"
 
     @extend_schema(responses=dict)
     def get(self, request):
@@ -1683,6 +2055,7 @@ class StateFinanceDashboardView(StateMonitoringMixin, APIView):
 
 class StateFinanceExportView(StateMonitoringMixin, APIView):
     permission_classes = [IsAuthenticated, IsActiveUser, IsStateMinistryUser]
+    state_permission_code = "report.export"
 
     def get(self, request):
         snapshot = StateReportService.finance_snapshot(
@@ -1701,6 +2074,7 @@ class StateFinanceExportView(StateMonitoringMixin, APIView):
 
 class StateRefundListView(StateMonitoringMixin, APIView):
     permission_classes = [IsAuthenticated, IsActiveUser, IsStateMinistryUser]
+    state_permission_code = "payment.view"
 
     @extend_schema(responses=RefundRequestSerializer(many=True))
     def get(self, request):
@@ -1715,6 +2089,7 @@ class StateRefundListView(StateMonitoringMixin, APIView):
 
 class StateSettlementListView(StateMonitoringMixin, APIView):
     permission_classes = [IsAuthenticated, IsActiveUser, IsStateMinistryUser]
+    state_permission_code = "settlement.view"
 
     @extend_schema(responses=SettlementSerializer(many=True))
     def get(self, request):

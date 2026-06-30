@@ -1,9 +1,10 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { AlertCircle, Copy, FilePlus2, Plus, RefreshCw, Save, Send } from "lucide-react";
+import { AlertCircle, Copy, FilePlus2, GitBranch, Layers3, Lock, Plus, RefreshCw, Save, Send, Sparkles } from "lucide-react";
 import { StatusBadge } from "@/components/status/status-badge";
 import {
+  adoptAssessmentFormTemplate,
   createAssessmentFormQuestion,
   createAssessmentFormSection,
   createAssessmentFormTemplate,
@@ -22,6 +23,12 @@ const RESPONDENTS: AssessmentRespondentRole[] = ["food_handler", "doctor", "lab_
 
 function label(value: string) {
   return value.replaceAll("_", " ");
+}
+
+function scopeTone(scope: string) {
+  if (scope === "national") return "bg-violet-50 text-violet-700 border-violet-200";
+  if (scope === "state") return "bg-sky-50 text-sky-700 border-sky-200";
+  return "bg-emerald-50 text-emerald-700 border-emerald-200";
 }
 
 function getTokenStateId() {
@@ -54,7 +61,36 @@ export function FormTemplateWorkspace({
   const [section, setSection] = useState({ key: "main", title: "Main", description: "" });
   const [question, setQuestion] = useState({ key: "", label: "", question_type: "yes_no", privacy_classification: "medical_sensitive", respondent_role: scope === "facility" ? "food_handler" : "food_handler", required: true, options: "" });
 
-  const selected = useMemo(() => templates.find((item) => item.id === selectedId) || templates[0], [selectedId, templates]);
+  const localTemplates = useMemo(() => templates.filter((item) => item.scope === scope), [scope, templates]);
+  const parentTemplates = useMemo(() => {
+    if (scope === "national") return [];
+    if (scope === "state") return templates.filter((item) => item.scope === "national");
+    return templates.filter((item) => item.scope === "national" || item.scope === "state");
+  }, [scope, templates]);
+  const selected = useMemo(() => templates.find((item) => item.id === selectedId) || localTemplates[0] || parentTemplates[0], [selectedId, templates, localTemplates, parentTemplates]);
+  const canAdoptSelected = Boolean(
+    selected &&
+    scope !== "national" &&
+    selected.scope !== scope &&
+    ["published", "active"].includes(selected.status)
+  );
+  const inheritedSectionCount = selected?.sections.filter((item) => item.locked).length || 0;
+  const inheritedQuestionCount = selected?.sections.reduce((count, item) => count + item.questions.filter((questionItem) => questionItem.locked).length, 0) || 0;
+  const stateAdoptedTemplates = useMemo(() => (
+    scope === "state"
+      ? templates.filter((item) => item.scope === "state" && item.parent_template)
+      : []
+  ), [scope, templates]);
+  const availableFederalTemplates = useMemo(() => (
+    scope === "state"
+      ? templates.filter((item) => item.scope === "national" && ["published", "active"].includes(item.status))
+      : []
+  ), [scope, templates]);
+  const publishedStateTemplates = useMemo(() => (
+    scope === "state"
+      ? templates.filter((item) => item.scope === "state" && ["published", "active"].includes(item.status))
+      : []
+  ), [scope, templates]);
 
   async function loadData() {
     setLoading(true);
@@ -65,7 +101,14 @@ export function FormTemplateWorkspace({
         setFacilityId(facility.id);
       }
       const rows = await listAssessmentFormTemplates();
-      const filtered = rows.filter((item) => item.scope === scope || (scope === "state" && item.scope === "facility"));
+      const stateId = getTokenStateId();
+      const filtered = rows.filter((item) => {
+        if (scope === "national") return item.scope === "national";
+        if (scope === "state") {
+          return item.scope === "national" || (item.scope === "state" && (!stateId || item.state === stateId));
+        }
+        return item.scope === "national" || (item.scope === "state" && (!stateId || item.state === stateId)) || (item.scope === "facility" && item.facility === facilityId);
+      });
       setTemplates(filtered);
       if (!selectedId && filtered[0]) setSelectedId(filtered[0].id);
     } catch {
@@ -175,6 +218,23 @@ export function FormTemplateWorkspace({
     }
   }
 
+  async function adoptTemplate() {
+    if (!selected) return;
+    setBusy(true);
+    setError("");
+    setSuccess("");
+    try {
+      const adopted = await adoptAssessmentFormTemplate(selected.id);
+      setSelectedId(adopted.id);
+      setSuccess(`Template adopted into ${label(scope)} workspace.`);
+      await loadData();
+    } catch {
+      setError("Could not adopt this parent template.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <div className="grid gap-5 xl:grid-cols-[360px_1fr]">
       <section className="grid h-fit gap-4 rounded-lg border border-neutral-200 bg-white p-4 shadow-sm">
@@ -191,20 +251,109 @@ export function FormTemplateWorkspace({
           <label className="inline-flex items-center gap-2 text-sm font-semibold text-neutral-700"><input checked={form.is_mandatory} disabled={scope === "facility"} onChange={(event) => setForm((current) => ({ ...current, is_mandatory: event.target.checked }))} type="checkbox" /> Mandatory</label>
           <button className="inline-flex h-10 items-center justify-center gap-2 rounded bg-brand-600 px-3 text-sm font-bold text-white disabled:bg-neutral-300" disabled={busy || !form.name.trim()} onClick={() => void createTemplate()} type="button"><FilePlus2 size={16} /> Create template</button>
         </div>
+        {parentTemplates.length ? (
+          <div className="grid gap-2">
+            <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-[0.18em] text-neutral-500">
+              <GitBranch size={14} />
+              Parent Templates
+            </div>
+            {parentTemplates.map((template) => (
+              <button className={`rounded border px-3 py-2 text-left text-sm ${selected?.id === template.id ? "border-brand-600 bg-brand-50" : "border-neutral-200 bg-white"}`} key={template.id} onClick={() => setSelectedId(template.id)} type="button">
+                <span className="block font-bold text-neutral-900">{template.name}</span>
+                <span className="mt-1 flex flex-wrap items-center gap-2 text-xs text-neutral-500">
+                  <span className={`rounded border px-2 py-0.5 font-bold ${scopeTone(template.scope)}`}>{label(template.scope)}</span>
+                  <span>v{template.version}</span>
+                  <StatusBadge status={template.status} />
+                </span>
+              </button>
+            ))}
+          </div>
+        ) : null}
         <div className="grid gap-2">
-          {templates.map((template) => (
+          <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-[0.18em] text-neutral-500">
+            <Layers3 size={14} />
+            {scope === "national" ? "Federal Templates" : "Local Templates"}
+          </div>
+          {localTemplates.map((template) => (
             <button className={`rounded border px-3 py-2 text-left text-sm ${selected?.id === template.id ? "border-brand-600 bg-brand-50" : "border-neutral-200 bg-white"}`} key={template.id} onClick={() => setSelectedId(template.id)} type="button">
               <span className="block font-bold text-neutral-900">{template.name}</span>
-              <span className="mt-1 flex items-center gap-2 text-xs text-neutral-500">v{template.version} · {label(template.scope)} · <StatusBadge status={template.status} /></span>
+              <span className="mt-1 flex flex-wrap items-center gap-2 text-xs text-neutral-500">
+                <span>v{template.version}</span>
+                <StatusBadge status={template.status} />
+                {template.parent_template ? <span className="rounded bg-neutral-100 px-2 py-0.5 font-bold text-neutral-600">Inherited base</span> : null}
+              </span>
             </button>
           ))}
-          {!templates.length && !loading ? <p className="text-sm text-neutral-500">No templates found.</p> : null}
+          {!localTemplates.length && !loading ? <p className="text-sm text-neutral-500">No local templates yet.</p> : null}
         </div>
       </section>
 
       <section className="grid gap-4">
         {error ? <div className="flex items-start gap-2 rounded-lg bg-danger-50 p-3 text-sm font-semibold text-danger-700"><AlertCircle size={16} />{error}</div> : null}
         {success ? <div className="rounded-lg bg-brand-50 p-3 text-sm font-semibold text-brand-800">{success}</div> : null}
+
+        {scope === "state" ? (
+          <section className="grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
+            <div className="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-xs font-bold uppercase tracking-[0.18em] text-brand-700">Federal Policy Adoption</p>
+                  <h2 className="mt-1 text-lg font-bold text-neutral-900">State declaration adoption workspace</h2>
+                  <p className="mt-2 max-w-3xl text-sm text-neutral-500">
+                    Adopt published Federal declaration templates, extend them with State-specific questions, route them for internal approval, and publish the active State implementation version for facilities.
+                  </p>
+                </div>
+                <div className="rounded-full bg-neutral-100 px-4 py-2 text-sm font-semibold text-neutral-700">
+                  {publishedStateTemplates.length} active/published state versions
+                </div>
+              </div>
+              <div className="mt-4 grid gap-3 sm:grid-cols-3">
+                <div className="rounded-lg border border-neutral-200 bg-neutral-50 px-4 py-3">
+                  <p className="text-xs font-bold uppercase tracking-[0.18em] text-neutral-500">Federal templates</p>
+                  <p className="mt-2 text-2xl font-bold text-neutral-900">{availableFederalTemplates.length}</p>
+                  <p className="mt-1 text-sm text-neutral-500">Published national declaration bases available for State adoption.</p>
+                </div>
+                <div className="rounded-lg border border-neutral-200 bg-neutral-50 px-4 py-3">
+                  <p className="text-xs font-bold uppercase tracking-[0.18em] text-neutral-500">Adopted by State</p>
+                  <p className="mt-2 text-2xl font-bold text-neutral-900">{stateAdoptedTemplates.length}</p>
+                  <p className="mt-1 text-sm text-neutral-500">Templates already derived from a Federal source into this State workspace.</p>
+                </div>
+                <div className="rounded-lg border border-neutral-200 bg-neutral-50 px-4 py-3">
+                  <p className="text-xs font-bold uppercase tracking-[0.18em] text-neutral-500">Locked inherited fields</p>
+                  <p className="mt-2 text-2xl font-bold text-neutral-900">{inheritedQuestionCount}</p>
+                  <p className="mt-1 text-sm text-neutral-500">Inherited Federal questions remain protected inside the selected template chain.</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm">
+              <div className="grid gap-4">
+                <div>
+                  <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-[0.18em] text-brand-700">
+                    <Plus size={14} />
+                    State Can Extend
+                  </div>
+                  <ul className="mt-2 grid gap-2 text-sm text-neutral-600">
+                    <li className="rounded border border-brand-100 bg-brand-50 px-3 py-2">Add State outbreak questions, surveillance consent, and local administrative fields.</li>
+                    <li className="rounded border border-brand-100 bg-brand-50 px-3 py-2">Route drafts through internal approval before publish and activation.</li>
+                    <li className="rounded border border-brand-100 bg-brand-50 px-3 py-2">Publish the active State implementation version for facility adoption.</li>
+                  </ul>
+                </div>
+                <div>
+                  <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-[0.18em] text-warning-700">
+                    <Lock size={14} />
+                    Federal Rules Stay Locked
+                  </div>
+                  <ul className="mt-2 grid gap-2 text-sm text-neutral-600">
+                    <li className="rounded border border-warning-100 bg-warning-50 px-3 py-2">Federal fields cannot be deleted, hidden, renamed, or downgraded from required.</li>
+                    <li className="rounded border border-warning-100 bg-warning-50 px-3 py-2">Federal validation, meaning, and risk logic remain unchanged in inherited sections.</li>
+                    <li className="rounded border border-warning-100 bg-warning-50 px-3 py-2">Locked sections and questions in adopted templates show the inherited national baseline.</li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+          </section>
+        ) : null}
 
         {selected ? (
           <>
@@ -213,9 +362,16 @@ export function FormTemplateWorkspace({
                 <div>
                   <h2 className="text-lg font-bold text-neutral-900">{selected.name}</h2>
                   <p className="mt-1 text-sm text-neutral-500">{selected.description || "No description"}</p>
-                  <div className="mt-2 flex flex-wrap gap-2"><StatusBadge status={selected.status} /><StatusBadge status={selected.form_type} />{selected.review_comment ? <StatusBadge status="changes_requested" /> : null}</div>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    <StatusBadge status={selected.status} />
+                    <StatusBadge status={selected.form_type} />
+                    <span className={`rounded border px-2 py-1 text-xs font-bold ${scopeTone(selected.scope)}`}>{label(selected.scope)}</span>
+                    {selected.parent_template ? <span className="rounded bg-neutral-100 px-2 py-1 text-xs font-bold text-neutral-700">Inherited from parent</span> : null}
+                    {selected.review_comment ? <StatusBadge status="changes_requested" /> : null}
+                  </div>
                 </div>
                 <div className="flex flex-wrap gap-2">
+                  {canAdoptSelected ? <button className="inline-flex h-9 items-center gap-2 rounded bg-emerald-600 px-3 text-xs font-bold text-white" disabled={busy} onClick={() => void adoptTemplate()} type="button"><Sparkles size={14} /> Adopt into {label(scope)}</button> : null}
                   <button className="inline-flex h-9 items-center gap-2 rounded border border-neutral-200 px-3 text-xs font-bold text-neutral-700" disabled={busy} onClick={() => void duplicate()} type="button"><Copy size={14} /> Duplicate</button>
                   {selected.status === "draft" || selected.status === "rejected" || selected.status === "changes_requested" ? <button className="inline-flex h-9 items-center gap-2 rounded bg-brand-600 px-3 text-xs font-bold text-white" disabled={busy} onClick={() => void transition("submit-for-approval")} type="button"><Send size={14} /> Submit</button> : null}
                   {["pending_approval"].includes(selected.status) && role === "state_admin" ? <button className="inline-flex h-9 items-center rounded bg-brand-700 px-3 text-xs font-bold text-white" disabled={busy} onClick={() => void transition("approve")} type="button">Approve</button> : null}
@@ -224,6 +380,25 @@ export function FormTemplateWorkspace({
                   {["approved"].includes(selected.status) ? <button className="inline-flex h-9 items-center rounded bg-brand-700 px-3 text-xs font-bold text-white" disabled={busy} onClick={() => void transition("publish")} type="button">Publish</button> : null}
                   {["published"].includes(selected.status) ? <button className="inline-flex h-9 items-center rounded bg-brand-600 px-3 text-xs font-bold text-white" disabled={busy} onClick={() => void transition("activate")} type="button">Activate</button> : null}
                 </div>
+              </div>
+            </section>
+
+            <section className="grid gap-3 rounded-lg border border-neutral-200 bg-white p-4 shadow-sm lg:grid-cols-4">
+              <div className="rounded border border-neutral-200 bg-neutral-50 p-3">
+                <p className="text-xs font-bold uppercase tracking-[0.18em] text-neutral-500">Base chain</p>
+                <p className="mt-2 text-sm font-bold text-neutral-900">{selected.parent_template ? "Inherited template" : "Origin template"}</p>
+              </div>
+              <div className="rounded border border-neutral-200 bg-neutral-50 p-3">
+                <p className="text-xs font-bold uppercase tracking-[0.18em] text-neutral-500">Sections</p>
+                <p className="mt-2 text-sm font-bold text-neutral-900">{selected.sections.length}</p>
+              </div>
+              <div className="rounded border border-neutral-200 bg-neutral-50 p-3">
+                <p className="text-xs font-bold uppercase tracking-[0.18em] text-neutral-500">Inherited sections</p>
+                <p className="mt-2 text-sm font-bold text-neutral-900">{inheritedSectionCount}</p>
+              </div>
+              <div className="rounded border border-neutral-200 bg-neutral-50 p-3">
+                <p className="text-xs font-bold uppercase tracking-[0.18em] text-neutral-500">Locked fields</p>
+                <p className="mt-2 text-sm font-bold text-neutral-900">{inheritedQuestionCount}</p>
               </div>
             </section>
 
@@ -255,9 +430,20 @@ export function FormTemplateWorkspace({
               <div className="mt-4 grid gap-4">
                 {selected.sections.map((item) => (
                   <div className="rounded border border-neutral-200 bg-neutral-50 p-3" key={item.id}>
-                    <h4 className="text-sm font-bold text-neutral-900">{item.title}</h4>
+                    <div className="flex items-center justify-between gap-3">
+                      <h4 className="text-sm font-bold text-neutral-900">{item.title}</h4>
+                      {item.locked ? <span className="inline-flex items-center gap-1 rounded bg-neutral-100 px-2 py-1 text-[11px] font-bold text-neutral-700"><Lock size={12} /> Locked</span> : null}
+                    </div>
                     <div className="mt-3 grid gap-2">
-                      {item.questions.map((field) => <div className="rounded border border-neutral-200 bg-white p-3 text-sm" key={field.id}><p className="font-bold text-neutral-800">{field.label}</p><p className="mt-1 text-xs text-neutral-500">{label(field.question_type)} · {label(field.privacy_classification)} · {label(field.respondent_role)}</p></div>)}
+                      {item.questions.map((field) => (
+                        <div className="rounded border border-neutral-200 bg-white p-3 text-sm" key={field.id}>
+                          <div className="flex items-center justify-between gap-3">
+                            <p className="font-bold text-neutral-800">{field.label}</p>
+                            {field.locked ? <span className="inline-flex items-center gap-1 rounded bg-neutral-100 px-2 py-1 text-[11px] font-bold text-neutral-700"><Lock size={12} /> Inherited</span> : null}
+                          </div>
+                          <p className="mt-1 text-xs text-neutral-500">{label(field.question_type)} · {label(field.privacy_classification)} · {label(field.respondent_role)}</p>
+                        </div>
+                      ))}
                       {!item.questions.length ? <p className="text-sm text-neutral-500">No questions in this section.</p> : null}
                     </div>
                   </div>

@@ -213,7 +213,7 @@ class AssessmentRequirementResolutionApiTests(APITestCase):
     def test_requirement_set_crud_publish_retire_and_scope_permissions(self):
         self.client.force_authenticate(self.federal_admin)
         created = self.client.post(
-            "/api/forms/requirement-sets/",
+            "/api/assessment-forms/requirement-sets/",
             {
                 "name": "National Baseline",
                 "scope": "national",
@@ -225,21 +225,21 @@ class AssessmentRequirementResolutionApiTests(APITestCase):
         )
         self.assertEqual(created.status_code, 201, created.data)
         requirement_set_id = payload(created)["id"]
-        published = self.client.post(f"/api/forms/requirement-sets/{requirement_set_id}/publish/", format="json")
+        published = self.client.post(f"/api/assessment-forms/requirement-sets/{requirement_set_id}/publish/", format="json")
         self.assertEqual(published.status_code, 200)
         self.assertEqual(payload(published)["status"], AssessmentRequirementSetStatus.ACTIVE)
-        retired = self.client.post(f"/api/forms/requirement-sets/{requirement_set_id}/retire/", format="json")
+        retired = self.client.post(f"/api/assessment-forms/requirement-sets/{requirement_set_id}/retire/", format="json")
         self.assertEqual(retired.status_code, 200)
         self.assertEqual(payload(retired)["status"], AssessmentRequirementSetStatus.RETIRED)
 
         self.client.force_authenticate(self.state_admin)
-        self.assertEqual(self.client.get(f"/api/forms/requirement-sets/{requirement_set_id}/").status_code, 404)
-        blocked = self.client.post("/api/forms/requirement-sets/", {"name": "Blocked", "scope": "national"}, format="json")
+        self.assertEqual(self.client.get(f"/api/assessment-forms/requirement-sets/{requirement_set_id}/").status_code, 404)
+        blocked = self.client.post("/api/assessment-forms/requirement-sets/", {"name": "Blocked", "scope": "national"}, format="json")
         self.assertEqual(blocked.status_code, 403)
 
     def test_resolution_endpoint_rejects_unrelated_food_handler(self):
         self.client.force_authenticate(self.other_handler_user)
 
-        response = self.client.post("/api/forms/requirements/resolve/", {"assessment": str(self.assessment.id)}, format="json")
+        response = self.client.post("/api/assessment-forms/requirements/resolve/", {"assessment": str(self.assessment.id)}, format="json")
 
         self.assertEqual(response.status_code, 403)

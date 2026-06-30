@@ -10,6 +10,7 @@ from apps.assessments.models import (
     AssessmentFormScope,
     AssessmentFormSection,
     AssessmentFormStatus,
+    AssessmentFormTemplateSnapshot,
     AssessmentFormTemplate,
     AssessmentFormType,
     AssessmentPrivacyClassification,
@@ -17,7 +18,9 @@ from apps.assessments.models import (
     AssessmentRequirementSet,
     AssessmentRequirementSetStatus,
     AssessmentRespondentRole,
+    HealthDeclaration,
     MedicalAssessment,
+    StepStatus,
 )
 from apps.assessments.services import AssessmentFormResponseService, AssessmentRequirementResolutionService, AssessmentService
 from apps.audit.models import AuditAction, AuditLog
@@ -163,20 +166,20 @@ class AssessmentFormResponseApiTests(APITestCase):
         self.client.force_authenticate(self.handler_user)
 
         draft = self.client.patch(
-            f"/api/form-responses/{response.id}/",
+            f"/api/assessment-form-responses/{response.id}/",
             {"response_data": {"recent_fever": False}},
             format="json",
         )
         self.assertEqual(draft.status_code, 200, draft.data)
         self.assertEqual(payload(draft)["status"], AssessmentFormResponseStatus.DRAFT)
 
-        submitted = self.client.post(f"/api/form-responses/{response.id}/submit/", format="json")
+        submitted = self.client.post(f"/api/assessment-form-responses/{response.id}/submit/", format="json")
         self.assertEqual(submitted.status_code, 200, submitted.data)
         self.assertEqual(payload(submitted)["status"], AssessmentFormResponseStatus.SUBMITTED)
         self.assertTrue(payload(submitted)["is_locked"])
 
         locked = self.client.patch(
-            f"/api/form-responses/{response.id}/",
+            f"/api/assessment-form-responses/{response.id}/",
             {"response_data": {"recent_fever": True}},
             format="json",
         )
@@ -192,7 +195,7 @@ class AssessmentFormResponseApiTests(APITestCase):
 
         self.client.force_authenticate(self.doctor)
         reopened = self.client.post(
-            f"/api/form-responses/{response.id}/reopen/",
+            f"/api/assessment-form-responses/{response.id}/reopen/",
             {"reason": "Please confirm the symptom history."},
             format="json",
         )
@@ -208,7 +211,7 @@ class AssessmentFormResponseApiTests(APITestCase):
         self.assertEqual(reopened_data["question_snapshot"], original_snapshot)
 
         self.client.force_authenticate(self.handler_user)
-        resubmitted = self.client.post(f"/api/form-responses/{reopened_data['id']}/submit/", format="json")
+        resubmitted = self.client.post(f"/api/assessment-form-responses/{reopened_data['id']}/submit/", format="json")
         self.assertEqual(payload(resubmitted)["status"], AssessmentFormResponseStatus.RESUBMITTED)
 
     def test_assigned_doctor_can_validate_and_unrelated_handler_cannot_access_response(self):
@@ -217,12 +220,12 @@ class AssessmentFormResponseApiTests(APITestCase):
         AssessmentFormResponseService.submit(response=response, actor=self.handler_user)
 
         self.client.force_authenticate(self.doctor)
-        validated = self.client.post(f"/api/form-responses/{response.id}/validate/", format="json")
+        validated = self.client.post(f"/api/assessment-form-responses/{response.id}/validate/", format="json")
         self.assertEqual(validated.status_code, 200, validated.data)
         self.assertEqual(payload(validated)["status"], AssessmentFormResponseStatus.VALIDATED)
 
         self.client.force_authenticate(self.other_handler_user)
-        hidden = self.client.get(f"/api/form-responses/{response.id}/")
+        hidden = self.client.get(f"/api/assessment-form-responses/{response.id}/")
         self.assertEqual(hidden.status_code, 404)
 
     def test_submission_validates_medical_fields_and_preserves_invalid_draft(self):
@@ -236,9 +239,9 @@ class AssessmentFormResponseApiTests(APITestCase):
         response = self.assign()
         self.client.force_authenticate(self.handler_user)
         draft_data = {"recent_fever": False, "temperature": 44, "blood_pressure": {"systolic": 0, "diastolic": 80}}
-        self.client.patch(f"/api/form-responses/{response.id}/", {"response_data": draft_data}, format="json")
+        self.client.patch(f"/api/assessment-form-responses/{response.id}/", {"response_data": draft_data}, format="json")
 
-        invalid = self.client.post(f"/api/form-responses/{response.id}/submit/", format="json")
+        invalid = self.client.post(f"/api/assessment-form-responses/{response.id}/submit/", format="json")
 
         self.assertEqual(invalid.status_code, 400)
         self.assertIn("temperature", payload(invalid))
@@ -248,11 +251,11 @@ class AssessmentFormResponseApiTests(APITestCase):
         self.assertEqual(response.response_data, draft_data)
 
         self.client.patch(
-            f"/api/form-responses/{response.id}/",
+            f"/api/assessment-form-responses/{response.id}/",
             {"response_data": {"recent_fever": False, "temperature": 36.8, "blood_pressure": {"systolic": 120, "diastolic": 80}}},
             format="json",
         )
-        submitted = self.client.post(f"/api/form-responses/{response.id}/submit/", format="json")
+        submitted = self.client.post(f"/api/assessment-form-responses/{response.id}/submit/", format="json")
         self.assertEqual(submitted.status_code, 200, submitted.data)
 
     def test_conditional_visibility_and_required_logic_are_enforced(self):
@@ -266,19 +269,19 @@ class AssessmentFormResponseApiTests(APITestCase):
         )
         response = self.assign()
         self.client.force_authenticate(self.handler_user)
-        self.client.patch(f"/api/form-responses/{response.id}/", {"response_data": {"recent_fever": True}}, format="json")
+        self.client.patch(f"/api/assessment-form-responses/{response.id}/", {"response_data": {"recent_fever": True}}, format="json")
 
-        missing_conditional = self.client.post(f"/api/form-responses/{response.id}/submit/", format="json")
+        missing_conditional = self.client.post(f"/api/assessment-form-responses/{response.id}/submit/", format="json")
 
         self.assertEqual(missing_conditional.status_code, 400)
         self.assertIn("symptom_start_date", payload(missing_conditional))
 
         self.client.patch(
-            f"/api/form-responses/{response.id}/",
+            f"/api/assessment-form-responses/{response.id}/",
             {"response_data": {"recent_fever": True, "symptom_start_date": "2026-06-01"}},
             format="json",
         )
-        submitted = self.client.post(f"/api/form-responses/{response.id}/submit/", format="json")
+        submitted = self.client.post(f"/api/assessment-form-responses/{response.id}/submit/", format="json")
         self.assertEqual(submitted.status_code, 200, submitted.data)
 
     def test_publishing_rejects_broken_conditional_logic(self):
@@ -290,7 +293,7 @@ class AssessmentFormResponseApiTests(APITestCase):
         self.question.save(update_fields=["conditional_logic", "updated_at"])
         self.client.force_authenticate(self.federal_admin)
 
-        published = self.client.post(f"/api/forms/templates/{self.template.id}/publish/", format="json")
+        published = self.client.post(f"/api/assessment-forms/templates/{self.template.id}/publish/", format="json")
 
         self.assertEqual(published.status_code, 400)
         self.assertIn("question:recent_fever", payload(published))
@@ -305,9 +308,9 @@ class AssessmentFormResponseApiTests(APITestCase):
         self.question.save(update_fields=["risk_flag_rules", "updated_at"])
         response = self.assign()
         self.client.force_authenticate(self.handler_user)
-        self.client.patch(f"/api/form-responses/{response.id}/", {"response_data": {"recent_fever": True}}, format="json")
+        self.client.patch(f"/api/assessment-form-responses/{response.id}/", {"response_data": {"recent_fever": True}}, format="json")
 
-        submitted = self.client.post(f"/api/form-responses/{response.id}/submit/", format="json")
+        submitted = self.client.post(f"/api/assessment-form-responses/{response.id}/submit/", format="json")
 
         self.assertEqual(submitted.status_code, 200, submitted.data)
         self.assertEqual(
@@ -329,7 +332,7 @@ class AssessmentFormResponseApiTests(APITestCase):
 
         for actor in [self.employer_user, self.inspector]:
             self.client.force_authenticate(actor)
-            detail = self.client.get(f"/api/form-responses/{response.id}/")
+            detail = self.client.get(f"/api/assessment-form-responses/{response.id}/")
             self.assertEqual(detail.status_code, 200, detail.data)
             data = payload(detail)
             self.assertEqual(data["status"], AssessmentFormResponseStatus.SUBMITTED)
@@ -343,7 +346,7 @@ class AssessmentFormResponseApiTests(APITestCase):
         AssessmentFormResponseService.save_draft(response=response, response_data={"recent_fever": False}, actor=self.handler_user)
 
         self.client.force_authenticate(self.doctor)
-        detail = self.client.get(f"/api/form-responses/{response.id}/")
+        detail = self.client.get(f"/api/assessment-form-responses/{response.id}/")
 
         self.assertEqual(detail.status_code, 200, detail.data)
         self.assertIn("response_data", payload(detail))
@@ -361,7 +364,7 @@ class AssessmentFormResponseApiTests(APITestCase):
         AssessmentFormResponseService.submit(response=response, actor=self.handler_user)
 
         self.client.force_authenticate(self.state_admin)
-        analytics = self.client.get("/api/forms/analytics/")
+        analytics = self.client.get("/api/assessment-forms/analytics/")
 
         self.assertEqual(analytics.status_code, 200, analytics.data)
         data = payload(analytics)
@@ -398,5 +401,127 @@ class AssessmentFormResponseApiTests(APITestCase):
                 recipient=self.handler_user,
                 related_object_id=reopened.id,
                 title="Assessment form requires clarification",
+            ).exists()
+        )
+
+    def test_declaration_endpoint_creates_merged_snapshot_and_dynamic_form_response(self):
+        self.client.force_authenticate(self.handler_user)
+
+        response = self.client.get(f"/api/assessments/{self.assessment.id}/declaration/")
+
+        self.assertEqual(response.status_code, 200, response.data)
+        data = payload(response)
+        self.assertTrue(HealthDeclaration.objects.filter(assessment=self.assessment).exists())
+        snapshot = AssessmentFormTemplateSnapshot.objects.get(assessment=self.assessment)
+        self.assertEqual(data["template_snapshot"], str(snapshot.id))
+        self.assertEqual(data["merged_schema"]["template_id"], str(self.template.id))
+        self.assertEqual(data["form_response_status"], AssessmentFormResponseStatus.NOT_STARTED)
+        merged_audit = AuditLog.objects.get(
+            target_id=str(self.assessment.id),
+            metadata__event="final_merged_form_generated",
+        )
+        self.assertEqual(merged_audit.metadata["template_snapshot_id"], str(snapshot.id))
+
+    def test_dynamic_declaration_submission_validation_and_reopen_stay_in_sync_with_legacy_record(self):
+        self.question.risk_flag_rules = {
+            "when": {"use_current_answer": True, "operator": "equals", "value": True},
+            "flags": ["medical_review_required"],
+        }
+        self.question.save(update_fields=["risk_flag_rules", "updated_at"])
+        self.client.force_authenticate(self.handler_user)
+
+        draft = self.client.patch(
+            f"/api/assessments/{self.assessment.id}/declaration/",
+            {"response_data": {"recent_fever": True, "certified_true": False}},
+            format="json",
+        )
+        self.assertEqual(draft.status_code, 200, draft.data)
+        self.assertEqual(payload(draft)["response_data"]["recent_fever"], True)
+        declaration = HealthDeclaration.objects.get(assessment=self.assessment)
+        self.assertTrue(declaration.risk_flag)
+
+        submitted = self.client.post(
+            f"/api/assessments/{self.assessment.id}/declaration/submit/",
+            {"response_data": {"recent_fever": True}, "certified_true": True},
+            format="json",
+        )
+        self.assertEqual(submitted.status_code, 201, submitted.data)
+        submitted_data = payload(submitted)
+        self.assertEqual(submitted_data["form_response_status"], AssessmentFormResponseStatus.SUBMITTED)
+        self.assessment.refresh_from_db()
+        self.assertEqual(self.assessment.declaration_status, StepStatus.SUBMITTED)
+        declaration.refresh_from_db()
+        submit_audit = AuditLog.objects.get(
+            target_id=str(declaration.id),
+            metadata__event="food_handler_declaration_submitted",
+        )
+        self.assertEqual(submit_audit.metadata["actor_user_id"], str(self.handler_user.id))
+        self.assertTrue(
+            Notification.objects.filter(
+                recipient=self.doctor,
+                related_object_id=str(declaration.id),
+                title="Health declaration submitted",
+            ).exists()
+        )
+        self.assertTrue(
+            Notification.objects.filter(
+                recipient=self.doctor,
+                related_object_id=str(declaration.id),
+                title="High-risk declaration requires validation",
+            ).exists()
+        )
+
+        self.client.force_authenticate(self.doctor)
+        clarification = self.client.patch(
+            f"/api/doctor/assessments/{self.assessment.id}/declaration/request-changes/",
+            {"reason": "Please confirm the fever timeline."},
+            format="json",
+        )
+        self.assertEqual(clarification.status_code, 200, clarification.data)
+        self.assertEqual(payload(clarification)["form_response_status"], AssessmentFormResponseStatus.REOPENED)
+        self.assertTrue(
+            AuditLog.objects.filter(
+                target_id=str(declaration.id),
+                metadata__event="doctor_rejected_declaration",
+                metadata__reason="Please confirm the fever timeline.",
+            ).exists()
+        )
+        self.assertTrue(
+            Notification.objects.filter(
+                recipient=self.handler_user,
+                related_object_id=str(declaration.id),
+                title="Health declaration requires correction",
+            ).exists()
+        )
+
+        self.client.force_authenticate(self.handler_user)
+        resubmitted = self.client.post(
+            f"/api/assessments/{self.assessment.id}/declaration/submit/",
+            {"response_data": {"recent_fever": False}, "certified_true": True},
+            format="json",
+        )
+        self.assertEqual(resubmitted.status_code, 201, resubmitted.data)
+        self.assertEqual(payload(resubmitted)["form_response_status"], AssessmentFormResponseStatus.RESUBMITTED)
+        declaration.refresh_from_db()
+        self.assertTrue(
+            AuditLog.objects.filter(
+                target_id=str(declaration.id),
+                metadata__event="declaration_corrected",
+                new_value__version=declaration.version,
+            ).exists()
+        )
+
+        self.client.force_authenticate(self.doctor)
+        validated = self.client.post(f"/api/assessments/{self.assessment.id}/declaration/validate/", format="json")
+        self.assertEqual(validated.status_code, 200, validated.data)
+        validated_data = payload(validated)
+        self.assertEqual(validated_data["form_response_status"], AssessmentFormResponseStatus.VALIDATED)
+        self.assertIsNotNone(validated_data["validated_at"])
+        self.assessment.refresh_from_db()
+        self.assertEqual(self.assessment.declaration_status, StepStatus.VALIDATED)
+        self.assertTrue(
+            AuditLog.objects.filter(
+                target_id=str(declaration.id),
+                metadata__event="doctor_validated_declaration",
             ).exists()
         )

@@ -24,6 +24,7 @@ from apps.assessments.serializers import (
     AssessmentRequirementResolveSerializer,
     AssessmentRequirementSetSerializer,
     AssessmentAssignDoctorSerializer,
+    AssessmentAssignLabSerializer,
     AssessmentAuditTimelineItemSerializer,
     AssessmentStatusSnapshotSerializer,
     AppointmentAssignDoctorSerializer,
@@ -43,7 +44,21 @@ from apps.assessments.serializers import (
     PhysicalExaminationSerializer,
     PhysicalExaminationSubmitSerializer,
 )
-from apps.assessments.services import AssessmentFormAnalyticsService, AssessmentFormResponseService, AssessmentFormTemplateService, AssessmentRequirementResolutionService, AssessmentService, ensure_approved_facility, ensure_assigned_doctor_for_assessment
+from apps.assessments.services import (
+    AssessmentFormAnalyticsService,
+    AssessmentFormResponseService,
+    AssessmentFormTemplateService,
+    AssessmentRequirementResolutionService,
+    AssessmentService,
+    assessment_audit_metadata,
+    ensure_approved_facility,
+    ensure_assigned_doctor_for_assessment,
+    field_addition_event,
+    question_audit_snapshot,
+    section_audit_snapshot,
+    template_audit_snapshot,
+    template_creation_event,
+)
 from apps.audit.models import AuditAction
 from apps.audit.services import log_action
 from apps.certificates.serializers import CertificateRequestSerializer, RequestCertificateSerializer
@@ -63,9 +78,17 @@ def assessment_form_templates_for_user(user):
     if user.role == UserRole.FEDERAL_ADMIN:
         return queryset.filter(scope=AssessmentFormScope.NATIONAL)
     if user.role == UserRole.STATE_ADMIN and user.state_id:
-        return queryset.filter(Q(scope=AssessmentFormScope.STATE, state_id=user.state_id) | Q(scope=AssessmentFormScope.FACILITY, facility__state_id=user.state_id))
+        return queryset.filter(
+            Q(scope=AssessmentFormScope.NATIONAL)
+            | Q(scope=AssessmentFormScope.STATE, state_id=user.state_id)
+            | Q(scope=AssessmentFormScope.FACILITY, facility__state_id=user.state_id)
+        )
     if user.role == UserRole.FACILITY_ADMIN and user.organization_id:
-        return queryset.filter(scope=AssessmentFormScope.FACILITY, facility__organization_id=user.organization_id)
+        return queryset.filter(
+            Q(scope=AssessmentFormScope.NATIONAL)
+            | Q(scope=AssessmentFormScope.STATE, state_id=user.state_id)
+            | Q(scope=AssessmentFormScope.FACILITY, facility__organization_id=user.organization_id)
+        )
     return queryset.none()
 
 
@@ -162,7 +185,18 @@ class AssessmentFormTemplateViewSet(viewsets.ModelViewSet):
         if not can_manage_assessment_form_template(self.request.user, candidate):
             raise PermissionDenied("You cannot create an assessment form template for this scope.")
         template = serializer.save(created_by=self.request.user, state=values.get("state"), owner_organization=values.get("owner_organization"))
-        log_action(action=AuditAction.CREATE, actor=self.request.user, target=template, metadata={"event": "assessment_form_created"})
+        AssessmentFormTemplateService.sync_template_ownership(template=template)
+        log_action(
+            action=AuditAction.CREATE,
+            actor=self.request.user,
+            target=template,
+            new_value=template_audit_snapshot(template),
+            metadata=assessment_audit_metadata(
+                event=template_creation_event(template),
+                actor=self.request.user,
+                entity=template,
+            ),
+        )
 
     def perform_update(self, serializer):
         template = self.get_object()
@@ -176,13 +210,32 @@ class AssessmentFormTemplateViewSet(viewsets.ModelViewSet):
         candidate.full_clean()
         if not can_manage_assessment_form_template(self.request.user, candidate):
             raise PermissionDenied("You cannot move this assessment form template into that scope.")
+        previous_snapshot = template_audit_snapshot(template)
         template = serializer.save(state=candidate.state, owner_organization=candidate.owner_organization)
-        log_action(action=AuditAction.UPDATE, actor=self.request.user, target=template, metadata={"event": "assessment_form_updated"})
+        AssessmentFormTemplateService.sync_template_ownership(template=template)
+        log_action(
+            action=AuditAction.UPDATE,
+            actor=self.request.user,
+            target=template,
+            old_value=previous_snapshot,
+            new_value=template_audit_snapshot(template),
+            metadata=assessment_audit_metadata(
+                event="assessment_form_updated",
+                actor=self.request.user,
+                entity=template,
+            ),
+        )
 
     @action(detail=True, methods=["post"], url_path="duplicate")
     def duplicate(self, request, pk=None):
         duplicate = AssessmentFormTemplateService.duplicate(template=self.get_object(), actor=request.user)
         return Response(self.get_serializer(duplicate).data, status=status.HTTP_201_CREATED)
+
+    @extend_schema(responses=AssessmentFormTemplateSerializer)
+    @action(detail=True, methods=["post"], url_path="adopt")
+    def adopt(self, request, pk=None):
+        template = AssessmentFormTemplateService.adopt(parent_template=self.get_object(), actor=request.user)
+        return Response(self.get_serializer(template).data, status=status.HTTP_201_CREATED)
 
     @action(detail=True, methods=["post"], url_path="submit-for-approval")
     def submit_for_approval(self, request, pk=None):
@@ -249,20 +302,59 @@ class AssessmentFormSectionViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         template = serializer.validated_data["template"]
         AssessmentFormTemplateService.ensure_can_edit(template=template, actor=self.request.user)
-        section = serializer.save()
-        log_action(action=AuditAction.CREATE, actor=self.request.user, target=section, metadata={"event": "assessment_form_section_created", "template_id": str(template.id)})
+        section = serializer.save(
+            owner_level=template.owner_level,
+            owner_id=template.owner_id,
+        )
+        event = field_addition_event(template) or "assessment_form_section_created"
+        log_action(
+            action=AuditAction.CREATE,
+            actor=self.request.user,
+            target=section,
+            new_value=section_audit_snapshot(section),
+            metadata=assessment_audit_metadata(
+                event=event,
+                actor=self.request.user,
+                entity=section,
+                owner_level=template.owner_level,
+                template_id=str(template.id),
+                field_type="section",
+            ),
+        )
 
     def perform_update(self, serializer):
         section = self.get_object()
-        AssessmentFormTemplateService.ensure_can_edit(template=section.template, actor=self.request.user)
+        AssessmentFormTemplateService.ensure_section_editable(section=section, actor=self.request.user)
         if serializer.validated_data.get("template", section.template) != section.template:
             raise ValidationError("Sections cannot be moved between assessment form templates.")
+        previous_snapshot = section_audit_snapshot(section)
         section = serializer.save()
-        log_action(action=AuditAction.UPDATE, actor=self.request.user, target=section, metadata={"event": "assessment_form_section_updated"})
+        log_action(
+            action=AuditAction.UPDATE,
+            actor=self.request.user,
+            target=section,
+            old_value=previous_snapshot,
+            new_value=section_audit_snapshot(section),
+            metadata=assessment_audit_metadata(
+                event="assessment_form_section_updated",
+                actor=self.request.user,
+                entity=section,
+            ),
+        )
 
     def perform_destroy(self, instance):
-        AssessmentFormTemplateService.ensure_can_edit(template=instance.template, actor=self.request.user)
-        log_action(action=AuditAction.DELETE, actor=self.request.user, target=instance, metadata={"event": "assessment_form_section_deleted"})
+        AssessmentFormTemplateService.ensure_section_deletable(section=instance, actor=self.request.user)
+        log_action(
+            action=AuditAction.DELETE,
+            actor=self.request.user,
+            target=instance,
+            old_value=section_audit_snapshot(instance),
+            metadata=assessment_audit_metadata(
+                event="assessment_form_section_deleted",
+                actor=self.request.user,
+                entity=instance,
+            ),
+        )
         instance.delete()
 
 
@@ -280,20 +372,61 @@ class AssessmentFormQuestionViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         section = serializer.validated_data["section"]
         AssessmentFormTemplateService.ensure_can_edit(template=section.template, actor=self.request.user)
-        question = serializer.save()
-        log_action(action=AuditAction.CREATE, actor=self.request.user, target=question, metadata={"event": "assessment_form_question_created", "template_id": str(section.template_id)})
+        if section.locked and not section.editable_by_child:
+            raise PermissionDenied("Inherited sections are locked. Add new questions in a local section.")
+        question = serializer.save(
+            owner_level=section.owner_level,
+            owner_id=section.owner_id,
+        )
+        event = field_addition_event(section.template) or "assessment_form_question_created"
+        log_action(
+            action=AuditAction.CREATE,
+            actor=self.request.user,
+            target=question,
+            new_value=question_audit_snapshot(question),
+            metadata=assessment_audit_metadata(
+                event=event,
+                actor=self.request.user,
+                entity=question,
+                owner_level=section.template.owner_level,
+                template_id=str(section.template_id),
+                field_type="question",
+            ),
+        )
 
     def perform_update(self, serializer):
         question = self.get_object()
-        AssessmentFormTemplateService.ensure_can_edit(template=question.section.template, actor=self.request.user)
+        AssessmentFormTemplateService.ensure_question_editable(question=question, actor=self.request.user)
         if serializer.validated_data.get("section", question.section) != question.section:
             raise ValidationError("Questions cannot be moved between assessment form sections.")
+        previous_snapshot = question_audit_snapshot(question)
         question = serializer.save()
-        log_action(action=AuditAction.UPDATE, actor=self.request.user, target=question, metadata={"event": "assessment_form_question_updated"})
+        log_action(
+            action=AuditAction.UPDATE,
+            actor=self.request.user,
+            target=question,
+            old_value=previous_snapshot,
+            new_value=question_audit_snapshot(question),
+            metadata=assessment_audit_metadata(
+                event="assessment_form_question_updated",
+                actor=self.request.user,
+                entity=question,
+            ),
+        )
 
     def perform_destroy(self, instance):
-        AssessmentFormTemplateService.ensure_can_edit(template=instance.section.template, actor=self.request.user)
-        log_action(action=AuditAction.DELETE, actor=self.request.user, target=instance, metadata={"event": "assessment_form_question_deleted"})
+        AssessmentFormTemplateService.ensure_question_deletable(question=instance, actor=self.request.user)
+        log_action(
+            action=AuditAction.DELETE,
+            actor=self.request.user,
+            target=instance,
+            old_value=question_audit_snapshot(instance),
+            metadata=assessment_audit_metadata(
+                event="assessment_form_question_deleted",
+                actor=self.request.user,
+                entity=instance,
+            ),
+        )
         instance.delete()
 
 
@@ -574,6 +707,7 @@ class AppointmentViewSet(viewsets.ModelViewSet):
             appointment=appointment,
             doctor=serializer.validated_data["doctor"],
             actor=request.user,
+            reason=serializer.validated_data.get("reason", ""),
         )
         return Response(AppointmentSerializer(appointment).data)
 
@@ -586,6 +720,8 @@ class MedicalAssessmentViewSet(viewsets.ModelViewSet):
         "facility",
         "facility__organization",
         "doctor",
+        "assigned_lab_staff",
+        "assigned_lab_unit",
         "appointment",
         "payment_transaction",
     ).order_by("-created_at")
@@ -715,9 +851,7 @@ class MedicalAssessmentViewSet(viewsets.ModelViewSet):
     def declaration(self, request, pk=None):
         assessment = self.get_object()
         if request.method == "GET":
-            declaration = getattr(assessment, "health_declaration", None)
-            if not declaration:
-                return Response({}, status=status.HTTP_404_NOT_FOUND)
+            declaration = AssessmentService.declaration_detail(assessment=assessment, actor=request.user)
             return Response(HealthDeclarationSerializer(declaration).data)
 
         serializer = HealthDeclarationSubmitSerializer(data=request.data)
@@ -756,6 +890,7 @@ class MedicalAssessmentViewSet(viewsets.ModelViewSet):
         assessment = self.get_object()
         declaration = get_object_or_404(HealthDeclaration, assessment=assessment)
         declaration = AssessmentService.validate_declaration(declaration=declaration, doctor=request.user)
+        declaration = AssessmentService.declaration_detail(assessment=assessment, actor=request.user)
         return Response(HealthDeclarationSerializer(declaration).data)
 
     @extend_schema(request=DeclarationReopenSerializer, responses=HealthDeclarationSerializer)
@@ -770,6 +905,7 @@ class MedicalAssessmentViewSet(viewsets.ModelViewSet):
             doctor=request.user,
             reason=serializer.validated_data["reason"],
         )
+        declaration = AssessmentService.declaration_detail(assessment=assessment, actor=request.user)
         return Response(HealthDeclarationSerializer(declaration).data)
 
     @extend_schema(request=PhysicalExaminationSubmitSerializer, responses={201: PhysicalExaminationSerializer})
@@ -896,7 +1032,7 @@ class MedicalAssessmentViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=["get"], url_path="reports")
     def reports(self, request, pk=None):
         assessment = self.get_object()
-        AssessmentService.ensure_assessment_report_access(assessment=assessment, user=request.user)
+        AssessmentService.ensure_assessment_report_access(assessment=assessment, user=request.user, kind="summary")
         generated = GeneratedReport.objects.filter(filters__assessment_id=str(assessment.id)).order_by("-created_at")
         return Response(
             {
@@ -945,6 +1081,7 @@ class MedicalAssessmentViewSet(viewsets.ModelViewSet):
             assessment=assessment,
             doctor=serializer.validated_data["doctor"],
             actor=request.user,
+            reason=serializer.validated_data.get("reason", ""),
         )
         return Response(FacilityAssessmentSerializer(assessment, context={"request": request}).data)
 
@@ -977,6 +1114,7 @@ class HealthDeclarationViewSet(viewsets.ReadOnlyModelViewSet):
     def validate(self, request, pk=None):
         declaration = get_object_or_404(self.get_queryset(), pk=pk)
         declaration = AssessmentService.validate_declaration(declaration=declaration, doctor=request.user)
+        declaration = AssessmentService.declaration_detail(assessment=declaration.assessment, actor=request.user)
         return Response(HealthDeclarationSerializer(declaration).data)
 
 
@@ -998,6 +1136,8 @@ class DoctorAssessmentViewSet(viewsets.ReadOnlyModelViewSet):
                 "employer",
                 "facility",
                 "doctor",
+                "assigned_lab_staff",
+                "assigned_lab_unit",
                 "appointment",
                 "payment_transaction",
             )
@@ -1029,6 +1169,7 @@ class DoctorAssessmentViewSet(viewsets.ReadOnlyModelViewSet):
         ensure_assigned_doctor_for_assessment(request.user, assessment)
         declaration = get_object_or_404(HealthDeclaration, assessment=assessment)
         declaration = AssessmentService.validate_declaration(declaration=declaration, doctor=request.user)
+        declaration = AssessmentService.declaration_detail(assessment=assessment, actor=request.user)
         return Response(HealthDeclarationSerializer(declaration).data)
 
     @extend_schema(request=DeclarationClarificationSerializer, responses=HealthDeclarationSerializer)
@@ -1044,6 +1185,7 @@ class DoctorAssessmentViewSet(viewsets.ReadOnlyModelViewSet):
             doctor=request.user,
             reason=serializer.validated_data["reason"],
         )
+        declaration = AssessmentService.declaration_detail(assessment=assessment, actor=request.user)
         return Response(HealthDeclarationSerializer(declaration).data)
 
     @extend_schema(request=PhysicalExaminationSubmitSerializer, responses={201: PhysicalExaminationSerializer})

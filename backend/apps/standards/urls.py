@@ -8,6 +8,8 @@ from .views import (
     EstablishmentCategoryViewSet,
     FacilityRequirementRuleViewSet,
     FoodHandlerCategoryViewSet,
+    MedicalTestPackageViewSet,
+    MedicalTestPackageComponentViewSet,
     IndicatorEvidenceViewSet,
     MEIndicatorDataSourceViewSet,
     MEIndicatorViewSet,
@@ -75,6 +77,16 @@ router.register(
     "federal/standards/facility-requirements",
     FacilityRequirementRuleViewSet,
     basename="facility-requirements",
+)
+router.register(
+    "federal/standards/medical-test-packages",
+    MedicalTestPackageViewSet,
+    basename="medical-test-packages",
+)
+router.register(
+    "federal/standards/medical-test-package-components",
+    MedicalTestPackageComponentViewSet,
+    basename="medical-test-package-components",
 )
 router.register(
     "federal/standards/reporting-templates",

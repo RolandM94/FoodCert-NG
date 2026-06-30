@@ -112,7 +112,14 @@ export type FacilityStaffProfile = {
   facility: string;
   department?: string;
   department_name?: string;
+  role?: string;
+  role_name?: string;
   staff_type: string;
+  professional_category: string;
+  status: string;
+  invited_by?: string;
+  invited_by_name?: string;
+  accepted_at?: string;
   professional_registration_number: string;
   digital_signature_url: string;
   is_active: boolean;
@@ -123,19 +130,95 @@ export type FacilityStaffProfile = {
 
 export type FacilityInvite = {
   id: string;
-  organization: string;
-  organization_name?: string;
-  unit?: string;
-  unit_name?: string;
-  invited_by: string;
-  invited_by_email?: string;
-  email: string;
-  phone: string;
-  role: string;
-  facility_staff_type: string;
-  message: string;
+  facility: string;
+  invite: string;
+  invite_id: string;
+  invite_email: string;
+  invite_phone: string;
+  invite_status: string;
+  role?: string;
+  role_name?: string;
+  professional_category: string;
   status: string;
-  expires_at: string;
   created_at: string;
   updated_at: string;
+};
+
+export type FacilityRolePermission = {
+  id: string;
+  permission_key: string;
+  allowed: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
+export type FacilityRole = {
+  id: string;
+  facility: string;
+  organization_role?: string;
+  organization_role_code?: string;
+  name: string;
+  description: string;
+  professional_category: string;
+  is_system_default: boolean;
+  is_custom: boolean;
+  created_by?: string;
+  created_by_name?: string;
+  permissions?: FacilityRolePermission[];
+  created_at: string;
+  updated_at: string;
+};
+
+export type FacilityComplianceDashboard = {
+  facility?: { id: string; facility_name: string } | null;
+  filters?: Record<string, string>;
+  cards: Record<string, string | number | null>;
+  charts?: Record<string, unknown>;
+  sections?: {
+    queue_summary?: Array<Record<string, string | number | null>>;
+    recent_assessments?: Array<Record<string, string | number | null>>;
+    staff_activity?: Array<{
+      actor_id?: string;
+      actor__email?: string;
+      actor__first_name?: string;
+      actor__last_name?: string;
+      actor__facility_staff_profile__role__name?: string;
+      total_actions?: number;
+      last_activity?: string;
+    }>;
+    warnings?: Array<{
+      code: string;
+      status: string;
+      message: string;
+    }>;
+  };
+};
+
+export type FacilityAuditLog = {
+  id: string;
+  created_at: string;
+  actor_name?: string;
+  actor_email?: string;
+  actor_role?: string;
+  action: string;
+  module: string;
+  event: string;
+  target_type: string;
+  target_id: string;
+  status: string;
+  ip_address?: string | null;
+  user_agent?: string;
+  metadata: Record<string, unknown>;
+};
+
+export type FacilityTemporaryUnfitReport = {
+  assessment_id: string;
+  food_handler_name: string;
+  employer_name: string;
+  status: string;
+  final_decision: string;
+  return_to_work_date: string;
+  signed_at: string;
+  report_id?: string | null;
+  report_status?: string;
 };

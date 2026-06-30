@@ -1,5 +1,6 @@
 export type AppointmentStatus = "pending" | "confirmed" | "rescheduled" | "cancelled" | "completed" | "no_show";
 export type StepStatus = "pending" | "submitted" | "validated" | "completed" | "reviewed";
+export type IdentityVerificationStatus = "pending" | "verified" | "mismatch";
 export type FitnessDecision =
   | "pending"
   | "fit"
@@ -90,6 +91,12 @@ export type AssessmentFormQuestion = {
   label: string;
   help_text: string;
   placeholder: string;
+  owner_level?: "federal" | "state" | "facility";
+  owner_id?: string | null;
+  locked?: boolean;
+  inherited_from_question?: string | null;
+  editable_by_child?: boolean;
+  deletable_by_child?: boolean;
   question_type: AssessmentQuestionType;
   required: boolean;
   options: string[];
@@ -110,6 +117,12 @@ export type AssessmentFormSection = {
   key: string;
   title: string;
   description: string;
+  owner_level?: "federal" | "state" | "facility";
+  owner_id?: string | null;
+  locked?: boolean;
+  inherited_from_section?: string | null;
+  editable_by_child?: boolean;
+  deletable_by_child?: boolean;
   sort_order: number;
   visibility_rules: Record<string, unknown>;
   required_completion: boolean;
@@ -129,6 +142,10 @@ export type AssessmentFormTemplate = {
   facility?: string | null;
   facility_name?: string;
   owner_organization?: string | null;
+  owner_level?: "federal" | "state" | "facility";
+  owner_id?: string | null;
+  base_template?: string | null;
+  superseded_by?: string | null;
   version: number;
   status: AssessmentFormStatus;
   is_mandatory: boolean;
@@ -190,10 +207,15 @@ export type AssessmentFormResponse = {
   updated_at: string;
 };
 
+export type AssessmentFormSnapshot = AssessmentFormResponse["question_snapshot"];
+
 export type Appointment = {
   id: string;
   food_handler: string;
   food_handler_name?: string;
+  food_handler_nin?: string;
+  food_handler_date_of_birth?: string;
+  food_handler_passport_photo?: string | null;
   facility: string;
   facility_name?: string;
   doctor?: string;
@@ -202,6 +224,19 @@ export type Appointment = {
   appointment_date: string;
   status: AppointmentStatus;
   payment_status?: string;
+  payment_transaction_id?: string | null;
+  payment_receipt_number?: string;
+  pay_at_facility_allowed?: boolean;
+  can_confirm_payment_at_facility?: boolean;
+  assessment_id?: string | null;
+  assessment_status?: string | null;
+  declaration_status?: StepStatus | null;
+  checked_in_at?: string | null;
+  checked_in_by_name?: string;
+  identity_verification_status?: IdentityVerificationStatus | null;
+  identity_verified_at?: string | null;
+  identity_verified_by_name?: string;
+  identity_mismatch_reason?: string;
   reason: string;
   notes: string;
   created_at: string;
@@ -211,6 +246,7 @@ export type Appointment = {
 export type MedicalAssessment = {
   id: string;
   food_handler: string;
+  assessment_type?: string;
   food_handler_name?: string;
   food_handler_identifier?: string;
   employer?: string;
@@ -221,13 +257,23 @@ export type MedicalAssessment = {
   facility_name?: string;
   doctor?: string;
   doctor_name?: string;
+  assigned_lab_staff?: string | null;
+  assigned_lab_staff_name?: string;
+  assigned_lab_unit?: string | null;
+  assigned_lab_unit_name?: string;
   appointment?: string;
   appointment_status?: string;
   appointment_date?: string;
   assessment_date?: string;
+  checked_in_at?: string | null;
+  checked_in_by_name?: string;
   payment_transaction?: string;
   payment_status?: string;
   status: string;
+  identity_verification_status?: IdentityVerificationStatus | null;
+  identity_verified_at?: string | null;
+  identity_verified_by_name?: string;
+  identity_mismatch_reason?: string;
   declaration_status: StepStatus;
   physical_exam_status: StepStatus;
   lab_status: StepStatus;
@@ -245,12 +291,32 @@ export type MedicalAssessment = {
   digital_signature_hash?: string;
   can_request_certificate: boolean;
   can_view_clinical?: boolean;
+  workflow_recommendation?: AssessmentWorkflowRecommendation | null;
   health_declaration?: HealthDeclaration | null;
   physical_examination?: PhysicalExamination | null;
   lab_tests?: LabTest[];
   vaccinations?: VaccinationRecord[];
   created_at: string;
   updated_at: string;
+};
+
+export type AssessmentWorkflowRecommendation = {
+  status: "ready" | "warning" | "blocked" | string;
+  suggested_decision: FitnessDecision;
+  rationale: string;
+  reasons: string[];
+  signals: {
+    declaration_risk: boolean;
+    physical_exam_risk: boolean;
+    flagged_lab_results: number;
+    repeat_required_tests: number;
+    highest_lab_recommendation: string;
+    vaccination_concerns: string[];
+    declaration_status: StepStatus;
+    physical_exam_status: StepStatus;
+    lab_status: StepStatus;
+    vaccination_status: StepStatus;
+  };
 };
 
 export type AssessmentWorkflowItem = {
@@ -299,6 +365,11 @@ export type HealthDeclaration = {
   id: string;
   assessment: string;
   assessment_status?: string;
+  template_snapshot?: string | null;
+  merged_schema?: AssessmentFormSnapshot | Record<string, unknown>;
+  form_response_id?: string | null;
+  form_response_status?: AssessmentFormResponseStatus | "";
+  response_data?: Record<string, unknown>;
   diarrhoea_vomiting_last_7_days: boolean;
   fever_more_than_one_week: boolean;
   skin_trouble: boolean;
@@ -372,6 +443,10 @@ export type LabTest = {
   doctor_recommendation?: string;
   result_document?: string;
   result_document_url?: string;
+  assigned_lab_staff?: string | null;
+  assigned_lab_staff_name?: string;
+  assigned_lab_unit?: string | null;
+  assigned_lab_unit_name?: string;
   requested_by: string;
   resulted_by?: string;
   reviewed_by?: string;

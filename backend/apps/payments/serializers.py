@@ -43,6 +43,9 @@ class AssessmentFeeSerializer(serializers.ModelSerializer):
 class PaymentTransactionSerializer(serializers.ModelSerializer):
     payer_email = serializers.EmailField(source="payer_user.email", read_only=True)
     metadata = serializers.SerializerMethodField()
+    workflow_status = serializers.SerializerMethodField()
+    receipt_number = serializers.CharField(source="receipt.receipt_number", read_only=True)
+    can_confirm_at_facility = serializers.SerializerMethodField()
 
     class Meta:
         model = PaymentTransaction
@@ -59,6 +62,9 @@ class PaymentTransactionSerializer(serializers.ModelSerializer):
             "provider_reference",
             "internal_reference",
             "status",
+            "workflow_status",
+            "receipt_number",
+            "can_confirm_at_facility",
             "paid_at",
             "metadata",
             "created_at",
@@ -68,6 +74,12 @@ class PaymentTransactionSerializer(serializers.ModelSerializer):
 
     def get_metadata(self, obj):
         return redacted_finance_metadata(obj.metadata)
+
+    def get_workflow_status(self, obj):
+        return PaymentService.workflow_status(transaction_obj=obj)
+
+    def get_can_confirm_at_facility(self, obj):
+        return PaymentService.can_confirm_at_facility(transaction_obj=obj)
 
 
 class PaymentProviderSerializer(serializers.ModelSerializer):

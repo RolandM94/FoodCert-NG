@@ -1,5 +1,6 @@
 from django.contrib.auth import get_user_model
 from django.core.cache import cache
+from django.core.management import call_command
 from django.utils import timezone
 from rest_framework.test import APITestCase
 
@@ -1847,3 +1848,189 @@ class StandardsHardeningTests(APITestCase):
                 metadata__event="foodhandlercategory_created",
             ).exists()
         )
+
+
+class PolicyVersionMetadataTests(APITestCase):
+    def setUp(self):
+        bump_active_standards_cache_version()
+        self.user = User.objects.create_user(
+            "policy-meta-admin",
+            "policy-meta-admin@example.com",
+            "StrongPass123!",
+            role=UserRole.FEDERAL_ADMIN,
+        )
+        self.client.force_authenticate(self.user)
+
+    def test_create_policy_version_with_metadata_round_trips(self):
+        response = self.client.post(
+            "/api/federal/standards/policy-versions/",
+            {
+                "version_code": "FH-2024.1",
+                "title": "Food Handler Eligibility Standard",
+                "version_type": "major",
+                "policy_category": "food_handler_eligibility",
+                "legal_basis": "National Guidelines for Food Handlers' Medical Test 2024",
+                "scope": "All states and the FCT",
+                "affected_entities": ["States", "Medical facilities", "Food handlers"],
+                "review_date": "2026-12-31",
+                "description": "Defines covered food handler categories.",
+                "change_summary": "Initial version.",
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, 201, response.data)
+        data = response.data.get("data", response.data)
+        self.assertEqual(data["policy_category"], "food_handler_eligibility")
+        self.assertEqual(data["affected_entities"], ["States", "Medical facilities", "Food handlers"])
+        self.assertEqual(data["review_date"], "2026-12-31")
+        self.assertEqual(data["legal_basis"], "National Guidelines for Food Handlers' Medical Test 2024")
+
+    def test_invalid_policy_category_rejected(self):
+        response = self.client.post(
+            "/api/federal/standards/policy-versions/",
+            {
+                "version_code": "FH-2024.2",
+                "title": "Bad category",
+                "version_type": "minor",
+                "policy_category": "not_a_real_category",
+                "description": "x",
+                "change_summary": "x",
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, 400)
+
+
+class MedicalTestPackageTests(APITestCase):
+    def setUp(self):
+        from apps.standards.models import PolicyVersion, PolicyVersionStatus, PolicyVersionType
+        bump_active_standards_cache_version()
+        self.user = User.objects.create_user(
+            "package-admin", "package-admin@example.com", "StrongPass123!", role=UserRole.FEDERAL_ADMIN,
+        )
+        self.client.force_authenticate(self.user)
+        self.policy = PolicyVersion.objects.create(
+            version_code="PKG-POL-1", title="Package Policy", description="d",
+            version_type=PolicyVersionType.MAJOR, status=PolicyVersionStatus.DRAFT, change_summary="c",
+        )
+
+    def test_create_package_with_components(self):
+        created = self.client.post(
+            "/api/federal/standards/medical-test-packages/",
+            {"policy_version": str(self.policy.id), "name": "FH Package", "code": "PKG-1", "package_version": "1.0"},
+            format="json",
+        )
+        self.assertEqual(created.status_code, 201, created.data)
+        package_id = created.data.get("data", created.data)["id"]
+
+        component = self.client.post(
+            "/api/federal/standards/medical-test-package-components/",
+            {"package": package_id, "component_type": "stool_microscopy_culture_sensitivity", "label": "Stool MCS", "mandatory": True, "order": 1},
+            format="json",
+        )
+        self.assertEqual(component.status_code, 201, component.data)
+
+        detail = self.client.get(f"/api/federal/standards/medical-test-packages/{package_id}/")
+        data = detail.data.get("data", detail.data)
+        self.assertEqual(len(data["components"]), 1)
+        self.assertEqual(data["mandatory_component_count"], 1)
+
+    def test_cannot_add_component_to_active_policy_package(self):
+        from apps.standards.models import PolicyVersion, PolicyVersionStatus, MedicalTestPackage
+        active = PolicyVersion.objects.create(
+            version_code="PKG-ACTIVE", title="Active", description="d", version_type="major",
+            status=PolicyVersionStatus.ACTIVE, change_summary="c",
+        )
+        package = MedicalTestPackage.objects.create(policy_version=active, name="P", code="PKG-A", status="active")
+        blocked = self.client.post(
+            "/api/federal/standards/medical-test-package-components/",
+            {"package": str(package.id), "component_type": "physical_examination", "label": "PE", "order": 1},
+            format="json",
+        )
+        self.assertEqual(blocked.status_code, 400)
+
+    def test_seed_creates_default_package_with_nine_components(self):
+        from apps.standards.models import MedicalTestPackage
+        call_command("seed_food_handlers_2024_policy", verbosity=0)
+        package = MedicalTestPackage.objects.get(code="FH-PKG-2024-001")
+        self.assertEqual(package.components.count(), 9)
+        self.assertEqual(package.components.filter(mandatory=True).count(), 8)
+
+
+class MedicalTestRuleEvaluationTests(APITestCase):
+    def setUp(self):
+        from apps.standards.models import PolicyVersion, PolicyVersionStatus, PolicyVersionType, MedicalTestRule
+        bump_active_standards_cache_version()
+        self.MedicalTestRule = MedicalTestRule
+        self.user = User.objects.create_user(
+            "rule-eval-admin", "rule-eval-admin@example.com", "StrongPass123!", role=UserRole.FEDERAL_ADMIN,
+        )
+        self.client.force_authenticate(self.user)
+        self.policy = PolicyVersion.objects.create(
+            version_code="RULE-EVAL-1", title="Rule policy", description="d",
+            version_type=PolicyVersionType.MAJOR, status=PolicyVersionStatus.DRAFT, change_summary="c",
+        )
+        self.rule = MedicalTestRule.objects.create(
+            policy_version=self.policy, name="Stool MCS", code="stool_mcs",
+            test_type="laboratory", rule_type="mandatory", result_type="positive_negative",
+            condition={"operator": "in", "value": ["positive"]},
+            action={"block_certification": True, "escalate": "doctor_review"},
+            blocking_values=["positive"],
+        )
+
+    def test_evaluate_blocks_on_condition_match(self):
+        result = self.rule.evaluate("positive")
+        self.assertTrue(result["matched_condition"])
+        self.assertTrue(result["blocks_certification"])
+        self.assertFalse(result["passed"])
+
+    def test_evaluate_passes_on_negative(self):
+        result = self.rule.evaluate("negative")
+        self.assertFalse(result["blocks_certification"])
+        self.assertTrue(result["passed"])
+
+    def test_test_endpoint(self):
+        response = self.client.post(
+            f"/api/federal/standards/medical-test-rules/{self.rule.id}/test/",
+            {"value": "positive"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+        data = response.data.get("data", response.data)
+        self.assertTrue(data["blocks_certification"])
+
+    def test_test_endpoint_requires_value(self):
+        response = self.client.post(f"/api/federal/standards/medical-test-rules/{self.rule.id}/test/", {}, format="json")
+        self.assertEqual(response.status_code, 400)
+
+
+class VaccinationPolicyParamsTests(APITestCase):
+    def test_reads_active_policy_validity(self):
+        from apps.standards.models import PolicyVersion, PolicyVersionStatus, VaccinationRule
+        from apps.standards.services import bump_active_standards_cache_version
+        from apps.vaccinations.models import VaccinationRecord
+
+        bump_active_standards_cache_version()
+        pv = PolicyVersion.objects.create(
+            version_code="VAX-POL-1", title="Vax", description="d", version_type="major",
+            status=PolicyVersionStatus.ACTIVE, change_summary="c",
+        )
+        VaccinationRule.objects.create(
+            policy_version=pv, vaccine_name="Typhoid", vaccine_code="typhoid", required=True,
+            validity_months=48, dose_schedule=[{"dose": 1, "interval_months": 0}], status="active",
+        )
+        VaccinationRule.objects.create(
+            policy_version=pv, vaccine_name="Hepatitis A", vaccine_code="hepatitis_a", required=True,
+            validity_months=120, dose_schedule=[{"dose": 1, "interval_months": 0}, {"dose": 2, "interval_months": 12}], status="active",
+        )
+        params = VaccinationRecord.policy_validity_params()
+        self.assertEqual(params["typhoid_validity_years"], 4)
+        self.assertEqual(params["hepatitis_a_second_dose_months"], 12)
+
+    def test_falls_back_to_defaults_without_policy(self):
+        from apps.standards.services import bump_active_standards_cache_version
+        from apps.vaccinations.models import VaccinationRecord
+
+        bump_active_standards_cache_version()
+        params = VaccinationRecord.policy_validity_params()
+        self.assertEqual(params, {"typhoid_validity_years": 3, "hepatitis_a_second_dose_months": 6})

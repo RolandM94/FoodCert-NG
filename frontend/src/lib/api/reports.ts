@@ -11,7 +11,7 @@ export async function getFacilityDashboard(params?: Record<string, string>): Pro
   return unwrap(response.data);
 }
 
-export async function getStateDashboard(params?: Record<string, string>): Promise<DashboardPayload> {
+export async function getStateDashboard(params?: Record<string, string | undefined>): Promise<DashboardPayload> {
   const response = await apiClient.get<ApiEnvelope<DashboardPayload>>("/dashboard/state/", { params });
   return unwrap(response.data);
 }

@@ -20,6 +20,7 @@ class AssessmentStatus(models.TextChoices):
     PAYMENT_PENDING = "payment_pending", "Payment Pending"
     PAYMENT_CONFIRMED = "payment_confirmed", "Payment Confirmed"
     APPOINTMENT_BOOKED = "appointment_booked", "Appointment Booked"
+    ASSESSMENT_IN_PROGRESS = "assessment_in_progress", "Assessment In Progress"
     DECLARATION_SUBMITTED = "declaration_submitted", "Declaration Submitted"
     DECLARATION_VALIDATED = "declaration_validated", "Declaration Validated"
     PHYSICAL_EXAM_COMPLETED = "physical_exam_completed", "Physical Exam Completed"
@@ -45,6 +46,12 @@ class StepStatus(models.TextChoices):
     VALIDATED = "validated", "Validated"
     COMPLETED = "completed", "Completed"
     REVIEWED = "reviewed", "Reviewed"
+
+
+class IdentityVerificationStatus(models.TextChoices):
+    PENDING = "pending", "Pending"
+    VERIFIED = "verified", "Verified"
+    MISMATCH = "mismatch", "Mismatch Flagged"
 
 
 class FitnessDecision(models.TextChoices):
@@ -169,6 +176,12 @@ class AssessmentFormResponseStatus(models.TextChoices):
     ARCHIVED = "archived", "Archived"
 
 
+class AssessmentOwnerLevel(models.TextChoices):
+    FEDERAL = "federal", "Federal"
+    STATE = "state", "State"
+    FACILITY = "facility", "Facility"
+
+
 class Appointment(BaseModel):
     food_handler = models.ForeignKey("food_handlers.FoodHandlerProfile", on_delete=models.PROTECT, related_name="appointments")
     facility = models.ForeignKey("facilities.MedicalFacility", on_delete=models.PROTECT, related_name="appointments")
@@ -211,6 +224,61 @@ class MedicalAssessment(BaseModel):
     )
     appointment = models.ForeignKey(Appointment, on_delete=models.SET_NULL, null=True, blank=True, related_name="assessments")
     assessment_date = models.DateTimeField(null=True, blank=True)
+    checked_in_at = models.DateTimeField(null=True, blank=True)
+    checked_in_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="checked_in_assessments",
+    )
+    check_in_notes = models.TextField(blank=True)
+    identity_verification_status = models.CharField(
+        max_length=24,
+        choices=IdentityVerificationStatus.choices,
+        default=IdentityVerificationStatus.PENDING,
+        db_index=True,
+    )
+    identity_verified_at = models.DateTimeField(null=True, blank=True)
+    identity_verified_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="identity_verified_assessments",
+    )
+    identity_mismatch_reason = models.TextField(blank=True)
+    identity_mismatch_flagged_at = models.DateTimeField(null=True, blank=True)
+    identity_mismatch_flagged_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="identity_mismatch_assessments",
+    )
+    assigned_lab_staff = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="assigned_lab_assessments",
+    )
+    assigned_lab_unit = models.ForeignKey(
+        "organizations.OrganizationUnit",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="lab_assessments",
+    )
+    lab_assignment_reason = models.TextField(blank=True)
+    lab_assigned_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="lab_assigned_assessments",
+    )
+    lab_assigned_at = models.DateTimeField(null=True, blank=True)
     payment_transaction = models.ForeignKey(
         "payments.PaymentTransaction",
         on_delete=models.PROTECT,
@@ -248,7 +316,10 @@ class MedicalAssessment(BaseModel):
             models.Index(fields=["employer"]),
             models.Index(fields=["facility"]),
             models.Index(fields=["doctor"]),
+            models.Index(fields=["assigned_lab_staff"]),
+            models.Index(fields=["assigned_lab_unit"]),
             models.Index(fields=["status"]),
+            models.Index(fields=["identity_verification_status"]),
             models.Index(fields=["final_decision"]),
             models.Index(fields=["signed_at"], name="assessments_signed__7338f5_idx"),
             models.Index(fields=["created_at"]),
@@ -270,6 +341,8 @@ class AssessmentFormTemplate(BaseModel):
     state = models.ForeignKey("locations.State", on_delete=models.SET_NULL, null=True, blank=True, related_name="assessment_form_templates")
     facility = models.ForeignKey("facilities.MedicalFacility", on_delete=models.SET_NULL, null=True, blank=True, related_name="assessment_form_templates")
     owner_organization = models.ForeignKey("organizations.Organization", on_delete=models.SET_NULL, null=True, blank=True, related_name="assessment_form_templates")
+    owner_level = models.CharField(max_length=16, choices=AssessmentOwnerLevel.choices, default=AssessmentOwnerLevel.FEDERAL, db_index=True)
+    owner_id = models.UUIDField(null=True, blank=True, db_index=True)
     version = models.PositiveIntegerField(default=1)
     status = models.CharField(max_length=32, choices=AssessmentFormStatus.choices, default=AssessmentFormStatus.DRAFT, db_index=True)
     is_mandatory = models.BooleanField(default=False, db_index=True)
@@ -285,6 +358,8 @@ class AssessmentFormTemplate(BaseModel):
     effective_to = models.DateField(null=True, blank=True)
     created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="created_assessment_form_templates")
     parent_template = models.ForeignKey("self", on_delete=models.SET_NULL, null=True, blank=True, related_name="versions")
+    base_template = models.ForeignKey("self", on_delete=models.SET_NULL, null=True, blank=True, related_name="descendant_templates")
+    superseded_by = models.ForeignKey("self", on_delete=models.SET_NULL, null=True, blank=True, related_name="superseded_templates")
 
     class Meta:
         ordering = ["name", "-version"]
@@ -323,6 +398,12 @@ class AssessmentFormSection(BaseModel):
     key = models.SlugField(max_length=100)
     title = models.CharField(max_length=255)
     description = models.TextField(blank=True)
+    owner_level = models.CharField(max_length=16, choices=AssessmentOwnerLevel.choices, default=AssessmentOwnerLevel.FEDERAL, db_index=True)
+    owner_id = models.UUIDField(null=True, blank=True, db_index=True)
+    locked = models.BooleanField(default=False, db_index=True)
+    inherited_from_section = models.ForeignKey("self", on_delete=models.SET_NULL, null=True, blank=True, related_name="derived_sections")
+    editable_by_child = models.BooleanField(default=False)
+    deletable_by_child = models.BooleanField(default=False)
     sort_order = models.PositiveIntegerField(default=0)
     visibility_rules = models.JSONField(default=dict, blank=True)
     required_completion = models.BooleanField(default=False)
@@ -343,11 +424,18 @@ class AssessmentFormQuestion(BaseModel):
     label = models.TextField()
     help_text = models.TextField(blank=True)
     placeholder = models.CharField(max_length=255, blank=True)
+    owner_level = models.CharField(max_length=16, choices=AssessmentOwnerLevel.choices, default=AssessmentOwnerLevel.FEDERAL, db_index=True)
+    owner_id = models.UUIDField(null=True, blank=True, db_index=True)
+    locked = models.BooleanField(default=False, db_index=True)
+    inherited_from_question = models.ForeignKey("self", on_delete=models.SET_NULL, null=True, blank=True, related_name="derived_questions")
+    editable_by_child = models.BooleanField(default=False)
+    deletable_by_child = models.BooleanField(default=False)
     question_type = models.CharField(max_length=48, choices=AssessmentQuestionType.choices, db_index=True)
     required = models.BooleanField(default=False)
     options = models.JSONField(default=list, blank=True)
     validation_rules = models.JSONField(default=dict, blank=True)
     conditional_logic = models.JSONField(default=dict, blank=True)
+    risk_flag = models.BooleanField(default=False, db_index=True)
     risk_flag_rules = models.JSONField(default=dict, blank=True)
     privacy_classification = models.CharField(max_length=32, choices=AssessmentPrivacyClassification.choices, db_index=True)
     respondent_role = models.CharField(max_length=32, choices=AssessmentRespondentRole.choices, db_index=True)
@@ -435,6 +523,7 @@ class AssessmentFormResponse(BaseModel):
     assessment = models.ForeignKey(MedicalAssessment, on_delete=models.CASCADE, related_name="form_responses")
     template = models.ForeignKey(AssessmentFormTemplate, on_delete=models.PROTECT, related_name="responses")
     template_version = models.PositiveIntegerField()
+    template_snapshot = models.ForeignKey("AssessmentFormTemplateSnapshot", on_delete=models.SET_NULL, null=True, blank=True, related_name="responses")
     respondent = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
@@ -476,6 +565,34 @@ class AssessmentFormResponse(BaseModel):
 
     def __str__(self) -> str:
         return f"{self.assessment} / {self.template} response v{self.version}"
+
+
+class AssessmentFormTemplateAdoption(BaseModel):
+    parent_template = models.ForeignKey(AssessmentFormTemplate, on_delete=models.CASCADE, related_name="child_adoptions")
+    child_template = models.ForeignKey(AssessmentFormTemplate, on_delete=models.CASCADE, related_name="parent_adoptions")
+    adopted_by_level = models.CharField(max_length=16, choices=AssessmentOwnerLevel.choices, db_index=True)
+    adopted_by_id = models.UUIDField(db_index=True)
+    adopted_at = models.DateTimeField(default=timezone.now)
+    status = models.CharField(max_length=16, default="active", db_index=True)
+
+    class Meta:
+        ordering = ["-adopted_at"]
+        indexes = [
+            models.Index(fields=["adopted_by_level", "adopted_by_id"], name="assess_form_adopt_owner_idx"),
+            models.Index(fields=["status"], name="assess_form_adopt_status_idx"),
+        ]
+
+
+class AssessmentFormTemplateSnapshot(BaseModel):
+    assessment = models.OneToOneField(MedicalAssessment, on_delete=models.CASCADE, related_name="declaration_template_snapshot")
+    federal_template = models.ForeignKey(AssessmentFormTemplate, on_delete=models.SET_NULL, null=True, blank=True, related_name="federal_snapshots")
+    state_template = models.ForeignKey(AssessmentFormTemplate, on_delete=models.SET_NULL, null=True, blank=True, related_name="state_snapshots")
+    facility_template = models.ForeignKey(AssessmentFormTemplate, on_delete=models.SET_NULL, null=True, blank=True, related_name="facility_snapshots")
+    merged_schema = models.JSONField(default=dict, blank=True)
+    generated_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        ordering = ["-generated_at"]
 
 
 class HealthDeclaration(BaseModel):

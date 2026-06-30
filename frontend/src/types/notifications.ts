@@ -188,7 +188,7 @@ export type NotificationDelivery = {
   updated_at: string;
 };
 
-export type BroadcastStatus = "draft" | "pending_approval" | "approved" | "sending" | "sent" | "failed" | "cancelled";
+export type BroadcastStatus = "draft" | "pending_approval" | "approved" | "sending" | "sent" | "archived" | "failed" | "cancelled";
 
 export type BroadcastMessage = {
   id: string;

@@ -1,4 +1,5 @@
 from django.db import models as db_models
+from django.db.models import Q
 from django.utils import timezone
 from rest_framework import serializers as drf_serializers
 from rest_framework import viewsets
@@ -9,6 +10,8 @@ from rest_framework.views import APIView
 
 from apps.accounts.models import UserRole
 from apps.accounts.permissions import IsActiveUser
+from apps.audit.models import AuditAction
+from apps.audit.services import log_action
 from django.contrib.auth import get_user_model
 
 User = get_user_model()
@@ -63,6 +66,16 @@ from apps.notifications.services import (
 MANDATORY_CATEGORIES = {
     NotificationCategory.SECURITY,
     NotificationCategory.ENFORCEMENT,
+}
+
+STATE_AWARENESS_AUDIENCES = {
+    "all_users_in_state",
+    "all_employers_in_state",
+    "all_facilities_in_state",
+    "all_food_handlers_in_state",
+    "all_inspectors_in_state",
+    "all_state_ministry",
+    "general_public",
 }
 
 
@@ -486,7 +499,15 @@ class BroadcastViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         if getattr(self, "swagger_fake_view", False):
             return BroadcastMessage.objects.none()
-        return BroadcastMessage.objects.select_related("created_by", "approved_by").order_by("-created_at")
+        qs = BroadcastMessage.objects.select_related("created_by", "approved_by").order_by("-created_at")
+        user = self.request.user
+        if user.role == UserRole.STATE_ADMIN:
+            state_id = str(user.state_id or "")
+            qs = qs.filter(
+                Q(created_by=user)
+                | Q(audience_filters__state_id=state_id)
+            )
+        return qs
 
     def get_serializer_class(self):
         if self.action == "create":
@@ -500,14 +521,45 @@ class BroadcastViewSet(viewsets.ModelViewSet):
         if role not in (UserRole.SUPER_ADMIN, UserRole.FEDERAL_ADMIN, UserRole.STATE_ADMIN):
             raise drf_serializers.ValidationError("Only administrators can manage broadcasts.")
 
+    def _apply_scope_to_payload(self, payload: dict) -> dict:
+        audience_filters = dict(payload.get("audience_filters") or {})
+        if self.request.user.role == UserRole.STATE_ADMIN:
+            if not self.request.user.state_id:
+                raise drf_serializers.ValidationError("State administrators must belong to a state before creating notices.")
+            if payload.get("audience_type") not in STATE_AWARENESS_AUDIENCES:
+                raise drf_serializers.ValidationError("This audience is not allowed for State public awareness notices.")
+            audience_filters["state_id"] = str(self.request.user.state_id)
+        payload["audience_filters"] = audience_filters
+        return payload
+
+    def _can_approve(self, broadcast) -> bool:
+        user = self.request.user
+        if user.role in (UserRole.SUPER_ADMIN, UserRole.FEDERAL_ADMIN):
+            return True
+        if user.role == UserRole.STATE_ADMIN:
+            return (
+                str((broadcast.audience_filters or {}).get("state_id", "")) == str(user.state_id or "")
+            )
+        return False
+
     def perform_create(self, serializer):
         self._require_admin()
         serializer.save(created_by=self.request.user, status=BroadcastStatus.DRAFT)
 
     def create(self, request, *args, **kwargs):
-        serializer = self.get_serializer(data=request.data)
+        payload = self._apply_scope_to_payload(dict(request.data))
+        serializer = self.get_serializer(data=payload)
         serializer.is_valid(raise_exception=True)
         self.perform_create(serializer)
+        log_action(
+            action=AuditAction.CREATE,
+            actor=request.user,
+            target=serializer.instance,
+            metadata={
+                "event": "broadcast_created",
+                "audience_type": serializer.instance.audience_type,
+            },
+        )
         output = BroadcastMessageSerializer(serializer.instance)
         return Response(output.data, status=201)
 
@@ -517,6 +569,21 @@ class BroadcastViewSet(viewsets.ModelViewSet):
         if broadcast.status != BroadcastStatus.DRAFT:
             raise drf_serializers.ValidationError("Only draft broadcasts can be edited.")
         serializer.save()
+
+    def partial_update(self, request, *args, **kwargs):
+        payload = self._apply_scope_to_payload(dict(request.data))
+        kwargs["partial"] = True
+        instance = self.get_object()
+        serializer = self.get_serializer(instance, data=payload, partial=True)
+        serializer.is_valid(raise_exception=True)
+        self.perform_update(serializer)
+        log_action(
+            action=AuditAction.UPDATE,
+            actor=request.user,
+            target=serializer.instance,
+            metadata={"event": "broadcast_updated"},
+        )
+        return Response(BroadcastMessageSerializer(serializer.instance).data)
 
     def _resolve_audience(self, broadcast) -> int:
         filters = broadcast.audience_filters or {}
@@ -534,10 +601,14 @@ class BroadcastViewSet(viewsets.ModelViewSet):
             qs = qs.filter(role=UserRole.EMPLOYER, state_id=state_id)
         elif broadcast.audience_type == "all_facilities_in_state" and state_id:
             qs = qs.filter(role=UserRole.FACILITY_ADMIN, state_id=state_id)
+        elif broadcast.audience_type == "all_food_handlers_in_state" and state_id:
+            qs = qs.filter(role=UserRole.FOOD_HANDLER, state_id=state_id)
         elif broadcast.audience_type == "all_inspectors_in_state" and state_id:
             qs = qs.filter(role=UserRole.INSPECTOR, state_id=state_id)
         elif broadcast.audience_type == "all_state_ministry" and state_id:
             qs = qs.filter(role=UserRole.STATE_ADMIN, state_id=state_id)
+        elif broadcast.audience_type == "general_public":
+            return 0
         elif broadcast.audience_type == "all_federal_ministry":
             qs = qs.filter(role__in=[UserRole.FEDERAL_ADMIN, UserRole.SUPER_ADMIN])
         elif broadcast.audience_type == "all_users_in_organization" and organization_id:
@@ -579,18 +650,30 @@ class BroadcastViewSet(viewsets.ModelViewSet):
             raise drf_serializers.ValidationError("Only draft broadcasts can be submitted.")
         broadcast.status = BroadcastStatus.PENDING_APPROVAL
         broadcast.save(update_fields=["status", "updated_at"])
+        log_action(
+            action=AuditAction.WORKFLOW_TRANSITION,
+            actor=request.user,
+            target=broadcast,
+            metadata={"event": "broadcast_submitted_for_approval"},
+        )
         return Response(BroadcastMessageSerializer(broadcast).data)
 
     @action(detail=True, methods=["post"], url_path="approve")
     def approve_broadcast(self, request, pk=None):
-        if request.user.role not in (UserRole.SUPER_ADMIN, UserRole.FEDERAL_ADMIN):
-            raise drf_serializers.ValidationError("Only super/federal admin can approve broadcasts.")
         broadcast = self.get_object()
+        if not self._can_approve(broadcast):
+            raise drf_serializers.ValidationError("You do not have permission to approve this broadcast.")
         if broadcast.status != BroadcastStatus.PENDING_APPROVAL:
             raise drf_serializers.ValidationError("Only pending broadcasts can be approved.")
         broadcast.status = BroadcastStatus.APPROVED
         broadcast.approved_by = request.user
         broadcast.save(update_fields=["status", "approved_by", "updated_at"])
+        log_action(
+            action=AuditAction.WORKFLOW_TRANSITION,
+            actor=request.user,
+            target=broadcast,
+            metadata={"event": "broadcast_approved"},
+        )
         return Response(BroadcastMessageSerializer(broadcast).data)
 
     @action(detail=True, methods=["post"], url_path="send")
@@ -617,10 +700,14 @@ class BroadcastViewSet(viewsets.ModelViewSet):
             qs = qs.filter(role=UserRole.EMPLOYER, state_id=state_id)
         elif broadcast.audience_type == "all_facilities_in_state" and state_id:
             qs = qs.filter(role=UserRole.FACILITY_ADMIN, state_id=state_id)
+        elif broadcast.audience_type == "all_food_handlers_in_state" and state_id:
+            qs = qs.filter(role=UserRole.FOOD_HANDLER, state_id=state_id)
         elif broadcast.audience_type == "all_inspectors_in_state" and state_id:
             qs = qs.filter(role=UserRole.INSPECTOR, state_id=state_id)
         elif broadcast.audience_type == "all_state_ministry" and state_id:
             qs = qs.filter(role=UserRole.STATE_ADMIN, state_id=state_id)
+        elif broadcast.audience_type == "general_public":
+            qs = User.objects.none()
         elif broadcast.audience_type == "all_federal_ministry":
             qs = qs.filter(role__in=[UserRole.FEDERAL_ADMIN, UserRole.SUPER_ADMIN])
         elif broadcast.audience_type == "all_users_in_organization" and organization_id:
@@ -644,7 +731,7 @@ class BroadcastViewSet(viewsets.ModelViewSet):
             for u in qs[:1000]  # batch limit for safety
         ]
 
-        if not recipients:
+        if broadcast.audience_type != "general_public" and not recipients:
             raise drf_serializers.ValidationError("No recipients found for this audience.")
 
         sent = 0
@@ -668,6 +755,32 @@ class BroadcastViewSet(viewsets.ModelViewSet):
         broadcast.failed_count = failed
         broadcast.sent_at = timezone.now()
         broadcast.save(update_fields=["status", "sent_count", "failed_count", "sent_at", "updated_at"])
+        log_action(
+            action=AuditAction.WORKFLOW_TRANSITION,
+            actor=request.user,
+            target=broadcast,
+            metadata={
+                "event": "broadcast_published",
+                "sent_count": sent,
+                "failed_count": failed,
+            },
+        )
+        return Response(BroadcastMessageSerializer(broadcast).data)
+
+    @action(detail=True, methods=["post"], url_path="archive")
+    def archive_broadcast(self, request, pk=None):
+        self._require_admin()
+        broadcast = self.get_object()
+        if broadcast.status == BroadcastStatus.ARCHIVED:
+            raise drf_serializers.ValidationError("Broadcast already archived.")
+        broadcast.status = BroadcastStatus.ARCHIVED
+        broadcast.save(update_fields=["status", "updated_at"])
+        log_action(
+            action=AuditAction.WORKFLOW_TRANSITION,
+            actor=request.user,
+            target=broadcast,
+            metadata={"event": "broadcast_archived"},
+        )
         return Response(BroadcastMessageSerializer(broadcast).data)
 
 
@@ -876,4 +989,3 @@ class DashboardStatsView(APIView):
             "by_category": by_category,
             "by_status": by_status,
         })
-

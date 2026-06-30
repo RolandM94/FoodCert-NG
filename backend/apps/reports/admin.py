@@ -1,6 +1,22 @@
 from django.contrib import admin
 
-from apps.reports.models import DashboardWidget, DataQualityIssue, GeneratedReport, MEIndicator, MEIndicatorValue, ReportSchedule, ReportTemplate, ScheduledReport
+from apps.reports.models import (
+    AnalyticsDataset,
+    AnalyticsWidget,
+    AnalyticsWorksheet,
+    DashboardCanvas,
+    DashboardCanvasBlock,
+    DashboardTemplate,
+    DashboardWidget,
+    DataQualityIssue,
+    GeneratedReport,
+    MEIndicator,
+    MEIndicatorValue,
+    PublishedDashboard,
+    ReportSchedule,
+    ReportTemplate,
+    ScheduledReport,
+)
 
 
 @admin.register(ReportSchedule)
@@ -46,6 +62,55 @@ class DashboardWidgetAdmin(admin.ModelAdmin):
     list_filter = ("dashboard_scope", "widget_type", "is_active")
     search_fields = ("code", "name", "metric_code")
     ordering = ("dashboard_scope", "sort_order", "name")
+
+
+@admin.register(AnalyticsDataset)
+class AnalyticsDatasetAdmin(admin.ModelAdmin):
+    list_display = ("code", "name", "module_source", "privacy_level", "is_active")
+    list_filter = ("module_source", "privacy_level", "is_active")
+    search_fields = ("code", "name", "description")
+
+
+@admin.register(AnalyticsWorksheet)
+class AnalyticsWorksheetAdmin(admin.ModelAdmin):
+    list_display = ("name", "account_type", "dataset", "owner", "scope_type", "is_active", "is_template")
+    list_filter = ("account_type", "scope_type", "is_active", "is_template")
+    search_fields = ("name", "description", "dataset__code", "owner__email")
+
+
+@admin.register(AnalyticsWidget)
+class AnalyticsWidgetAdmin(admin.ModelAdmin):
+    list_display = ("title", "account_type", "worksheet", "widget_type", "scope_type", "is_active")
+    list_filter = ("account_type", "widget_type", "scope_type", "is_active")
+    search_fields = ("title", "worksheet__name", "owner__email")
+
+
+@admin.register(DashboardCanvas)
+class DashboardCanvasAdmin(admin.ModelAdmin):
+    list_display = ("name", "account_type", "owner", "scope_type", "is_draft", "is_active")
+    list_filter = ("account_type", "scope_type", "is_draft", "is_active")
+    search_fields = ("name", "description", "owner__email")
+
+
+@admin.register(DashboardCanvasBlock)
+class DashboardCanvasBlockAdmin(admin.ModelAdmin):
+    list_display = ("canvas", "block_type", "title", "sort_order", "is_active")
+    list_filter = ("block_type", "is_active")
+    search_fields = ("canvas__name", "title")
+
+
+@admin.register(PublishedDashboard)
+class PublishedDashboardAdmin(admin.ModelAdmin):
+    list_display = ("canvas", "version_label", "visibility_scope", "published_by", "published_at", "is_active")
+    list_filter = ("visibility_scope", "is_active")
+    search_fields = ("canvas__name", "version_label", "published_by__email")
+
+
+@admin.register(DashboardTemplate)
+class DashboardTemplateAdmin(admin.ModelAdmin):
+    list_display = ("name", "account_type", "scope_type", "is_system_template", "is_active")
+    list_filter = ("account_type", "scope_type", "is_system_template", "is_active")
+    search_fields = ("name", "description", "created_by__email")
 
 
 @admin.register(DataQualityIssue)

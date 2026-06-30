@@ -40,7 +40,7 @@ class StakeholderContextView(views.APIView):
             UserRole.FACILITY_ADMIN, UserRole.EMPLOYER,
         }
         can_view_audit = request.user.role in {
-            UserRole.SUPER_ADMIN, UserRole.FEDERAL_ADMIN,
+            UserRole.SUPER_ADMIN, UserRole.FEDERAL_ADMIN, UserRole.STATE_ADMIN,
         }
 
         return Response({

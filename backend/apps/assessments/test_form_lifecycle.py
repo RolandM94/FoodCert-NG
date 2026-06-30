@@ -1,20 +1,23 @@
 from django.contrib.auth import get_user_model
+from django.utils import timezone
 from rest_framework.test import APITestCase
 
 from apps.accounts.models import UserRole
 from apps.assessments.models import (
+    AssessmentFormTemplateAdoption,
     AssessmentFormQuestion,
     AssessmentFormScope,
     AssessmentFormSection,
     AssessmentFormStatus,
     AssessmentFormTemplate,
     AssessmentFormType,
+    AssessmentOwnerLevel,
     AssessmentPrivacyClassification,
     AssessmentQuestionType,
     AssessmentRespondentRole,
 )
-from apps.audit.models import AuditLog
-from apps.facilities.models import FacilityType, MedicalFacility, OwnershipType
+from apps.audit.models import AuditAction, AuditLog
+from apps.facilities.models import AccreditationStatus, FacilityType, MedicalFacility, OwnershipType
 from apps.locations.models import State
 from apps.notifications.models import Notification
 from apps.organizations.models import Organization, OrganizationType
@@ -55,12 +58,14 @@ class AssessmentFormLifecycleApiTests(APITestCase):
             contact_person="Medical Director",
             phone="08030000000",
             email=f"{license_number.lower()}@example.com",
+            accreditation_status=AccreditationStatus.APPROVED,
+            accreditation_expiry_date=timezone.localdate() + timezone.timedelta(days=365),
         )
 
     def create_national_template(self):
         self.client.force_authenticate(self.federal_admin)
         response = self.client.post(
-            "/api/forms/templates/",
+            "/api/assessment-forms/templates/",
             {
                 "name": "National Health Declaration",
                 "description": "National minimum declaration.",
@@ -75,13 +80,13 @@ class AssessmentFormLifecycleApiTests(APITestCase):
 
     def add_section_and_question(self, template_id):
         section = self.client.post(
-            "/api/forms/sections/",
+            "/api/assessment-forms/sections/",
             {"template": template_id, "key": "symptoms", "title": "Symptoms", "sort_order": 1},
             format="json",
         )
         self.assertEqual(section.status_code, 201, section.data)
         question = self.client.post(
-            "/api/forms/questions/",
+            "/api/assessment-forms/questions/",
             {
                 "section": payload(section)["id"],
                 "key": "recent_diarrhoea_vomiting",
@@ -103,7 +108,7 @@ class AssessmentFormLifecycleApiTests(APITestCase):
             ("publish", AssessmentFormStatus.PUBLISHED),
             ("activate", AssessmentFormStatus.ACTIVE),
         ]:
-            response = self.client.post(f"/api/forms/templates/{template_id}/{action}/", format="json")
+            response = self.client.post(f"/api/assessment-forms/templates/{template_id}/{action}/", format="json")
             self.assertEqual(response.status_code, 200, response.data)
             self.assertEqual(payload(response)["status"], expected_status)
 
@@ -111,23 +116,41 @@ class AssessmentFormLifecycleApiTests(APITestCase):
         template = self.create_national_template()
         section, question = self.add_section_and_question(template["id"])
 
-        preview = self.client.get(f"/api/forms/templates/{template['id']}/preview/")
+        preview = self.client.get(f"/api/assessment-forms/templates/{template['id']}/preview/")
         self.assertEqual(preview.status_code, 200)
         self.assertEqual(payload(preview)["sections"][0]["id"], section["id"])
         self.assertEqual(payload(preview)["sections"][0]["questions"][0]["id"], question["id"])
 
         self.publish_template(template["id"])
         self.assertTrue(AuditLog.objects.filter(target_id=template["id"], metadata__event="assessment_form_activated").exists())
+        created_audit = AuditLog.objects.get(target_id=template["id"], metadata__event="federal_template_created")
+        self.assertEqual(created_audit.metadata["owner_level"], AssessmentOwnerLevel.FEDERAL)
+        published_audit = AuditLog.objects.get(target_id=template["id"], metadata__event="federal_template_published")
+        self.assertEqual(published_audit.action, AuditAction.WORKFLOW_TRANSITION)
+        self.assertTrue(
+            Notification.objects.filter(
+                recipient=self.state_admin,
+                related_object_id=template["id"],
+                title="Federal declaration template published",
+            ).exists()
+        )
+        self.assertTrue(
+            Notification.objects.filter(
+                recipient=self.other_state_admin,
+                related_object_id=template["id"],
+                title="Federal declaration template published",
+            ).exists()
+        )
 
     def test_published_template_and_nested_content_are_immutable(self):
         template = self.create_national_template()
         section, _ = self.add_section_and_question(template["id"])
         self.publish_template(template["id"])
 
-        template_edit = self.client.patch(f"/api/forms/templates/{template['id']}/", {"name": "Changed"}, format="json")
-        section_edit = self.client.patch(f"/api/forms/sections/{section['id']}/", {"title": "Changed"}, format="json")
+        template_edit = self.client.patch(f"/api/assessment-forms/templates/{template['id']}/", {"name": "Changed"}, format="json")
+        section_edit = self.client.patch(f"/api/assessment-forms/sections/{section['id']}/", {"title": "Changed"}, format="json")
         question_create = self.client.post(
-            "/api/forms/questions/",
+            "/api/assessment-forms/questions/",
             {
                 "section": section["id"],
                 "key": "late_question",
@@ -148,7 +171,7 @@ class AssessmentFormLifecycleApiTests(APITestCase):
         self.add_section_and_question(template["id"])
         self.publish_template(template["id"])
 
-        duplicated = self.client.post(f"/api/forms/templates/{template['id']}/duplicate/", format="json")
+        duplicated = self.client.post(f"/api/assessment-forms/templates/{template['id']}/duplicate/", format="json")
         self.assertEqual(duplicated.status_code, 201, duplicated.data)
         duplicate = payload(duplicated)
         self.assertEqual(duplicate["version"], 2)
@@ -156,22 +179,22 @@ class AssessmentFormLifecycleApiTests(APITestCase):
         self.assertEqual(len(duplicate["sections"]), 1)
         self.assertEqual(len(duplicate["sections"][0]["questions"]), 1)
 
-        edited = self.client.patch(f"/api/forms/templates/{duplicate['id']}/", {"name": "National Health Declaration Updated"}, format="json")
+        edited = self.client.patch(f"/api/assessment-forms/templates/{duplicate['id']}/", {"name": "National Health Declaration Updated"}, format="json")
         self.assertEqual(edited.status_code, 200)
-        versions = self.client.get(f"/api/forms/templates/{duplicate['id']}/versions/")
+        versions = self.client.get(f"/api/assessment-forms/templates/{duplicate['id']}/versions/")
         self.assertEqual(versions.status_code, 200)
         self.assertEqual([item["version"] for item in payload(versions)], [1, 2])
 
     def test_state_and_facility_scope_permissions_are_enforced(self):
         self.client.force_authenticate(self.state_admin)
         blocked_national = self.client.post(
-            "/api/forms/templates/",
+            "/api/assessment-forms/templates/",
             {"name": "Blocked", "form_type": "health_declaration", "scope": "national"},
             format="json",
         )
         self.assertEqual(blocked_national.status_code, 403)
         state_form = self.client.post(
-            "/api/forms/templates/",
+            "/api/assessment-forms/templates/",
             {"name": "Lagos Addendum", "form_type": "health_declaration", "scope": "state", "state": str(self.lagos.id)},
             format="json",
         )
@@ -179,20 +202,20 @@ class AssessmentFormLifecycleApiTests(APITestCase):
 
         self.client.force_authenticate(self.facility_admin)
         facility_form = self.client.post(
-            "/api/forms/templates/",
+            "/api/assessment-forms/templates/",
             {"name": "Facility Intake", "form_type": "facility_intake", "scope": "facility", "facility": str(self.facility.id), "requires_approval": True},
             format="json",
         )
         self.assertEqual(facility_form.status_code, 201, facility_form.data)
         form_id = payload(facility_form)["id"]
-        submitted = self.client.post(f"/api/forms/templates/{form_id}/submit-for-approval/", format="json")
+        submitted = self.client.post(f"/api/assessment-forms/templates/{form_id}/submit-for-approval/", format="json")
         self.assertEqual(submitted.status_code, 200)
 
         self.client.force_authenticate(self.other_facility_admin)
-        self.assertEqual(self.client.get(f"/api/forms/templates/{form_id}/").status_code, 404)
+        self.assertEqual(self.client.get(f"/api/assessment-forms/templates/{form_id}/").status_code, 404)
 
         self.client.force_authenticate(self.state_admin)
-        approved = self.client.post(f"/api/forms/templates/{form_id}/approve/", format="json")
+        approved = self.client.post(f"/api/assessment-forms/templates/{form_id}/approve/", format="json")
         self.assertEqual(approved.status_code, 200, approved.data)
         self.assertTrue(
             Notification.objects.filter(
@@ -205,7 +228,7 @@ class AssessmentFormLifecycleApiTests(APITestCase):
     def test_facility_form_state_change_request_resubmission_and_publishing_flow(self):
         self.client.force_authenticate(self.facility_admin)
         created = self.client.post(
-            "/api/forms/templates/",
+            "/api/assessment-forms/templates/",
             {
                 "name": "Facility Intake",
                 "description": "Supplementary intake questions for local workflow.",
@@ -219,15 +242,15 @@ class AssessmentFormLifecycleApiTests(APITestCase):
         self.assertEqual(created.status_code, 201, created.data)
         form_id = payload(created)["id"]
         self.add_section_and_question(form_id)
-        submitted = self.client.post(f"/api/forms/templates/{form_id}/submit-for-approval/", format="json")
+        submitted = self.client.post(f"/api/assessment-forms/templates/{form_id}/submit-for-approval/", format="json")
         self.assertEqual(submitted.status_code, 200, submitted.data)
         self.assertEqual(payload(submitted)["status"], AssessmentFormStatus.PENDING_APPROVAL)
-        blocked_publish = self.client.post(f"/api/forms/templates/{form_id}/publish/", format="json")
+        blocked_publish = self.client.post(f"/api/assessment-forms/templates/{form_id}/publish/", format="json")
         self.assertEqual(blocked_publish.status_code, 403)
 
         self.client.force_authenticate(self.state_admin)
         changes = self.client.post(
-            f"/api/forms/templates/{form_id}/request-changes/",
+            f"/api/assessment-forms/templates/{form_id}/request-changes/",
             {"reason": "Clarify why this intake question is needed."},
             format="json",
         )
@@ -243,34 +266,139 @@ class AssessmentFormLifecycleApiTests(APITestCase):
         )
 
         self.client.force_authenticate(self.facility_admin)
-        edited = self.client.patch(f"/api/forms/templates/{form_id}/", {"description": "Reviewed intake purpose."}, format="json")
+        edited = self.client.patch(f"/api/assessment-forms/templates/{form_id}/", {"description": "Reviewed intake purpose."}, format="json")
         self.assertEqual(edited.status_code, 200, edited.data)
-        resubmitted = self.client.post(f"/api/forms/templates/{form_id}/submit-for-approval/", format="json")
+        resubmitted = self.client.post(f"/api/assessment-forms/templates/{form_id}/submit-for-approval/", format="json")
         self.assertEqual(resubmitted.status_code, 200, resubmitted.data)
 
         self.client.force_authenticate(self.state_admin)
-        approved = self.client.post(f"/api/forms/templates/{form_id}/approve/", format="json")
+        approved = self.client.post(f"/api/assessment-forms/templates/{form_id}/approve/", format="json")
         self.assertEqual(approved.status_code, 200, approved.data)
         self.assertEqual(payload(approved)["status"], AssessmentFormStatus.APPROVED)
-        published = self.client.post(f"/api/forms/templates/{form_id}/publish/", format="json")
+        published = self.client.post(f"/api/assessment-forms/templates/{form_id}/publish/", format="json")
         self.assertEqual(published.status_code, 200, published.data)
         self.assertEqual(payload(published)["status"], AssessmentFormStatus.PUBLISHED)
-        activated = self.client.post(f"/api/forms/templates/{form_id}/activate/", format="json")
+        activated = self.client.post(f"/api/assessment-forms/templates/{form_id}/activate/", format="json")
         self.assertEqual(payload(activated)["status"], AssessmentFormStatus.ACTIVE)
+
+    def test_state_and_facility_admins_can_adopt_declaration_templates_with_locked_inherited_fields(self):
+        template = self.create_national_template()
+        _, question = self.add_section_and_question(template["id"])
+        self.publish_template(template["id"])
+
+        self.client.force_authenticate(self.state_admin)
+        adopted = self.client.post(f"/api/assessment-forms/templates/{template['id']}/adopt/", format="json")
+        self.assertEqual(adopted.status_code, 201, adopted.data)
+        state_template = payload(adopted)
+        self.assertEqual(state_template["scope"], AssessmentFormScope.STATE)
+        self.assertEqual(state_template["status"], AssessmentFormStatus.DRAFT)
+        self.assertEqual(state_template["sections"][0]["locked"], True)
+        self.assertEqual(state_template["sections"][0]["questions"][0]["locked"], True)
+        for action in ["submit-for-approval", "approve", "publish", "activate"]:
+            transition = self.client.post(f"/api/assessment-forms/templates/{state_template['id']}/{action}/", format="json")
+            self.assertEqual(transition.status_code, 200, transition.data)
+        self.assertTrue(
+            Notification.objects.filter(
+                recipient=self.facility_admin,
+                related_object_id=state_template["id"],
+                title="State declaration extension published",
+            ).exists()
+        )
+        self.assertTrue(
+            Notification.objects.filter(
+                recipient=self.facility_admin,
+                related_object_id=state_template["id"],
+                title="Adopt latest State declaration template",
+            ).exists()
+        )
+        self.assertTrue(
+            AssessmentFormTemplateAdoption.objects.filter(
+                parent_template_id=template["id"],
+                child_template_id=state_template["id"],
+            ).exists()
+        )
+        self.assertTrue(
+            AuditLog.objects.filter(
+                target_id=state_template["id"],
+                metadata__event="state_template_adopted",
+                metadata__owner_level="state",
+            ).exists()
+        )
+
+        self.client.force_authenticate(self.facility_admin)
+        facility_adopted = self.client.post(f"/api/assessment-forms/templates/{state_template['id']}/adopt/", format="json")
+        self.assertEqual(facility_adopted.status_code, 201, facility_adopted.data)
+        facility_template = payload(facility_adopted)
+        self.assertEqual(facility_template["scope"], AssessmentFormScope.FACILITY)
+        self.assertIsNotNone(facility_template["sections"][0]["questions"][0]["inherited_from_question"])
+        self.assertTrue(
+            AuditLog.objects.filter(
+                target_id=facility_template["id"],
+                metadata__event="facility_template_adopted",
+                metadata__owner_level="facility",
+            ).exists()
+        )
+
+    def test_locked_inherited_fields_cannot_be_edited_or_deleted(self):
+        template = self.create_national_template()
+        section, question = self.add_section_and_question(template["id"])
+        self.publish_template(template["id"])
+
+        self.client.force_authenticate(self.state_admin)
+        adopted = self.client.post(f"/api/assessment-forms/templates/{template['id']}/adopt/", format="json")
+        adopted_data = payload(adopted)
+        inherited_section = adopted_data["sections"][0]["id"]
+        inherited_question = adopted_data["sections"][0]["questions"][0]["id"]
+
+        section_edit = self.client.patch(f"/api/assessment-forms/sections/{inherited_section}/", {"title": "Edited"}, format="json")
+        question_edit = self.client.patch(f"/api/assessment-forms/questions/{inherited_question}/", {"label": "Edited"}, format="json")
+        question_delete = self.client.delete(f"/api/assessment-forms/questions/{inherited_question}/")
+
+        self.assertEqual(section_edit.status_code, 403)
+        self.assertEqual(question_edit.status_code, 403)
+        self.assertEqual(question_delete.status_code, 403)
+
+        new_section = self.client.post(
+            "/api/assessment-forms/sections/",
+            {"template": adopted_data["id"], "key": "state_additions", "title": "State Additions"},
+            format="json",
+        )
+        self.assertEqual(new_section.status_code, 201, new_section.data)
+        self.assertTrue(
+            AuditLog.objects.filter(
+                target_id=payload(new_section)["id"],
+                metadata__event="state_field_added",
+                metadata__field_type="section",
+            ).exists()
+        )
+        blocked_events = AuditLog.objects.filter(
+            action=AuditAction.SECURITY_EVENT,
+            metadata__event="locked_inherited_field_modification_blocked",
+        )
+        self.assertEqual(blocked_events.count(), 3)
+        self.assertTrue(
+            blocked_events.filter(metadata__attempted_action="section_edit").exists()
+        )
+        self.assertTrue(
+            blocked_events.filter(metadata__attempted_action="question_edit").exists()
+        )
+        self.assertTrue(
+            blocked_events.filter(metadata__attempted_action="question_delete").exists()
+        )
 
     def test_facility_form_rejection_returns_to_editable_resubmittable_state(self):
         self.client.force_authenticate(self.facility_admin)
         created = self.client.post(
-            "/api/forms/templates/",
+            "/api/assessment-forms/templates/",
             {"name": "Facility Intake", "form_type": "facility_intake", "scope": "facility", "facility": str(self.facility.id)},
             format="json",
         )
         form_id = payload(created)["id"]
         self.add_section_and_question(form_id)
-        self.client.post(f"/api/forms/templates/{form_id}/submit-for-approval/", format="json")
+        self.client.post(f"/api/assessment-forms/templates/{form_id}/submit-for-approval/", format="json")
 
         self.client.force_authenticate(self.state_admin)
-        rejected = self.client.post(f"/api/forms/templates/{form_id}/reject/", {"reason": "Unclear purpose."}, format="json")
+        rejected = self.client.post(f"/api/assessment-forms/templates/{form_id}/reject/", {"reason": "Unclear purpose."}, format="json")
         self.assertEqual(rejected.status_code, 200, rejected.data)
         self.assertEqual(payload(rejected)["status"], AssessmentFormStatus.REJECTED)
         self.assertTrue(
@@ -283,9 +411,9 @@ class AssessmentFormLifecycleApiTests(APITestCase):
         self.assertEqual(payload(rejected)["review_comment"], "Unclear purpose.")
 
         self.client.force_authenticate(self.facility_admin)
-        edited = self.client.patch(f"/api/forms/templates/{form_id}/", {"description": "Purpose now documented."}, format="json")
+        edited = self.client.patch(f"/api/assessment-forms/templates/{form_id}/", {"description": "Purpose now documented."}, format="json")
         self.assertEqual(edited.status_code, 200, edited.data)
-        resubmitted = self.client.post(f"/api/forms/templates/{form_id}/submit-for-approval/", format="json")
+        resubmitted = self.client.post(f"/api/assessment-forms/templates/{form_id}/submit-for-approval/", format="json")
         self.assertEqual(payload(resubmitted)["status"], AssessmentFormStatus.PENDING_APPROVAL)
 
     def test_state_cannot_approve_facility_forms_that_conflict_or_expose_answers_to_employers(self):
@@ -308,23 +436,23 @@ class AssessmentFormLifecycleApiTests(APITestCase):
 
         self.client.force_authenticate(self.facility_admin)
         duplicate = self.client.post(
-            "/api/forms/templates/",
+            "/api/assessment-forms/templates/",
             {"name": "Duplicate Facility Intake", "form_type": "facility_intake", "scope": "facility", "facility": str(self.facility.id)},
             format="json",
         )
         duplicate_id = payload(duplicate)["id"]
         self.add_section_and_question(duplicate_id)
-        self.client.post(f"/api/forms/templates/{duplicate_id}/submit-for-approval/", format="json")
+        self.client.post(f"/api/assessment-forms/templates/{duplicate_id}/submit-for-approval/", format="json")
 
         visible = self.client.post(
-            "/api/forms/templates/",
+            "/api/assessment-forms/templates/",
             {"name": "Employer Visible Intake", "form_type": "facility_intake", "scope": "facility", "facility": str(self.facility.id)},
             format="json",
         )
         visible_id = payload(visible)["id"]
-        section = self.client.post("/api/forms/sections/", {"template": visible_id, "key": "visibility", "title": "Visibility"}, format="json")
+        section = self.client.post("/api/assessment-forms/sections/", {"template": visible_id, "key": "visibility", "title": "Visibility"}, format="json")
         question = self.client.post(
-            "/api/forms/questions/",
+            "/api/assessment-forms/questions/",
             {
                 "section": payload(section)["id"],
                 "key": "local_screening_note",
@@ -336,37 +464,37 @@ class AssessmentFormLifecycleApiTests(APITestCase):
             format="json",
         )
         self.assertEqual(question.status_code, 201, question.data)
-        self.client.post(f"/api/forms/templates/{visible_id}/submit-for-approval/", format="json")
+        self.client.post(f"/api/assessment-forms/templates/{visible_id}/submit-for-approval/", format="json")
 
         self.client.force_authenticate(self.state_admin)
-        duplicate_approval = self.client.post(f"/api/forms/templates/{duplicate_id}/approve/", format="json")
+        duplicate_approval = self.client.post(f"/api/assessment-forms/templates/{duplicate_id}/approve/", format="json")
         self.assertEqual(duplicate_approval.status_code, 400)
         self.assertIn("question:recent_diarrhoea_vomiting", payload(duplicate_approval))
-        visible_approval = self.client.post(f"/api/forms/templates/{visible_id}/approve/", format="json")
+        visible_approval = self.client.post(f"/api/assessment-forms/templates/{visible_id}/approve/", format="json")
         self.assertEqual(visible_approval.status_code, 400)
         self.assertIn("question:local_screening_note", payload(visible_approval))
 
     def test_rejected_template_returns_to_editable_state(self):
         template = self.create_national_template()
-        submitted = self.client.post(f"/api/forms/templates/{template['id']}/submit-for-approval/", format="json")
+        submitted = self.client.post(f"/api/assessment-forms/templates/{template['id']}/submit-for-approval/", format="json")
         self.assertEqual(submitted.status_code, 200)
-        rejected = self.client.post(f"/api/forms/templates/{template['id']}/reject/", {"reason": "Clarify wording."}, format="json")
+        rejected = self.client.post(f"/api/assessment-forms/templates/{template['id']}/reject/", {"reason": "Clarify wording."}, format="json")
         self.assertEqual(rejected.status_code, 200)
         self.assertEqual(payload(rejected)["status"], AssessmentFormStatus.REJECTED)
-        edited = self.client.patch(f"/api/forms/templates/{template['id']}/", {"description": "Revised wording."}, format="json")
+        edited = self.client.patch(f"/api/assessment-forms/templates/{template['id']}/", {"description": "Revised wording."}, format="json")
         self.assertEqual(edited.status_code, 200)
 
     def test_builder_returns_field_errors_for_invalid_question_keys(self):
         template = self.create_national_template()
         first_section, _ = self.add_section_and_question(template["id"])
         second_section = self.client.post(
-            "/api/forms/sections/",
+            "/api/assessment-forms/sections/",
             {"template": template["id"], "key": "exposure", "title": "Exposure"},
             format="json",
         )
         self.assertEqual(second_section.status_code, 201)
         duplicate = self.client.post(
-            "/api/forms/questions/",
+            "/api/assessment-forms/questions/",
             {
                 "section": payload(second_section)["id"],
                 "key": "recent_diarrhoea_vomiting",

@@ -2,7 +2,7 @@ from django.conf import settings
 from django.db import transaction
 
 from apps.assessments.models import AssessmentStatus, StepStatus
-from apps.assessments.services import ensure_approved_facility, ensure_doctor_for_facility
+from apps.assessments.services import ensure_approved_facility, ensure_assigned_doctor_for_assessment
 from apps.audit.models import AuditAction
 from apps.audit.services import log_action
 from apps.vaccinations.models import VaccinationRecord, VaccinationStatus
@@ -13,7 +13,7 @@ class VaccinationService:
     @transaction.atomic
     def record(cls, *, assessment, recorded_by, data):
         ensure_approved_facility(assessment.facility)
-        ensure_doctor_for_facility(recorded_by, assessment.facility)
+        ensure_assigned_doctor_for_assessment(recorded_by, assessment)
         record = VaccinationRecord(
             assessment=assessment,
             food_handler=assessment.food_handler,
@@ -36,7 +36,7 @@ class VaccinationService:
     @transaction.atomic
     def review_assessment(cls, *, assessment, doctor, data):
         ensure_approved_facility(assessment.facility)
-        ensure_doctor_for_facility(doctor, assessment.facility)
+        ensure_assigned_doctor_for_assessment(doctor, assessment)
         explicit_status = data.pop("status", "")
         action = data.pop("action", "")
         if action:

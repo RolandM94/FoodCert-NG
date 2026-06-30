@@ -111,6 +111,8 @@ class CertificateService:
             raise ValidationError("Assessment payment must be successful before certificate issuance.")
         if not assessment.facility.can_conduct_assessments:
             raise ValidationError("Certificate cannot be issued for an inactive or unapproved facility.")
+        if not AssessmentService.has_verified_identity(assessment):
+            raise ValidationError("Identity must be verified before certificate issuance or State submission.")
         assessment_date = timezone.localtime(assessment.created_at).date() if assessment.created_at else timezone.localdate()
         if (
             not assessment.facility.accreditation_start_date
@@ -456,7 +458,11 @@ class CertificateService:
     def default_template_for_state(cls, state):
         policy = cls.active_national_policy()
         if getattr(policy, "state_certificate_template_overrides_enabled", True):
-            state_template = CertificateTemplate.objects.filter(
+            state_templates = CertificateTemplate.objects.filter(
+                scope=CertificateTemplateScope.STATE,
+                state=state,
+            )
+            state_template = state_templates.filter(
                 scope=CertificateTemplateScope.STATE,
                 state=state,
                 is_active=True,
@@ -464,13 +470,20 @@ class CertificateService:
             ).first()
             if state_template:
                 return state_template
-        national_template = CertificateTemplate.objects.filter(
+            if state_templates.exists():
+                return None
+        national_templates = CertificateTemplate.objects.filter(
+            scope=CertificateTemplateScope.NATIONAL,
+        )
+        national_template = national_templates.filter(
             scope=CertificateTemplateScope.NATIONAL,
             is_active=True,
             is_default=True,
         ).first()
         if national_template:
             return national_template
+        if national_templates.exists():
+            return None
         return CertificateTemplate.objects.create(
             name="FoodCert NG Default",
             scope=CertificateTemplateScope.NATIONAL,
@@ -478,6 +491,13 @@ class CertificateService:
             is_default=True,
             created_by=None,
         )
+
+    @classmethod
+    def active_template_for_state(cls, state):
+        template = cls.default_template_for_state(state)
+        if not template or not template.is_active:
+            raise ValidationError("An active certificate template is required before certificate issuance.")
+        return template
 
     @classmethod
     def write_qr_code(cls, *, certificate_number, verification_url):
@@ -853,6 +873,7 @@ class CertificateService:
         policy = cls.policy_for_state(assessment.facility.state)
         if not policy.certificate_validity_months or policy.certificate_validity_months <= 0:
             raise ValidationError("Certificate validity policy is missing or invalid.")
+        template = cls.active_template_for_state(assessment.facility.state)
         request = getattr(assessment, "certificate_request", None)
         if policy.requires_state_certificate_validation:
             if not request or request.status != CertificateRequestStatus.APPROVED:
@@ -891,7 +912,7 @@ class CertificateService:
             doctor=assessment.doctor,
             issuing_state=assessment.facility.state,
             issued_by_state_user=issued_by,
-            template=cls.default_template_for_state(assessment.facility.state),
+            template=template,
             issue_date=issue_date,
             expiry_date=expiry_date,
             verification_url=verification_url,

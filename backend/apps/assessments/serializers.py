@@ -4,11 +4,12 @@ from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError as DjangoValidationError
 from rest_framework import serializers
 
-from apps.assessments.models import AssessmentFormQuestion, AssessmentFormResponse, AssessmentFormSection, AssessmentFormTemplate, AssessmentRequirementSet, AssessmentType, Appointment, FitnessDecision, HealthDeclaration, MedicalAssessment, PhysicalExamination
+from apps.assessments.models import AssessmentFormQuestion, AssessmentFormResponse, AssessmentFormSection, AssessmentFormTemplate, AssessmentFormTemplateAdoption, AssessmentFormTemplateSnapshot, AssessmentRequirementSet, AssessmentType, Appointment, FitnessDecision, HealthDeclaration, MedicalAssessment, PhysicalExamination
 from apps.facilities.models import MedicalFacility
 from apps.food_handlers.models import FoodHandlerProfile
 from apps.lab_tests.serializers import LabTestSerializer
 from apps.payments.models import PaymentTransaction
+from apps.payments.services import PaymentService
 from apps.vaccinations.serializers import VaccinationRecordSerializer
 
 User = get_user_model()
@@ -26,10 +27,11 @@ class AssessmentFormQuestionSerializer(serializers.ModelSerializer):
         model = AssessmentFormQuestion
         fields = (
             "id", "section", "key", "label", "help_text", "placeholder", "question_type", "required",
-            "options", "validation_rules", "conditional_logic", "risk_flag_rules", "privacy_classification",
+            "owner_level", "owner_id", "locked", "inherited_from_question", "editable_by_child", "deletable_by_child",
+            "options", "validation_rules", "conditional_logic", "risk_flag", "risk_flag_rules", "privacy_classification",
             "respondent_role", "sort_order", "is_active", "created_at", "updated_at",
         )
-        read_only_fields = ("id", "created_at", "updated_at")
+        read_only_fields = ("id", "owner_level", "owner_id", "locked", "inherited_from_question", "editable_by_child", "deletable_by_child", "created_at", "updated_at")
 
     def validate(self, attrs):
         instance = copy.copy(self.instance) if self.instance else AssessmentFormQuestion()
@@ -44,8 +46,8 @@ class AssessmentFormSectionSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = AssessmentFormSection
-        fields = ("id", "template", "key", "title", "description", "sort_order", "visibility_rules", "required_completion", "questions", "created_at", "updated_at")
-        read_only_fields = ("id", "questions", "created_at", "updated_at")
+        fields = ("id", "template", "key", "title", "description", "owner_level", "owner_id", "locked", "inherited_from_section", "editable_by_child", "deletable_by_child", "sort_order", "visibility_rules", "required_completion", "questions", "created_at", "updated_at")
+        read_only_fields = ("id", "owner_level", "owner_id", "locked", "inherited_from_section", "editable_by_child", "deletable_by_child", "questions", "created_at", "updated_at")
 
     def validate(self, attrs):
         instance = copy.copy(self.instance) if self.instance else AssessmentFormSection()
@@ -64,13 +66,13 @@ class AssessmentFormTemplateSerializer(serializers.ModelSerializer):
         model = AssessmentFormTemplate
         fields = (
             "id", "name", "description", "form_type", "scope", "state", "state_name", "facility", "facility_name",
-            "owner_organization", "version", "status", "is_mandatory", "requires_approval", "approved_by",
+            "owner_organization", "owner_level", "owner_id", "base_template", "superseded_by", "version", "status", "is_mandatory", "requires_approval", "approved_by",
             "approved_at", "review_requested_at", "reviewed_by", "reviewed_at", "review_comment", "published_at",
             "effective_from", "effective_to", "created_by", "parent_template",
             "sections", "created_at", "updated_at",
         )
         read_only_fields = (
-            "id", "version", "status", "approved_by", "approved_at", "review_requested_at", "reviewed_by",
+            "id", "owner_level", "owner_id", "base_template", "superseded_by", "version", "status", "approved_by", "approved_at", "review_requested_at", "reviewed_by",
             "reviewed_at", "review_comment", "published_at", "created_by", "parent_template", "sections",
             "created_at", "updated_at",
         )
@@ -130,7 +132,7 @@ class AssessmentFormResponseSerializer(serializers.ModelSerializer):
         model = AssessmentFormResponse
         fields = (
             "id", "assessment", "template", "template_name", "form_type", "template_version", "respondent",
-            "respondent_role", "status", "response_data", "question_snapshot", "risk_flags", "is_required",
+            "template_snapshot", "respondent_role", "status", "response_data", "question_snapshot", "risk_flags", "is_required",
             "is_locked", "version", "previous_response", "submitted_at", "validated_by", "validated_at",
             "created_at", "updated_at",
         )
@@ -145,9 +147,23 @@ class AssessmentFormResponseSummarySerializer(serializers.ModelSerializer):
         model = AssessmentFormResponse
         fields = (
             "id", "assessment", "template", "template_name", "form_type", "template_version",
-            "respondent_role", "status", "is_required", "is_locked", "version", "submitted_at",
+            "template_snapshot", "respondent_role", "status", "is_required", "is_locked", "version", "submitted_at",
             "validated_at", "created_at", "updated_at",
         )
+        read_only_fields = fields
+
+
+class AssessmentFormTemplateAdoptionSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = AssessmentFormTemplateAdoption
+        fields = ("id", "parent_template", "child_template", "adopted_by_level", "adopted_by_id", "adopted_at", "status", "created_at", "updated_at")
+        read_only_fields = fields
+
+
+class AssessmentFormTemplateSnapshotSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = AssessmentFormTemplateSnapshot
+        fields = ("id", "assessment", "federal_template", "state_template", "facility_template", "merged_schema", "generated_at", "created_at", "updated_at")
         read_only_fields = fields
 
 
@@ -165,6 +181,13 @@ class AppointmentSerializer(serializers.ModelSerializer):
     doctor_name = serializers.CharField(source="doctor.get_full_name", read_only=True)
     payment_status = serializers.SerializerMethodField()
     employer_name = serializers.CharField(source="food_handler.employer.business_name", read_only=True)
+    assessment_id = serializers.SerializerMethodField()
+    assessment_status = serializers.SerializerMethodField()
+    declaration_status = serializers.SerializerMethodField()
+    payment_transaction_id = serializers.SerializerMethodField()
+    payment_receipt_number = serializers.SerializerMethodField()
+    pay_at_facility_allowed = serializers.SerializerMethodField()
+    can_confirm_payment_at_facility = serializers.SerializerMethodField()
 
     class Meta:
         model = Appointment
@@ -180,6 +203,13 @@ class AppointmentSerializer(serializers.ModelSerializer):
             "appointment_date",
             "status",
             "payment_status",
+            "payment_transaction_id",
+            "payment_receipt_number",
+            "pay_at_facility_allowed",
+            "can_confirm_payment_at_facility",
+            "assessment_id",
+            "assessment_status",
+            "declaration_status",
             "reason",
             "notes",
             "created_at",
@@ -194,20 +224,133 @@ class AppointmentSerializer(serializers.ModelSerializer):
             "employer_name",
             "status",
             "payment_status",
+            "payment_transaction_id",
+            "payment_receipt_number",
+            "pay_at_facility_allowed",
+            "can_confirm_payment_at_facility",
+            "assessment_id",
+            "assessment_status",
+            "declaration_status",
             "created_at",
             "updated_at",
         )
 
+    def _linked_assessment(self, appointment):
+        return appointment.assessments.first()
+
     def get_payment_status(self, appointment):
-        assessment = appointment.assessments.select_related("payment_transaction").first()
-        if not assessment or not assessment.payment_transaction:
-            return "missing"
-        return assessment.payment_transaction.status
+        assessment = self._linked_assessment(appointment)
+        return PaymentService.workflow_status(transaction_obj=getattr(assessment, "payment_transaction", None))
+
+    def get_payment_transaction_id(self, appointment):
+        assessment = self._linked_assessment(appointment)
+        if not assessment or not assessment.payment_transaction_id:
+            return None
+        return str(assessment.payment_transaction_id)
+
+    def get_payment_receipt_number(self, appointment):
+        assessment = self._linked_assessment(appointment)
+        transaction_obj = getattr(assessment, "payment_transaction", None)
+        receipt = getattr(transaction_obj, "receipt", None) if transaction_obj else None
+        return receipt.receipt_number if receipt else ""
+
+    def get_pay_at_facility_allowed(self, appointment):
+        assessment = self._linked_assessment(appointment)
+        transaction_obj = getattr(assessment, "payment_transaction", None)
+        if not transaction_obj:
+            return False
+        return bool((transaction_obj.metadata or {}).get("pay_at_facility_allowed"))
+
+    def get_can_confirm_payment_at_facility(self, appointment):
+        assessment = self._linked_assessment(appointment)
+        return PaymentService.can_confirm_at_facility(transaction_obj=getattr(assessment, "payment_transaction", None))
+
+    def get_assessment_id(self, appointment):
+        assessment = self._linked_assessment(appointment)
+        return str(assessment.id) if assessment else None
+
+    def get_assessment_status(self, appointment):
+        assessment = self._linked_assessment(appointment)
+        return assessment.status if assessment else None
+
+    def get_declaration_status(self, appointment):
+        assessment = self._linked_assessment(appointment)
+        return assessment.declaration_status if assessment else None
 
 
 class AppointmentTransitionSerializer(serializers.Serializer):
     notes = serializers.CharField(required=False, allow_blank=True)
     reason = serializers.CharField(required=False, allow_blank=True)
+
+
+class FacilityPaymentConfirmationSerializer(serializers.Serializer):
+    notes = serializers.CharField(required=False, allow_blank=True)
+    payment_method = serializers.CharField(required=False, allow_blank=True, default="cash")
+
+
+class AppointmentDetailSerializer(AppointmentSerializer):
+    food_handler_nin = serializers.CharField(source="food_handler.nin", read_only=True)
+    food_handler_date_of_birth = serializers.DateField(source="food_handler.date_of_birth", read_only=True)
+    food_handler_passport_photo = serializers.ImageField(source="food_handler.passport_photo", read_only=True)
+    checked_in_at = serializers.SerializerMethodField()
+    checked_in_by_name = serializers.SerializerMethodField()
+    identity_verification_status = serializers.SerializerMethodField()
+    identity_verified_at = serializers.SerializerMethodField()
+    identity_verified_by_name = serializers.SerializerMethodField()
+    identity_mismatch_reason = serializers.SerializerMethodField()
+
+    class Meta(AppointmentSerializer.Meta):
+        fields = AppointmentSerializer.Meta.fields + (
+            "food_handler_nin",
+            "food_handler_date_of_birth",
+            "food_handler_passport_photo",
+            "checked_in_at",
+            "checked_in_by_name",
+            "identity_verification_status",
+            "identity_verified_at",
+            "identity_verified_by_name",
+            "identity_mismatch_reason",
+        )
+        read_only_fields = fields
+
+    def _linked_assessment(self, appointment):
+        return appointment.assessments.first()
+
+    def get_checked_in_at(self, appointment):
+        assessment = self._linked_assessment(appointment)
+        return assessment.checked_in_at if assessment else None
+
+    def get_checked_in_by_name(self, appointment):
+        assessment = self._linked_assessment(appointment)
+        if not assessment or not assessment.checked_in_by_id:
+            return ""
+        return assessment.checked_in_by.get_full_name() or assessment.checked_in_by.email
+
+    def get_identity_verification_status(self, appointment):
+        assessment = self._linked_assessment(appointment)
+        return assessment.identity_verification_status if assessment else "pending"
+
+    def get_identity_verified_at(self, appointment):
+        assessment = self._linked_assessment(appointment)
+        return assessment.identity_verified_at if assessment else None
+
+    def get_identity_verified_by_name(self, appointment):
+        assessment = self._linked_assessment(appointment)
+        if not assessment or not assessment.identity_verified_by_id:
+            return ""
+        return assessment.identity_verified_by.get_full_name() or assessment.identity_verified_by.email
+
+    def get_identity_mismatch_reason(self, appointment):
+        assessment = self._linked_assessment(appointment)
+        return assessment.identity_mismatch_reason if assessment else ""
+
+
+class AssessmentCheckInSerializer(serializers.Serializer):
+    notes = serializers.CharField(required=False, allow_blank=True)
+
+
+class AssessmentIdentityMismatchSerializer(serializers.Serializer):
+    reason = serializers.CharField()
 
 
 class AssessmentWorkflowItemSerializer(serializers.Serializer):
@@ -326,10 +469,19 @@ class FacilityAssessmentSerializer(serializers.ModelSerializer):
     doctor_name = serializers.CharField(source="doctor.get_full_name", read_only=True)
     appointment_status = serializers.CharField(source="appointment.status", read_only=True)
     appointment_date = serializers.DateTimeField(source="appointment.appointment_date", read_only=True)
+    assigned_lab_staff_name = serializers.CharField(source="assigned_lab_staff.get_full_name", read_only=True)
+    assigned_lab_unit_name = serializers.CharField(source="assigned_lab_unit.name", read_only=True)
     payment_status = serializers.SerializerMethodField()
     certificate_submission_status = serializers.SerializerMethodField()
     can_view_clinical = serializers.SerializerMethodField()
     doctor_notes = serializers.SerializerMethodField()
+    workflow_recommendation = serializers.SerializerMethodField()
+    checked_in_at = serializers.DateTimeField(read_only=True)
+    checked_in_by_name = serializers.CharField(source="checked_in_by.get_full_name", read_only=True)
+    identity_verification_status = serializers.CharField(read_only=True)
+    identity_verified_at = serializers.DateTimeField(read_only=True)
+    identity_verified_by_name = serializers.CharField(source="identity_verified_by.get_full_name", read_only=True)
+    identity_mismatch_reason = serializers.CharField(read_only=True)
 
     class Meta:
         model = MedicalAssessment
@@ -346,13 +498,23 @@ class FacilityAssessmentSerializer(serializers.ModelSerializer):
             "facility_name",
             "doctor",
             "doctor_name",
+            "assigned_lab_staff",
+            "assigned_lab_staff_name",
+            "assigned_lab_unit",
+            "assigned_lab_unit_name",
             "appointment",
             "appointment_status",
             "appointment_date",
             "assessment_date",
+            "checked_in_at",
+            "checked_in_by_name",
             "payment_transaction",
             "payment_status",
             "status",
+            "identity_verification_status",
+            "identity_verified_at",
+            "identity_verified_by_name",
+            "identity_mismatch_reason",
             "declaration_status",
             "physical_exam_status",
             "lab_status",
@@ -370,6 +532,7 @@ class FacilityAssessmentSerializer(serializers.ModelSerializer):
             "can_request_certificate",
             "can_view_clinical",
             "doctor_notes",
+            "workflow_recommendation",
             "created_at",
             "updated_at",
         )
@@ -383,7 +546,7 @@ class FacilityAssessmentSerializer(serializers.ModelSerializer):
         return self._role() in {"facility_admin", "doctor"}
 
     def get_payment_status(self, assessment):
-        return assessment.payment_transaction.status if assessment.payment_transaction else "missing"
+        return PaymentService.workflow_status(transaction_obj=assessment.payment_transaction)
 
     def get_certificate_submission_status(self, assessment):
         certificate_request = getattr(assessment, "certificate_request", None)
@@ -400,6 +563,13 @@ class FacilityAssessmentSerializer(serializers.ModelSerializer):
 
     def get_doctor_notes(self, assessment):
         return assessment.doctor_notes if self._can_view_clinical() else ""
+
+    def get_workflow_recommendation(self, assessment):
+        if not self._can_view_clinical():
+            return None
+        from apps.assessments.services import AssessmentService
+
+        return AssessmentService.workflow_recommendation(assessment)
 
     def to_representation(self, instance):
         data = super().to_representation(instance)
@@ -445,6 +615,13 @@ class FacilityAssessmentDetailSerializer(FacilityAssessmentSerializer):
 
 class AssessmentAssignDoctorSerializer(serializers.Serializer):
     doctor = serializers.PrimaryKeyRelatedField(queryset=User.objects.all())
+    reason = serializers.CharField(required=False, allow_blank=True)
+
+
+class AssessmentAssignLabSerializer(serializers.Serializer):
+    lab_staff = serializers.PrimaryKeyRelatedField(queryset=User.objects.all(), required=False, allow_null=True)
+    lab_unit = serializers.UUIDField(required=False, allow_null=True)
+    reason = serializers.CharField(required=False, allow_blank=True)
 
 
 class CreateMedicalAssessmentSerializer(serializers.Serializer):
@@ -461,6 +638,11 @@ class CreateMedicalAssessmentSerializer(serializers.Serializer):
 
 class HealthDeclarationSerializer(serializers.ModelSerializer):
     assessment_status = serializers.CharField(source="assessment.status", read_only=True)
+    response_data = serializers.SerializerMethodField()
+    merged_schema = serializers.SerializerMethodField()
+    template_snapshot = serializers.SerializerMethodField()
+    form_response_id = serializers.SerializerMethodField()
+    form_response_status = serializers.SerializerMethodField()
 
     class Meta:
         model = HealthDeclaration
@@ -468,6 +650,11 @@ class HealthDeclarationSerializer(serializers.ModelSerializer):
             "id",
             "assessment",
             "assessment_status",
+            "template_snapshot",
+            "merged_schema",
+            "form_response_id",
+            "form_response_status",
+            "response_data",
             "diarrhoea_vomiting_last_7_days",
             "fever_more_than_one_week",
             "skin_trouble",
@@ -500,6 +687,11 @@ class HealthDeclarationSerializer(serializers.ModelSerializer):
             "id",
             "assessment",
             "assessment_status",
+            "template_snapshot",
+            "merged_schema",
+            "form_response_id",
+            "form_response_status",
+            "response_data",
             "risk_flag",
             "version",
             "is_locked",
@@ -516,28 +708,45 @@ class HealthDeclarationSerializer(serializers.ModelSerializer):
             "updated_at",
         )
 
+    def _response(self, declaration):
+        return getattr(declaration, "_current_form_response", None)
 
-class HealthDeclarationSubmitSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = HealthDeclaration
-        exclude = (
-            "id",
-            "assessment",
-            "risk_flag",
-            "version",
-            "is_locked",
-            "reopened_by",
-            "reopened_at",
-            "reopen_reason",
-            "submitted_at",
-            "validated_by_doctor",
-            "validated_at",
-            "clarification_requested_by",
-            "clarification_requested_at",
-            "clarification_reason",
-            "created_at",
-            "updated_at",
-        )
+    def get_response_data(self, declaration):
+        response = self._response(declaration)
+        return response.response_data if response else {}
+
+    def get_merged_schema(self, declaration):
+        snapshot = getattr(declaration.assessment, "declaration_template_snapshot", None)
+        return snapshot.merged_schema if snapshot else {}
+
+    def get_template_snapshot(self, declaration):
+        snapshot = getattr(declaration.assessment, "declaration_template_snapshot", None)
+        return str(snapshot.id) if snapshot else None
+
+    def get_form_response_id(self, declaration):
+        response = self._response(declaration)
+        return str(response.id) if response else None
+
+    def get_form_response_status(self, declaration):
+        response = self._response(declaration)
+        return response.status if response else ""
+
+
+class HealthDeclarationSubmitSerializer(serializers.Serializer):
+    response_data = serializers.DictField(required=False)
+    diarrhoea_vomiting_last_7_days = serializers.BooleanField(required=False)
+    fever_more_than_one_week = serializers.BooleanField(required=False)
+    skin_trouble = serializers.BooleanField(required=False)
+    boils_styes_sepsis = serializers.BooleanField(required=False)
+    discharge_eye_ear_nose_mouth = serializers.BooleanField(required=False)
+    recurring_skin_or_ear_infection = serializers.BooleanField(required=False)
+    recurring_bowel_disorder = serializers.BooleanField(required=False)
+    cholera_contact_last_5_days = serializers.BooleanField(required=False)
+    diarrhoea_vomiting_contact_last_7_days = serializers.BooleanField(required=False)
+    typhoid_paratyphoid_jaundice_contact_last_21_days = serializers.BooleanField(required=False)
+    typhoid_or_paratyphoid_carrier = serializers.BooleanField(required=False)
+    previous_or_current_typhoid = serializers.BooleanField(required=False)
+    certified_true = serializers.BooleanField(required=False)
 
 
 class DeclarationReopenSerializer(serializers.Serializer):

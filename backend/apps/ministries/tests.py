@@ -1,6 +1,7 @@
 from django.contrib.auth import get_user_model
+from django.core.management import call_command
 from django.utils import timezone
-from rest_framework.test import APITestCase
+from rest_framework.test import APIRequestFactory, APITestCase, force_authenticate
 
 from apps.accounts.models import UserRole
 from apps.accounts.services import InviteService
@@ -18,7 +19,9 @@ from apps.locations.models import LGA
 from apps.locations.models import State
 from apps.ministries.models import FederalStateQueryStatus, MinistryStaffProfile, MinistryStaffRole, MinistryType, StateReport, StateReportStatus
 from apps.ministries.permissions import (
+    IsStateMinistryUser,
     can_assign_inspections,
+    can_access_restricted_medical_data,
     can_manage_federal_queries,
     can_manage_national_policy,
     can_manage_state_fees,
@@ -29,7 +32,7 @@ from apps.ministries.permissions import (
     can_validate_certificates,
     effective_state_id,
 )
-from apps.organizations.models import Organization, OrganizationType, OrganizationUnitType
+from apps.organizations.models import MembershipStatus, Organization, OrganizationMembership, OrganizationType, OrganizationUnitType, Permission, Role, RolePermission
 from apps.nin_verification.models import NINVerification, NINVerificationStatus
 from apps.payments.models import ActiveStatus, AssessmentFee, PayerType, PaymentStatus, PaymentTransaction
 from apps.policy.models import NationalPolicyConfig, StatePolicyConfig
@@ -151,6 +154,98 @@ class MinistryPermissionHelperTests(APITestCase):
         self.assertTrue(can_manage_national_policy(self.federal_admin))
         self.assertFalse(can_review_state_reports(self.federal_admin))
         self.assertFalse(can_manage_federal_queries(self.federal_admin))
+
+
+class StatePermissionEnforcementTests(APITestCase):
+    def setUp(self):
+        call_command("seed_roles_and_permissions", verbosity=0)
+        self.factory = APIRequestFactory()
+        self.lagos = State.objects.create(name="Lagos", code="LA")
+        self.state_org = Organization.objects.create(
+            name="Lagos State Ministry of Health",
+            organization_type=OrganizationType.STATE_MINISTRY,
+            state=self.lagos,
+        )
+        self.state_admin = User.objects.create_user(
+            "state-member",
+            "state-member@example.com",
+            "StrongPass123!",
+            role=UserRole.STATE_ADMIN,
+            state=self.lagos,
+            organization=self.state_org,
+        )
+        self.state_admin_role = Role.objects.get(code="state_admin")
+
+    def test_state_endpoint_requires_active_membership(self):
+        OrganizationMembership.objects.create(
+            user=self.state_admin,
+            organization=self.state_org,
+            role=self.state_admin_role,
+            status=MembershipStatus.SUSPENDED,
+        )
+        self.client.force_authenticate(self.state_admin)
+
+        response = self.client.get("/api/state/users/")
+
+        self.assertEqual(response.status_code, 403)
+        self.assertIn("inactive", str(response.data).lower())
+
+    def test_state_permission_code_blocks_sensitive_action_without_required_permission(self):
+        limited_role = Role.objects.create(
+            name="State Viewer Limited",
+            code="state_viewer_limited",
+            organization_type=OrganizationType.STATE_MINISTRY,
+            is_system_role=False,
+            is_custom_role=True,
+        )
+        RolePermission.objects.create(role=limited_role, permission=Permission.objects.get(code="unit.view"))
+        OrganizationMembership.objects.create(
+            user=self.state_admin,
+            organization=self.state_org,
+            role=limited_role,
+            status=MembershipStatus.ACTIVE,
+        )
+        request = self.factory.post("/api/state/units/", {"name": "Monitoring Desk", "unit_type": "desk"}, format="json")
+        force_authenticate(request, user=self.state_admin)
+        permission = IsStateMinistryUser()
+
+        allowed = permission.has_permission(request, type("DummyView", (), {"state_permission_codes": {"POST": "unit.create"}})())
+
+        self.assertFalse(allowed)
+        self.assertIn("unit.create", permission.message)
+
+    def test_restricted_medical_data_requires_explicit_permission(self):
+        limited_role = Role.objects.create(
+            name="Certificate Validator Limited",
+            code="certificate_validator_limited",
+            organization_type=OrganizationType.STATE_MINISTRY,
+            is_system_role=False,
+            is_custom_role=True,
+        )
+        RolePermission.objects.create(role=limited_role, permission=Permission.objects.get(code="certificate.validate"))
+        OrganizationMembership.objects.create(
+            user=self.state_admin,
+            organization=self.state_org,
+            role=limited_role,
+            status=MembershipStatus.ACTIVE,
+        )
+        request = self.factory.get("/api/state/certificate-validation-queue/")
+        force_authenticate(request, user=self.state_admin)
+        permission = IsStateMinistryUser()
+        view = type(
+            "DummyView",
+            (),
+            {
+                "state_permission_code": "certificate.validate",
+                "requires_restricted_medical_oversight": True,
+            },
+        )()
+
+        self.assertFalse(can_access_restricted_medical_data(self.state_admin))
+        allowed = permission.has_permission(request, view)
+
+        self.assertFalse(allowed)
+        self.assertIn("restricted medical oversight", permission.message.lower())
 
 
 class StateMinistryManagementEndpointTests(APITestCase):
@@ -1807,3 +1902,360 @@ class FederalOversightQueryEndpointTests(APITestCase):
         closed = self.client.patch(f"/api/federal/queries/{query_id}/close/")
         self.assertEqual(closed.status_code, 200)
         self.assertEqual(payload(closed)["status"], FederalStateQueryStatus.CLOSED)
+
+
+class FederalProfileTests(APITestCase):
+    def setUp(self):
+        self.federal_admin = User.objects.create_user(
+            "federal-profile-admin",
+            "federal-profile-admin@example.com",
+            "StrongPass123!",
+            role=UserRole.FEDERAL_ADMIN,
+        )
+        self.state_admin = User.objects.create_user(
+            "state-profile-admin",
+            "state-profile-admin@example.com",
+            "StrongPass123!",
+            role=UserRole.STATE_ADMIN,
+            state=State.objects.create(name="Kano", code="KN"),
+        )
+
+    def test_state_user_cannot_access_federal_profile(self):
+        self.client.force_authenticate(self.state_admin)
+        response = self.client.get("/api/federal/profile/")
+        self.assertEqual(response.status_code, 403)
+
+    def test_federal_admin_gets_profile_and_creates_default(self):
+        self.client.force_authenticate(self.federal_admin)
+        response = self.client.get("/api/federal/profile/")
+        self.assertEqual(response.status_code, 200)
+        data = payload(response)
+        self.assertIn("ministry_name", data)
+        self.assertEqual(data["reporting_cycle"], "quarterly")
+        self.assertEqual(data["central_portal_status"], "active")
+
+    def test_federal_super_admin_can_update_profile(self):
+        MinistryStaffProfile.objects.create(
+            user=self.federal_admin,
+            ministry_type=MinistryType.FEDERAL,
+            sub_role=MinistryStaffRole.FEDERAL_SUPER_ADMIN,
+        )
+        self.client.force_authenticate(self.federal_admin)
+        response = self.client.patch(
+            "/api/federal/profile/",
+            {
+                "programme_name": "National Food Handlers Medical Test Programme",
+                "national_coordinator": "Dr Programme Lead",
+                "reporting_cycle": "monthly",
+                "central_portal_status": "inactive",
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200)
+        data = payload(response)
+        self.assertEqual(data["programme_name"], "National Food Handlers Medical Test Programme")
+        self.assertEqual(data["reporting_cycle"], "monthly")
+        self.assertEqual(data["central_portal_status"], "inactive")
+        self.assertTrue(
+            AuditLog.objects.filter(action=AuditAction.UPDATE, metadata__event="federal_profile_updated").exists()
+        )
+
+    def test_federal_sub_role_without_profile_permission_cannot_update(self):
+        MinistryStaffProfile.objects.create(
+            user=self.federal_admin,
+            ministry_type=MinistryType.FEDERAL,
+            sub_role=MinistryStaffRole.NATIONAL_ME_OFFICER,
+        )
+        self.client.force_authenticate(self.federal_admin)
+        response = self.client.patch("/api/federal/profile/", {"programme_name": "Blocked"}, format="json")
+        self.assertEqual(response.status_code, 403)
+
+
+class FederalRoleSeedTests(APITestCase):
+    def test_seed_creates_all_default_federal_roles(self):
+        call_command("seed_roles_and_permissions", verbosity=0)
+        codes = set(
+            Role.objects.filter(organization_type=OrganizationType.FEDERAL_MINISTRY).values_list("code", flat=True)
+        )
+        expected = {
+            "federal_admin",
+            "national_programme_manager",
+            "director_department_head",
+            "policy_configuration_officer",
+            "standards_officer",
+            "legal_regulatory_reviewer",
+            "medical_clinical_reviewer",
+            "national_me_officer",
+            "data_analyst",
+            "state_coordination_officer",
+            "facility_oversight_officer",
+            "certificate_registry_officer",
+            "public_awareness_officer",
+            "compliance_enforcement_officer",
+            "federal_viewer",
+        }
+        self.assertTrue(expected.issubset(codes), f"Missing federal roles: {expected - codes}")
+
+
+class FederalReportReviewTests(APITestCase):
+    def setUp(self):
+        self.lagos = State.objects.create(name="Lagos", code="LA")
+        self.federal_admin = User.objects.create_user(
+            "federal-review-admin",
+            "federal-review-admin@example.com",
+            "StrongPass123!",
+            role=UserRole.FEDERAL_ADMIN,
+        )
+        self.state_user = User.objects.create_user(
+            "lagos-report-user",
+            "lagos-report-user@example.com",
+            "StrongPass123!",
+            role=UserRole.STATE_ADMIN,
+            state=self.lagos,
+        )
+        self.report = StateReport.objects.create(
+            state=self.lagos,
+            report_type="state_monthly",
+            reporting_period_start=timezone.localdate().replace(day=1),
+            reporting_period_end=timezone.localdate(),
+            status=StateReportStatus.SUBMITTED,
+            submitted_by=self.state_user,
+            submitted_at=timezone.now(),
+        )
+
+    def test_federal_can_list_submitted_reports(self):
+        self.client.force_authenticate(self.federal_admin)
+        response = self.client.get("/api/federal/reports/")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(payload(response)), 1)
+
+    def test_federal_accept_report(self):
+        self.client.force_authenticate(self.federal_admin)
+        response = self.client.patch(f"/api/federal/reports/{self.report.id}/accept/", {}, format="json")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(payload(response)["status"], StateReportStatus.ACCEPTED)
+
+    def test_return_requires_comment(self):
+        self.client.force_authenticate(self.federal_admin)
+        blocked = self.client.patch(f"/api/federal/reports/{self.report.id}/return/", {}, format="json")
+        self.assertEqual(blocked.status_code, 400)
+        returned = self.client.patch(
+            f"/api/federal/reports/{self.report.id}/return/",
+            {"comment": "Please add facility compliance figures."},
+            format="json",
+        )
+        self.assertEqual(returned.status_code, 200)
+        self.assertEqual(payload(returned)["status"], StateReportStatus.RETURNED)
+
+    def test_escalate_report(self):
+        self.client.force_authenticate(self.federal_admin)
+        response = self.client.patch(f"/api/federal/reports/{self.report.id}/escalate/", {"comment": "Suspicious figures."}, format="json")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(payload(response)["status"], StateReportStatus.ESCALATED)
+
+    def test_state_user_cannot_review(self):
+        self.client.force_authenticate(self.state_user)
+        response = self.client.patch(f"/api/federal/reports/{self.report.id}/accept/", {}, format="json")
+        self.assertEqual(response.status_code, 403)
+
+
+class FederalAdoptionReminderTests(APITestCase):
+    def setUp(self):
+        self.lagos = State.objects.create(name="Lagos", code="LA")
+        self.federal_admin = User.objects.create_user(
+            "federal-reminder-admin",
+            "federal-reminder-admin@example.com",
+            "StrongPass123!",
+            role=UserRole.FEDERAL_ADMIN,
+        )
+
+    def test_reminder_without_active_policy_returns_error(self):
+        self.client.force_authenticate(self.federal_admin)
+        response = self.client.post(f"/api/federal/states/{self.lagos.id}/send-adoption-reminder/", {}, format="json")
+        self.assertEqual(response.status_code, 400)
+
+
+class ComplianceEngineTests(APITestCase):
+    def setUp(self):
+        from apps.ministries.models import ComplianceAlert, ComplianceAlertStatus, ComplianceAlertType
+        from apps.ministries.compliance import ComplianceDetectionService
+
+        self.ComplianceAlert = ComplianceAlert
+        self.ComplianceAlertStatus = ComplianceAlertStatus
+        self.ComplianceAlertType = ComplianceAlertType
+        self.detect = ComplianceDetectionService
+
+        self.lagos = State.objects.create(name="Lagos", code="LA")
+        self.federal_admin = User.objects.create_user(
+            "compliance-fed", "compliance-fed@example.com", "StrongPass123!", role=UserRole.FEDERAL_ADMIN,
+        )
+        self.state_admin = User.objects.create_user(
+            "compliance-state", "compliance-state@example.com", "StrongPass123!", role=UserRole.STATE_ADMIN, state=self.lagos,
+        )
+
+    def _make_active_cert_for(self, handler, number):
+        facility_org = Organization.objects.create(name=f"Org {number}", organization_type=OrganizationType.MEDICAL_FACILITY, state=self.lagos)
+        doctor = User.objects.create_user(f"doc-{number}", f"doc-{number}@example.com", "StrongPass123!", role=UserRole.DOCTOR, state=self.lagos)
+        facility = MedicalFacility.objects.create(
+            organization=facility_org, facility_name=f"Facility {number}", facility_type=FacilityType.CLINIC,
+            ownership_type=OwnershipType.PRIVATE, license_number=f"LIC-{number}", address="addr",
+            state=self.lagos, contact_person="c", phone="0800", email=f"f{number}@example.com",
+            accreditation_status=AccreditationStatus.APPROVED,
+        )
+        payment = PaymentTransaction.objects.create(
+            payer_user=handler.user, payer_type="food_handler", related_entity_type="food_handler_assessment",
+            related_entity_id=handler.id, amount="1000.00", payment_provider="mock",
+            internal_reference=f"REF-{number}", status=PaymentStatus.SUCCESS, paid_at=timezone.now(),
+        )
+        assessment = MedicalAssessment.objects.create(
+            food_handler=handler, facility=facility, doctor=doctor, payment_transaction=payment,
+            final_decision=FitnessDecision.FIT, status="certificate_issued", signed_at=timezone.now(),
+        )
+        return Certificate.objects.create(
+            certificate_number=number, food_handler=handler, assessment=assessment, facility=facility,
+            doctor=doctor, issuing_state=self.lagos, issue_date=timezone.localdate(),
+            expiry_date=timezone.localdate() + timezone.timedelta(days=180), status=CertificateStatus.ACTIVE,
+            verification_url=f"http://x/{number}", digital_signature_hash="h",
+        )
+
+    def test_duplicate_active_certificate_detection_and_idempotency(self):
+        handler_user = User.objects.create_user("dup-handler", "dup-handler@example.com", "StrongPass123!", role=UserRole.FOOD_HANDLER, state=self.lagos)
+        handler = FoodHandlerProfile.objects.create(
+            user=handler_user, full_name="Dup Handler", date_of_birth="1990-01-01", gender=Gender.MALE,
+            nin="99999999999", phone="0803", email="dup@example.com", home_address="addr",
+            state=self.lagos, food_handler_category=FoodHandlerCategory.FOOD_PREPARER, system_identifier="FCN-DUP",
+        )
+        self._make_active_cert_for(handler, "DUP-1")
+        self._make_active_cert_for(handler, "DUP-2")
+
+        first = self.detect.scan(actor=self.federal_admin)
+        dup_alerts = self.ComplianceAlert.objects.filter(alert_type=self.ComplianceAlertType.DUPLICATE_ACTIVE_CERTIFICATES)
+        self.assertEqual(dup_alerts.count(), 1)
+        self.assertEqual(dup_alerts.first().metric_value, 2.0)
+
+        # Re-running must not create a duplicate alert.
+        self.detect.scan(actor=self.federal_admin)
+        self.assertEqual(self.ComplianceAlert.objects.filter(alert_type=self.ComplianceAlertType.DUPLICATE_ACTIVE_CERTIFICATES).count(), 1)
+        self.assertGreaterEqual(first["created"], 1)
+
+    def test_scan_endpoint_requires_federal_and_returns_summary(self):
+        self.client.force_authenticate(self.state_admin)
+        self.assertEqual(self.client.post("/api/federal/compliance/scan/").status_code, 403)
+        self.client.force_authenticate(self.federal_admin)
+        response = self.client.post("/api/federal/compliance/scan/")
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("open_alerts", payload(response))
+
+    def test_manual_alert_lifecycle(self):
+        self.client.force_authenticate(self.federal_admin)
+        created = self.client.post(
+            "/api/federal/compliance/alerts/",
+            {"alert_type": "manual", "severity": "high", "title": "Investigate Lagos", "state": str(self.lagos.id)},
+            format="json",
+        )
+        self.assertEqual(created.status_code, 201)
+        alert_id = payload(created)["id"]
+        self.assertFalse(payload(created)["auto_generated"])
+
+        ack = self.client.patch(f"/api/federal/compliance/alerts/{alert_id}/acknowledge/", {}, format="json")
+        self.assertEqual(payload(ack)["status"], "acknowledged")
+        resolved = self.client.patch(f"/api/federal/compliance/alerts/{alert_id}/resolve/", {"note": "Handled"}, format="json")
+        self.assertEqual(payload(resolved)["status"], "resolved")
+        self.assertEqual(payload(resolved)["resolution_note"], "Handled")
+
+    def test_list_filters_by_status(self):
+        self.client.force_authenticate(self.federal_admin)
+        self.client.post("/api/federal/compliance/alerts/", {"alert_type": "manual", "title": "A"}, format="json")
+        response = self.client.get("/api/federal/compliance/alerts/?status=open")
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(all(a["status"] == "open" for a in payload(response)))
+
+
+class PublicNoticeWorkflowTests(APITestCase):
+    def setUp(self):
+        self.lagos = State.objects.create(name="Lagos", code="LA")
+        self.federal_admin = User.objects.create_user(
+            "notice-fed", "notice-fed@example.com", "StrongPass123!", role=UserRole.FEDERAL_ADMIN,
+        )
+        self.state_admin = User.objects.create_user(
+            "notice-state", "notice-state@example.com", "StrongPass123!", role=UserRole.STATE_ADMIN, state=self.lagos,
+        )
+
+    def _create_notice(self):
+        return self.client.post(
+            "/api/federal/notices/",
+            {"title": "Adopt new policy", "body": "Please adopt the new national policy.", "audiences": ["states"]},
+            format="json",
+        )
+
+    def test_full_workflow_and_publish_notifies_states(self):
+        from apps.notifications.models import Notification
+        self.client.force_authenticate(self.federal_admin)
+        created = self._create_notice()
+        self.assertEqual(created.status_code, 201)
+        notice_id = payload(created)["id"]
+
+        self.assertEqual(payload(self.client.patch(f"/api/federal/notices/{notice_id}/submit/", {}, format="json"))["status"], "submitted")
+        self.assertEqual(payload(self.client.patch(f"/api/federal/notices/{notice_id}/approve/", {}, format="json"))["status"], "approved")
+        published = self.client.patch(f"/api/federal/notices/{notice_id}/publish/", {}, format="json")
+        self.assertEqual(payload(published)["status"], "published")
+
+        # State admin should receive an in-app notification.
+        self.assertTrue(Notification.objects.filter(recipient=self.state_admin, related_object_type="PublicNotice").exists())
+
+    def test_cannot_publish_before_approval(self):
+        self.client.force_authenticate(self.federal_admin)
+        notice_id = payload(self._create_notice())["id"]
+        blocked = self.client.patch(f"/api/federal/notices/{notice_id}/publish/", {}, format="json")
+        self.assertEqual(blocked.status_code, 400)
+
+    def test_state_user_cannot_create_notice(self):
+        self.client.force_authenticate(self.state_admin)
+        self.assertEqual(self._create_notice().status_code, 403)
+
+
+class FederalDashboardWidgetsTests(APITestCase):
+    def setUp(self):
+        self.lagos = State.objects.create(name="Lagos", code="LA")
+        self.federal_admin = User.objects.create_user(
+            "widgets-fed", "widgets-fed@example.com", "StrongPass123!", role=UserRole.FEDERAL_ADMIN,
+        )
+        self.state_admin = User.objects.create_user(
+            "widgets-state", "widgets-state@example.com", "StrongPass123!", role=UserRole.STATE_ADMIN, state=self.lagos,
+        )
+
+    def test_widgets_payload_has_all_keys(self):
+        self.client.force_authenticate(self.federal_admin)
+        response = self.client.get("/api/federal/dashboard/widgets/")
+        self.assertEqual(response.status_code, 200)
+        data = payload(response)
+        for key in [
+            "states_onboarded", "states_using_latest_policy", "approved_facilities",
+            "registered_food_handlers", "assessments_completed", "certificates_issued",
+            "active_certificates", "expired_certificates", "temporary_unfit_reports",
+            "state_report_submissions", "compliance_alerts", "qr_verification_activity",
+            "public_awareness_campaigns",
+        ]:
+            self.assertIn(key, data)
+        self.assertEqual(data["states_onboarded"], 1)
+
+    def test_widgets_require_federal(self):
+        self.client.force_authenticate(self.state_admin)
+        self.assertEqual(self.client.get("/api/federal/dashboard/widgets/").status_code, 403)
+
+
+class FederalAuditLogFilterTests(APITestCase):
+    def setUp(self):
+        self.federal_admin = User.objects.create_user(
+            "audit-filter-fed", "audit-filter-fed@example.com", "StrongPass123!", role=UserRole.FEDERAL_ADMIN,
+        )
+
+    def test_audit_logs_filter_by_entity_type_and_action(self):
+        AuditLog.objects.create(action=AuditAction.UPDATE, actor=self.federal_admin, target_type="FederalProfile", target_id="abc", metadata={"event": "federal_profile_updated"})
+        AuditLog.objects.create(action=AuditAction.DELETE, actor=self.federal_admin, target_type="PublicNotice", target_id="xyz", metadata={})
+        self.client.force_authenticate(self.federal_admin)
+        by_action = self.client.get("/api/federal/audit-logs/", {"action": "update"})
+        self.assertEqual(by_action.status_code, 200)
+        self.assertTrue(all(r["action"] == "update" for r in payload(by_action)))
+        by_entity = self.client.get("/api/federal/audit-logs/", {"entity_type": "PublicNotice"})
+        self.assertTrue(all(r["target_type"] == "PublicNotice" for r in payload(by_entity)))
