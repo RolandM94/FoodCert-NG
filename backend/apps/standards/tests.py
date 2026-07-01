@@ -2077,3 +2077,106 @@ class PolicyVersionReactivateTests(APITestCase):
         )
         response = self.client.post(f"/api/federal/standards/policy-versions/{draft.id}/reactivate/")
         self.assertEqual(response.status_code, 400)
+
+
+class PerformanceIndicatorLayerTests(APITestCase):
+    def setUp(self):
+        from apps.standards.models import (
+            IndicatorAdoption, IndicatorAdoptionStatus, IndicatorLifecycleStatus,
+            IndicatorTarget, IndicatorThreshold, MEIndicator, PolicyVersion, PolicyVersionType,
+        )
+        from apps.standards.services import bump_active_standards_cache_version
+        from apps.locations.models import State
+        bump_active_standards_cache_version()
+
+        self.MEIndicator = MEIndicator
+        self.IndicatorAdoption = IndicatorAdoption
+        self.IndicatorAdoptionStatus = IndicatorAdoptionStatus
+        self.IndicatorLifecycleStatus = IndicatorLifecycleStatus
+        self.IndicatorTarget = IndicatorTarget
+        self.IndicatorThreshold = IndicatorThreshold
+
+        self.federal = User.objects.create_user("pi-federal", "pi-federal@example.com", "StrongPass123!", role=UserRole.FEDERAL_ADMIN)
+        self.lagos = State.objects.create(name="Lagos", code="LA")
+        self.client.force_authenticate(self.federal)
+        self.policy = PolicyVersion.objects.create(
+            version_code="PI-POL-1", title="PI policy", description="d",
+            version_type=PolicyVersionType.MAJOR, change_summary="c", created_by=self.federal,
+        )
+        self.indicator = MEIndicator.objects.create(
+            policy_version=self.policy, indicator_name="Certificate Coverage Rate",
+            indicator_code="CERT_COVERAGE", data_source="certificate_records",
+            reporting_frequency=ReportingFrequency.MONTHLY, visualization_type="card",
+            category="coverage", allow_state_clone=True, allow_state_target_override=True,
+            created_by=self.federal,
+        )
+
+    def test_create_target_and_threshold(self):
+        target = self.client.post(
+            "/api/federal/standards/indicator-targets/",
+            {"indicator": str(self.indicator.id), "scope_type": "national", "target_value": "90.0", "target_unit": "%"},
+            format="json",
+        )
+        self.assertEqual(target.status_code, 201, target.data)
+        band = self.client.post(
+            "/api/federal/standards/indicator-thresholds/",
+            {"indicator": str(self.indicator.id), "scope_type": "national", "band_name": "Green",
+             "severity": "good", "min_value": "90.0", "color": "#16A34A"},
+            format="json",
+        )
+        self.assertEqual(band.status_code, 201, band.data)
+
+    def test_performance_band_resolution(self):
+        from apps.standards.indicator_pi import resolve_performance_band, resolve_effective_target
+        self.IndicatorThreshold.objects.create(indicator=self.indicator, scope_type="national", band_name="Red", severity="critical", max_value="70")
+        self.IndicatorThreshold.objects.create(indicator=self.indicator, scope_type="national", band_name="Green", severity="good", min_value="90")
+        self.IndicatorTarget.objects.create(indicator=self.indicator, scope_type="national", target_value="90")
+
+        self.assertEqual(resolve_performance_band(self.indicator, 95)["band_name"], "Green")
+        self.assertEqual(resolve_performance_band(self.indicator, 50)["band_name"], "Red")
+        self.assertIsNone(resolve_performance_band(self.indicator, 80))
+        self.assertEqual(resolve_effective_target(self.indicator), self.IndicatorTarget.objects.first().target_value)
+
+    def test_publish_and_share_and_adopt(self):
+        published = self.client.post(f"/api/federal/standards/me-indicators/{self.indicator.id}/publish/")
+        self.assertEqual(published.status_code, 200, published.data)
+        self.indicator.refresh_from_db()
+        self.assertEqual(self.indicator.lifecycle_status, self.IndicatorLifecycleStatus.ACTIVE)
+
+        shared = self.client.post(f"/api/federal/standards/me-indicators/{self.indicator.id}/share-to-states/", {}, format="json")
+        self.assertEqual(shared.status_code, 200)
+        self.assertTrue(self.IndicatorAdoption.objects.filter(federal_indicator=self.indicator, state=self.lagos).exists())
+
+        adopted = self.client.post(f"/api/federal/standards/me-indicators/{self.indicator.id}/adopt/", {"state_id": str(self.lagos.id)}, format="json")
+        self.assertEqual(adopted.status_code, 201, adopted.data)
+        self.assertEqual(adopted.data.get("data", adopted.data)["adoption_status"], self.IndicatorAdoptionStatus.ADOPTED)
+
+    def test_clone_for_state_copies_config(self):
+        self.IndicatorTarget.objects.create(indicator=self.indicator, scope_type="national", target_value="90")
+        self.IndicatorThreshold.objects.create(indicator=self.indicator, scope_type="national", band_name="Green", severity="good", min_value="90")
+        cloned = self.client.post(f"/api/federal/standards/me-indicators/{self.indicator.id}/clone/", {"state_id": str(self.lagos.id)}, format="json")
+        self.assertEqual(cloned.status_code, 201, cloned.data)
+        data = cloned.data.get("data", cloned.data)
+        clone = self.MEIndicator.objects.get(id=data["id"])
+        self.assertEqual(clone.owner_type, "state")
+        self.assertEqual(clone.owner_state_id, self.lagos.id)
+        self.assertEqual(clone.source_indicator_id, self.indicator.id)
+        self.assertEqual(clone.targets.count(), 1)
+        self.assertEqual(clone.thresholds.count(), 1)
+        self.assertTrue(self.IndicatorAdoption.objects.filter(federal_indicator=self.indicator, state=self.lagos, adoption_status=self.IndicatorAdoptionStatus.CLONED).exists())
+
+    def test_manual_entry_review_workflow(self):
+        created = self.client.post(
+            "/api/federal/standards/indicator-manual-entries/",
+            {"indicator": str(self.indicator.id), "scope_type": "national", "period_start": "2026-01-01",
+             "period_end": "2026-03-31", "value": "42", "comment": "Awareness campaign done"},
+            format="json",
+        )
+        self.assertEqual(created.status_code, 201, created.data)
+        entry_id = created.data.get("data", created.data)["id"]
+        self.assertEqual(self.client.post(f"/api/federal/standards/indicator-manual-entries/{entry_id}/submit/").data.get("data", {}).get("review_status") or "submitted", "submitted")
+        rejected = self.client.post(f"/api/federal/standards/indicator-manual-entries/{entry_id}/reject/", {}, format="json")
+        self.assertEqual(rejected.status_code, 400)
+        approved = self.client.post(f"/api/federal/standards/indicator-manual-entries/{entry_id}/approve/", {"comment": "ok"}, format="json")
+        self.assertEqual(approved.status_code, 200)
+        self.assertEqual(approved.data.get("data", approved.data)["review_status"], "approved")

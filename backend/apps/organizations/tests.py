@@ -22,6 +22,7 @@ from apps.organizations.models import (
     RolePermission,
 )
 from apps.organizations.permission_codes import PERMISSION_CODES
+from apps.organizations.management.commands.seed_roles_and_permissions import ROLE_TEMPLATES
 from apps.organizations.services_access import EffectiveAccessService
 
 User = get_user_model()
@@ -185,7 +186,11 @@ class StakeholderRoleSeedCommandTests(APITestCase):
 
         self.assertEqual(Permission.objects.count(), len(PERMISSION_CODES))
         self.assertTrue(Permission.objects.filter(code="permission.override", is_sensitive=True).exists())
-        self.assertEqual(Role.objects.filter(is_system_role=True, status="active").count(), 35)
+        template_codes = {template["code"] for template in ROLE_TEMPLATES}
+        self.assertEqual(
+            Role.objects.filter(is_system_role=True, status="active", code__in=template_codes).count(),
+            len(ROLE_TEMPLATES),
+        )
         self.assertTrue(Role.objects.filter(code="federal_admin", organization_type=OrganizationType.FEDERAL_MINISTRY).exists())
         self.assertTrue(Role.objects.filter(code="state_admin", organization_type=OrganizationType.STATE_MINISTRY).exists())
         self.assertTrue(Role.objects.filter(code="facility_admin", organization_type=OrganizationType.MEDICAL_FACILITY).exists())

@@ -851,6 +851,35 @@ class ReportingTemplate(BaseModel):
         return self.template_name
 
 
+class IndicatorOwnerType(models.TextChoices):
+    FEDERAL = "federal", "Federal-Owned"
+    STATE = "state", "State-Owned"
+    SYSTEM = "system", "System Indicator"
+    EMPLOYER = "employer", "Employer-Scoped"
+    FACILITY = "facility", "Facility-Scoped"
+
+
+class IndicatorVisibility(models.TextChoices):
+    SYSTEM_DEFAULT = "system_default", "System Default"
+    FEDERAL_PRIVATE = "federal_private", "Federal Private"
+    FEDERAL_STANDARD = "federal_standard", "Federal Standard"
+    FEDERAL_SHARED = "federal_shared", "Federal Shared"
+    STATE_OWNED = "state_owned", "State Owned"
+    STATE_PRIVATE = "state_private", "State Private"
+    ORGANIZATION_SCOPED = "organization_scoped", "Organization Scoped"
+    ROLE_SCOPED = "role_scoped", "Role Scoped"
+
+
+class IndicatorLifecycleStatus(models.TextChoices):
+    DRAFT = "draft", "Draft"
+    UNDER_REVIEW = "under_review", "Under Review"
+    PUBLISHED = "published", "Published"
+    ACTIVE = "active", "Active"
+    PAUSED = "paused", "Paused"
+    DEPRECATED = "deprecated", "Deprecated"
+    ARCHIVED = "archived", "Archived"
+
+
 class MEIndicator(BaseModel):
     policy_version = models.ForeignKey(
         PolicyVersion, on_delete=models.CASCADE,
@@ -918,6 +947,41 @@ class MEIndicator(BaseModel):
         max_length=16, choices=StandardStatus.choices,
         default=StandardStatus.DRAFT, db_index=True,
     )
+    # --- Performance Indicators layer (PRD) ---
+    category = models.CharField(max_length=120, blank=True, default="", db_index=True)
+    owner_type = models.CharField(max_length=16, choices=IndicatorOwnerType.choices, default=IndicatorOwnerType.FEDERAL, db_index=True)
+    owner_organization = models.ForeignKey(
+        "organizations.Organization", on_delete=models.SET_NULL,
+        null=True, blank=True, related_name="owned_indicators",
+    )
+    owner_state = models.ForeignKey(
+        "locations.State", on_delete=models.SET_NULL,
+        null=True, blank=True, related_name="owned_indicators",
+    )
+    visibility = models.CharField(max_length=24, choices=IndicatorVisibility.choices, default=IndicatorVisibility.FEDERAL_PRIVATE, db_index=True)
+    account_type_scope = models.JSONField(default=list, blank=True)
+    lifecycle_status = models.CharField(max_length=16, choices=IndicatorLifecycleStatus.choices, default=IndicatorLifecycleStatus.DRAFT, db_index=True)
+    version = models.CharField(max_length=32, blank=True, default="1.0")
+    privacy_classification = models.CharField(max_length=32, blank=True, default="internal")
+    allow_state_target_override = models.BooleanField(default=True)
+    allow_state_clone = models.BooleanField(default=True)
+    dashboard_enabled = models.BooleanField(default=True)
+    report_enabled = models.BooleanField(default=True)
+    ai_enabled = models.BooleanField(default=True)
+    source_indicator = models.ForeignKey(
+        "self", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="cloned_indicators",
+        help_text="Federal indicator this state indicator was cloned from",
+    )
+    published_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL,
+        null=True, blank=True, related_name="published_me_indicators",
+    )
+    published_at = models.DateTimeField(null=True, blank=True)
+    updated_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL,
+        null=True, blank=True, related_name="updated_me_indicators",
+    )
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.SET_NULL,
         null=True, related_name="created_me_indicators",
@@ -934,10 +998,149 @@ class MEIndicator(BaseModel):
         indexes = [
             models.Index(fields=["policy_version", "status"]),
             models.Index(fields=["data_source"]),
+            models.Index(fields=["owner_type", "lifecycle_status"]),
+            models.Index(fields=["visibility"]),
+            models.Index(fields=["category"]),
         ]
 
     def __str__(self) -> str:
         return self.indicator_name
+
+
+class IndicatorScopeType(models.TextChoices):
+    NATIONAL = "national", "National"
+    FEDERAL = "federal", "Federal"
+    STATE = "state", "State"
+    LGA = "lga", "LGA"
+    EMPLOYER = "employer", "Employer"
+    FACILITY = "facility", "Facility"
+    BRANCH = "branch", "Branch"
+    CUSTOM = "custom", "Custom"
+
+
+class IndicatorTargetSource(models.TextChoices):
+    FEDERAL_DEFAULT = "federal_default", "Federal Default"
+    STATE_OVERRIDE = "state_override", "State Override"
+    LGA = "lga", "LGA"
+    ORGANIZATION = "organization", "Organization"
+    CUSTOM = "custom", "Custom"
+
+
+class IndicatorTarget(BaseModel):
+    indicator = models.ForeignKey(MEIndicator, on_delete=models.CASCADE, related_name="targets")
+    scope_type = models.CharField(max_length=16, choices=IndicatorScopeType.choices, default=IndicatorScopeType.NATIONAL, db_index=True)
+    scope_id = models.CharField(max_length=64, blank=True, default="")
+    target_value = models.DecimalField(max_digits=18, decimal_places=4)
+    target_unit = models.CharField(max_length=64, blank=True, default="")
+    effective_start_date = models.DateField(null=True, blank=True)
+    effective_end_date = models.DateField(null=True, blank=True)
+    set_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="set_indicator_targets")
+    source = models.CharField(max_length=24, choices=IndicatorTargetSource.choices, default=IndicatorTargetSource.FEDERAL_DEFAULT)
+    is_active = models.BooleanField(default=True, db_index=True)
+
+    class Meta:
+        ordering = ["indicator__indicator_name", "scope_type", "scope_id"]
+        indexes = [
+            models.Index(fields=["indicator", "scope_type", "scope_id"]),
+            models.Index(fields=["is_active"]),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.indicator.indicator_code} target [{self.scope_type}:{self.scope_id or 'all'}] = {self.target_value}"
+
+
+class IndicatorThresholdSeverity(models.TextChoices):
+    GOOD = "good", "Good"
+    WARNING = "warning", "Warning"
+    CRITICAL = "critical", "Critical"
+
+
+class IndicatorThreshold(BaseModel):
+    indicator = models.ForeignKey(MEIndicator, on_delete=models.CASCADE, related_name="thresholds")
+    scope_type = models.CharField(max_length=16, choices=IndicatorScopeType.choices, default=IndicatorScopeType.NATIONAL, db_index=True)
+    scope_id = models.CharField(max_length=64, blank=True, default="")
+    band_name = models.CharField(max_length=64)
+    severity = models.CharField(max_length=16, choices=IndicatorThresholdSeverity.choices, default=IndicatorThresholdSeverity.GOOD)
+    min_value = models.DecimalField(max_digits=18, decimal_places=4, null=True, blank=True)
+    max_value = models.DecimalField(max_digits=18, decimal_places=4, null=True, blank=True)
+    color = models.CharField(max_length=24, blank=True, default="")
+    label = models.CharField(max_length=120, blank=True, default="")
+    action_recommendation = models.TextField(blank=True, default="")
+
+    class Meta:
+        ordering = ["indicator__indicator_name", "scope_type", "min_value"]
+        indexes = [
+            models.Index(fields=["indicator", "scope_type", "scope_id"]),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.indicator.indicator_code} band {self.band_name} ({self.severity})"
+
+
+class IndicatorAdoptionStatus(models.TextChoices):
+    AVAILABLE = "available", "Available"
+    ADOPTED = "adopted", "Adopted"
+    CLONED = "cloned", "Cloned"
+    DECLINED = "declined", "Declined"
+    SUPERSEDED = "superseded", "Superseded"
+
+
+class IndicatorAdoption(BaseModel):
+    federal_indicator = models.ForeignKey(MEIndicator, on_delete=models.CASCADE, related_name="adoptions")
+    state = models.ForeignKey("locations.State", on_delete=models.CASCADE, related_name="indicator_adoptions")
+    adoption_status = models.CharField(max_length=16, choices=IndicatorAdoptionStatus.choices, default=IndicatorAdoptionStatus.ADOPTED, db_index=True)
+    adopted_version = models.CharField(max_length=32, blank=True, default="")
+    state_target_override_enabled = models.BooleanField(default=False)
+    cloned_indicator = models.ForeignKey(
+        MEIndicator, on_delete=models.SET_NULL, null=True, blank=True, related_name="clone_adoption",
+    )
+    adopted_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="indicator_adoptions")
+    adopted_at = models.DateTimeField(null=True, blank=True)
+    last_synced_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-adopted_at", "-created_at"]
+        constraints = [
+            models.UniqueConstraint(fields=["federal_indicator", "state"], name="unique_indicator_adoption_per_state"),
+        ]
+        indexes = [
+            models.Index(fields=["state", "adoption_status"]),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.federal_indicator.indicator_code} -> {self.state.name} ({self.adoption_status})"
+
+
+class IndicatorManualEntryReviewStatus(models.TextChoices):
+    DRAFT = "draft", "Draft"
+    SUBMITTED = "submitted", "Submitted"
+    APPROVED = "approved", "Approved"
+    REJECTED = "rejected", "Rejected"
+
+
+class IndicatorManualEntry(BaseModel):
+    indicator = models.ForeignKey(MEIndicator, on_delete=models.CASCADE, related_name="manual_entries")
+    scope_type = models.CharField(max_length=16, choices=IndicatorScopeType.choices, default=IndicatorScopeType.NATIONAL)
+    scope_id = models.CharField(max_length=64, blank=True, default="")
+    period_start = models.DateField()
+    period_end = models.DateField()
+    value = models.DecimalField(max_digits=18, decimal_places=4)
+    evidence_file_url = models.URLField(blank=True, default="")
+    comment = models.TextField(blank=True, default="")
+    submitted_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="submitted_indicator_manual_entries")
+    reviewed_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="reviewed_indicator_manual_entries")
+    review_status = models.CharField(max_length=16, choices=IndicatorManualEntryReviewStatus.choices, default=IndicatorManualEntryReviewStatus.DRAFT, db_index=True)
+    review_comment = models.TextField(blank=True, default="")
+
+    class Meta:
+        ordering = ["-period_end", "-created_at"]
+        indexes = [
+            models.Index(fields=["indicator", "review_status"]),
+            models.Index(fields=["period_start", "period_end"]),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.indicator.indicator_code} manual {self.period_end} ({self.review_status})"
 
 
 class MEIndicatorDataSource(BaseModel):
@@ -1062,6 +1265,10 @@ class MEIndicatorValue(BaseModel):
         max_length=16, choices=IndicatorValueStatus.choices,
         default=IndicatorValueStatus.DRAFT, db_index=True,
     )
+    target_value = models.DecimalField(max_digits=18, decimal_places=4, null=True, blank=True)
+    variance_from_target = models.DecimalField(max_digits=18, decimal_places=4, null=True, blank=True)
+    performance_band = models.CharField(max_length=64, blank=True, default="")
+    performance_severity = models.CharField(max_length=16, blank=True, default="")
     calculation_snapshot_json = models.JSONField(default=dict, blank=True)
     original_calculated_value = models.DecimalField(
         max_digits=18, decimal_places=4, null=True, blank=True,

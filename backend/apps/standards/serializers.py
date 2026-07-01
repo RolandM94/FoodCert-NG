@@ -22,6 +22,10 @@ from .models import (
     MEIndicatorDataSource,
     MEIndicatorValue,
     MEIndicatorValueHistory,
+    IndicatorAdoption,
+    IndicatorManualEntry,
+    IndicatorTarget,
+    IndicatorThreshold,
     MedicalTestPackage,
     MedicalTestPackageComponent,
     MedicalTestRule,
@@ -601,6 +605,68 @@ class IndicatorEvidenceSerializer(serializers.ModelSerializer):
         return attrs
 
 
+class IndicatorTargetSerializer(serializers.ModelSerializer):
+    indicator_code = serializers.CharField(source="indicator.indicator_code", read_only=True)
+    set_by_name = serializers.CharField(source="set_by.get_full_name", read_only=True, default="")
+
+    class Meta:
+        model = IndicatorTarget
+        fields = (
+            "id", "indicator", "indicator_code", "scope_type", "scope_id",
+            "target_value", "target_unit", "effective_start_date", "effective_end_date",
+            "source", "is_active", "set_by", "set_by_name", "created_at", "updated_at",
+        )
+        read_only_fields = ("id", "set_by", "created_at", "updated_at")
+
+
+class IndicatorThresholdSerializer(serializers.ModelSerializer):
+    indicator_code = serializers.CharField(source="indicator.indicator_code", read_only=True)
+
+    class Meta:
+        model = IndicatorThreshold
+        fields = (
+            "id", "indicator", "indicator_code", "scope_type", "scope_id",
+            "band_name", "severity", "min_value", "max_value", "color", "label",
+            "action_recommendation", "created_at", "updated_at",
+        )
+        read_only_fields = ("id", "created_at", "updated_at")
+
+
+class IndicatorAdoptionSerializer(serializers.ModelSerializer):
+    federal_indicator_code = serializers.CharField(source="federal_indicator.indicator_code", read_only=True)
+    federal_indicator_name = serializers.CharField(source="federal_indicator.indicator_name", read_only=True)
+    state_name = serializers.CharField(source="state.name", read_only=True, default="")
+    adopted_by_name = serializers.CharField(source="adopted_by.get_full_name", read_only=True, default="")
+
+    class Meta:
+        model = IndicatorAdoption
+        fields = (
+            "id", "federal_indicator", "federal_indicator_code", "federal_indicator_name",
+            "state", "state_name", "adoption_status", "adopted_version",
+            "state_target_override_enabled", "cloned_indicator",
+            "adopted_by", "adopted_by_name", "adopted_at", "last_synced_at",
+            "created_at", "updated_at",
+        )
+        read_only_fields = fields
+
+
+class IndicatorManualEntrySerializer(serializers.ModelSerializer):
+    indicator_code = serializers.CharField(source="indicator.indicator_code", read_only=True)
+    submitted_by_name = serializers.CharField(source="submitted_by.get_full_name", read_only=True, default="")
+    reviewed_by_name = serializers.CharField(source="reviewed_by.get_full_name", read_only=True, default="")
+
+    class Meta:
+        model = IndicatorManualEntry
+        fields = (
+            "id", "indicator", "indicator_code", "scope_type", "scope_id",
+            "period_start", "period_end", "value", "evidence_file_url", "comment",
+            "review_status", "review_comment",
+            "submitted_by", "submitted_by_name", "reviewed_by", "reviewed_by_name",
+            "created_at", "updated_at",
+        )
+        read_only_fields = ("id", "review_status", "submitted_by", "reviewed_by", "review_comment", "created_at", "updated_at")
+
+
 class MEIndicatorSerializer(serializers.ModelSerializer):
     policy_version_code = serializers.CharField(
         source="policy_version.version_code", read_only=True,
@@ -629,10 +695,19 @@ class MEIndicatorSerializer(serializers.ModelSerializer):
             "federal_dashboard_visible", "state_dashboard_visible",
             "mandatory", "status", "qualitative_config",
             "disaggregations",
+            "category", "owner_type", "owner_organization", "owner_state",
+            "visibility", "account_type_scope", "lifecycle_status", "version",
+            "privacy_classification", "allow_state_target_override",
+            "allow_state_clone", "dashboard_enabled", "report_enabled",
+            "ai_enabled", "source_indicator",
+            "published_by", "published_at",
             "created_by", "created_by_name",
             "created_at", "updated_at",
         )
-        read_only_fields = ("id", "status", "created_at", "updated_at")
+        read_only_fields = (
+            "id", "status", "lifecycle_status", "published_by", "published_at",
+            "source_indicator", "created_at", "updated_at",
+        )
 
     def validate(self, attrs):
         formula_config = attrs.get("formula_config", getattr(self.instance, "formula_config", {}) or {})
@@ -791,6 +866,7 @@ class MEIndicatorValueSerializer(serializers.ModelSerializer):
             "qualitative_value_text", "qualitative_rating",
             "qualitative_category",
             "value_source", "source_reference_id", "approval_status",
+            "target_value", "variance_from_target", "performance_band", "performance_severity",
             "calculation_snapshot_json", "original_calculated_value",
             "overridden_value", "override_reason", "overridden_by",
             "overridden_by_name", "overridden_at", "evidence_json", "notes",
@@ -802,6 +878,7 @@ class MEIndicatorValueSerializer(serializers.ModelSerializer):
         )
         read_only_fields = (
             "id", "indicator_name", "indicator_code", "approval_status",
+            "target_value", "variance_from_target", "performance_band", "performance_severity",
             "created_by", "created_by_name", "submitted_by",
             "submitted_by_name", "submitted_at", "approved_by",
             "approved_by_name", "approved_at", "overridden_by",

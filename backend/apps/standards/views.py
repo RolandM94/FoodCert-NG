@@ -12,6 +12,8 @@ from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
+from django.shortcuts import get_object_or_404
+
 from apps.accounts.permissions import IsActiveUser
 from apps.audit.models import AuditAction, AuditLog
 from apps.audit.services import log_action
@@ -32,6 +34,13 @@ from .models import (
     MEIndicatorDataSource,
     MEIndicatorValue,
     MEIndicatorValueHistory,
+    IndicatorAdoption,
+    IndicatorLifecycleStatus,
+    IndicatorManualEntry,
+    IndicatorManualEntryReviewStatus,
+    IndicatorScopeType,
+    IndicatorTarget,
+    IndicatorThreshold,
     MedicalTestPackage,
     MedicalTestPackageComponent,
     MedicalTestRule,
@@ -70,6 +79,10 @@ from .serializers import (
     MEIndicatorOverrideSerializer,
     MEIndicatorSerializer,
     MEIndicatorValueSerializer,
+    IndicatorAdoptionSerializer,
+    IndicatorManualEntrySerializer,
+    IndicatorTargetSerializer,
+    IndicatorThresholdSerializer,
     MedicalTestPackageSerializer,
     MedicalTestPackageComponentSerializer,
     MedicalTestRuleSerializer,
@@ -521,6 +534,93 @@ class MedicalTestPackageViewSet(StandardsConfigViewSetMixin, viewsets.ModelViewS
     search_fields = ["name", "code"]
 
 
+class IndicatorTargetViewSet(viewsets.ModelViewSet):
+    queryset = IndicatorTarget.objects.select_related("indicator", "set_by").all()
+    serializer_class = IndicatorTargetSerializer
+    permission_classes = [IsAuthenticated, IsActiveUser, CanManageStandards]
+    http_method_names = ["get", "post", "patch", "delete", "head", "options"]
+    filterset_fields = ["indicator", "scope_type", "is_active"]
+
+    def perform_create(self, serializer):
+        instance = serializer.save(set_by=self.request.user)
+        log_action(action=AuditAction.CREATE, actor=self.request.user, target=instance,
+                   metadata={"event": "indicator_target_created", "scope": instance.scope_type}, request=self.request)
+
+    def perform_update(self, serializer):
+        instance = serializer.save()
+        log_action(action=AuditAction.UPDATE, actor=self.request.user, target=instance,
+                   metadata={"event": "indicator_target_updated"}, request=self.request)
+
+
+class IndicatorThresholdViewSet(viewsets.ModelViewSet):
+    queryset = IndicatorThreshold.objects.select_related("indicator").all()
+    serializer_class = IndicatorThresholdSerializer
+    permission_classes = [IsAuthenticated, IsActiveUser, CanManageStandards]
+    http_method_names = ["get", "post", "patch", "delete", "head", "options"]
+    filterset_fields = ["indicator", "scope_type", "severity"]
+
+    def perform_create(self, serializer):
+        instance = serializer.save()
+        log_action(action=AuditAction.CREATE, actor=self.request.user, target=instance,
+                   metadata={"event": "indicator_threshold_created"}, request=self.request)
+
+
+class IndicatorAdoptionViewSet(viewsets.ReadOnlyModelViewSet):
+    queryset = IndicatorAdoption.objects.select_related("federal_indicator", "state", "adopted_by", "cloned_indicator").all()
+    serializer_class = IndicatorAdoptionSerializer
+    permission_classes = [IsAuthenticated, IsActiveUser, CanManageStandards]
+    filterset_fields = ["federal_indicator", "state", "adoption_status"]
+
+
+class IndicatorManualEntryViewSet(viewsets.ModelViewSet):
+    queryset = IndicatorManualEntry.objects.select_related("indicator", "submitted_by", "reviewed_by").all()
+    serializer_class = IndicatorManualEntrySerializer
+    permission_classes = [IsAuthenticated, IsActiveUser, CanManageStandards]
+    http_method_names = ["get", "post", "patch", "delete", "head", "options"]
+    filterset_fields = ["indicator", "review_status", "scope_type"]
+
+    def perform_create(self, serializer):
+        instance = serializer.save(submitted_by=self.request.user)
+        log_action(action=AuditAction.CREATE, actor=self.request.user, target=instance,
+                   metadata={"event": "indicator_manual_entry_created"}, request=self.request)
+
+    @action(detail=True, methods=["post"])
+    def submit(self, request, pk=None):
+        entry = self.get_object()
+        if entry.review_status not in (IndicatorManualEntryReviewStatus.DRAFT, IndicatorManualEntryReviewStatus.REJECTED):
+            return Response({"detail": "Only draft or rejected entries can be submitted."}, status=status.HTTP_400_BAD_REQUEST)
+        entry.review_status = IndicatorManualEntryReviewStatus.SUBMITTED
+        entry.submitted_by = request.user
+        entry.save(update_fields=["review_status", "submitted_by", "updated_at"])
+        log_action(action=AuditAction.WORKFLOW_TRANSITION, actor=request.user, target=entry, metadata={"event": "indicator_manual_entry_submitted"})
+        return Response(self.get_serializer(entry).data)
+
+    @action(detail=True, methods=["post"])
+    def approve(self, request, pk=None):
+        entry = self.get_object()
+        if entry.review_status != IndicatorManualEntryReviewStatus.SUBMITTED:
+            return Response({"detail": "Only submitted entries can be approved."}, status=status.HTTP_400_BAD_REQUEST)
+        entry.review_status = IndicatorManualEntryReviewStatus.APPROVED
+        entry.reviewed_by = request.user
+        entry.review_comment = request.data.get("comment", "")
+        entry.save(update_fields=["review_status", "reviewed_by", "review_comment", "updated_at"])
+        log_action(action=AuditAction.WORKFLOW_TRANSITION, actor=request.user, target=entry, metadata={"event": "indicator_manual_entry_approved"})
+        return Response(self.get_serializer(entry).data)
+
+    @action(detail=True, methods=["post"])
+    def reject(self, request, pk=None):
+        entry = self.get_object()
+        comment = request.data.get("comment", "").strip()
+        if not comment:
+            return Response({"detail": "A rejection comment is required."}, status=status.HTTP_400_BAD_REQUEST)
+        entry.review_status = IndicatorManualEntryReviewStatus.REJECTED
+        entry.reviewed_by = request.user
+        entry.review_comment = comment
+        entry.save(update_fields=["review_status", "reviewed_by", "review_comment", "updated_at"])
+        log_action(action=AuditAction.WORKFLOW_TRANSITION, actor=request.user, target=entry, metadata={"event": "indicator_manual_entry_rejected"})
+        return Response(self.get_serializer(entry).data)
+
+
 class MedicalTestPackageComponentViewSet(viewsets.ModelViewSet):
     queryset = MedicalTestPackageComponent.objects.select_related("package", "package__policy_version").all()
     serializer_class = MedicalTestPackageComponentSerializer
@@ -667,8 +767,66 @@ def scoped_kpi_filters_for_user(user):
 class MEIndicatorViewSet(StandardsConfigViewSetMixin, viewsets.ModelViewSet):
     queryset = MEIndicator.objects.all()
     serializer_class = MEIndicatorSerializer
-    filterset_fields = ["policy_version", "status", "data_source", "mandatory"]
+    filterset_fields = ["policy_version", "status", "data_source", "mandatory", "owner_type", "visibility", "lifecycle_status", "category"]
     search_fields = ["indicator_name", "indicator_code"]
+
+    @action(detail=True, methods=["post"])
+    def publish(self, request, pk=None):
+        from .indicator_pi import IndicatorLifecycleService
+        indicator = self.get_object()
+        IndicatorLifecycleService.publish(indicator, request.user, request=request)
+        return Response(self.get_serializer(indicator).data)
+
+    @action(detail=True, methods=["post"], url_path="set-lifecycle")
+    def set_lifecycle(self, request, pk=None):
+        from .indicator_pi import IndicatorLifecycleService
+        indicator = self.get_object()
+        new_status = request.data.get("lifecycle_status")
+        valid = {choice for choice, _ in IndicatorLifecycleStatus.choices}
+        if new_status not in valid:
+            return Response({"detail": f"lifecycle_status must be one of {sorted(valid)}."}, status=status.HTTP_400_BAD_REQUEST)
+        IndicatorLifecycleService.set_lifecycle(indicator, request.user, new_status, request=request)
+        return Response(self.get_serializer(indicator).data)
+
+    @action(detail=True, methods=["post"], url_path="share-to-states")
+    def share_to_states(self, request, pk=None):
+        from .indicator_pi import IndicatorAdoptionService
+        indicator = self.get_object()
+        state_ids = request.data.get("state_ids") or None
+        result = IndicatorAdoptionService.share_to_states(indicator, request.user, state_ids=state_ids, request=request)
+        return Response(result)
+
+    @action(detail=True, methods=["get"], url_path="state-adoption")
+    def state_adoption(self, request, pk=None):
+        indicator = self.get_object()
+        adoptions = indicator.adoptions.select_related("state", "adopted_by", "cloned_indicator")
+        return Response(IndicatorAdoptionSerializer(adoptions, many=True).data)
+
+    @action(detail=True, methods=["post"])
+    def adopt(self, request, pk=None):
+        from .indicator_pi import IndicatorAdoptionService
+        from apps.ministries.permissions import effective_state_id
+        indicator = self.get_object()
+        state_id = request.data.get("state_id") or effective_state_id(request.user)
+        if not state_id:
+            return Response({"detail": "state_id is required."}, status=status.HTTP_400_BAD_REQUEST)
+        from apps.locations.models import State
+        state = get_object_or_404(State, pk=state_id)
+        adoption = IndicatorAdoptionService.adopt(indicator, state, request.user, request=request)
+        return Response(IndicatorAdoptionSerializer(adoption).data, status=status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=["post"])
+    def clone(self, request, pk=None):
+        from .indicator_pi import IndicatorAdoptionService
+        from apps.ministries.permissions import effective_state_id
+        indicator = self.get_object()
+        state_id = request.data.get("state_id") or effective_state_id(request.user)
+        if not state_id:
+            return Response({"detail": "state_id is required."}, status=status.HTTP_400_BAD_REQUEST)
+        from apps.locations.models import State
+        state = get_object_or_404(State, pk=state_id)
+        clone = IndicatorAdoptionService.clone_for_state(indicator, state, request.user, request=request)
+        return Response(self.get_serializer(clone).data, status=status.HTTP_201_CREATED)
 
     @action(detail=False, methods=["get"], url_path="dashboard-summary")
     def dashboard_summary(self, request):

@@ -8,6 +8,10 @@ from .views import (
     EstablishmentCategoryViewSet,
     FacilityRequirementRuleViewSet,
     FoodHandlerCategoryViewSet,
+    IndicatorAdoptionViewSet,
+    IndicatorManualEntryViewSet,
+    IndicatorTargetViewSet,
+    IndicatorThresholdViewSet,
     MedicalTestPackageViewSet,
     MedicalTestPackageComponentViewSet,
     IndicatorEvidenceViewSet,
@@ -137,6 +141,26 @@ router.register(
     "federal/standards/change-history",
     StandardsAuditLogViewSet,
     basename="standards-change-history",
+)
+router.register(
+    "federal/standards/indicator-targets",
+    IndicatorTargetViewSet,
+    basename="indicator-targets",
+)
+router.register(
+    "federal/standards/indicator-thresholds",
+    IndicatorThresholdViewSet,
+    basename="indicator-thresholds",
+)
+router.register(
+    "federal/standards/indicator-adoptions",
+    IndicatorAdoptionViewSet,
+    basename="indicator-adoptions",
+)
+router.register(
+    "federal/standards/indicator-manual-entries",
+    IndicatorManualEntryViewSet,
+    basename="indicator-manual-entries",
 )
 router.register(
     "standards/active",

@@ -13,6 +13,26 @@ ADMIN_PERMISSIONS = [
     "permission.view",
 ]
 VIEWER_PERMISSIONS = ["organization.view", "unit.view", "unit.view_members", "user.view", "role.view", "permission.view"]
+FEDERAL_INDICATOR_PERMISSIONS = [
+    "indicators.view_federal", "indicators.create_federal", "indicators.update_federal",
+    "indicators.publish_federal", "indicators.share_to_states", "indicators.set_national_targets",
+    "indicators.manage_thresholds", "indicators.view_cross_state_results",
+    "indicators.export_federal_results", "indicators.ai_use_federal",
+]
+STATE_INDICATOR_PERMISSIONS = [
+    "indicators.view_state", "indicators.create_state", "indicators.update_state",
+    "indicators.adopt_federal", "indicators.clone_federal", "indicators.set_state_targets",
+    "indicators.manage_state_thresholds", "indicators.view_state_results",
+    "indicators.export_state_results", "indicators.ai_use_state",
+]
+EMPLOYER_INDICATOR_PERMISSIONS = [
+    "indicators.view_employer", "indicators.view_branch_indicators",
+    "indicators.export_employer_indicators", "indicators.ai_use_employer",
+]
+FACILITY_INDICATOR_PERMISSIONS = [
+    "indicators.view_facility", "indicators.view_assessment_indicators",
+    "indicators.export_facility_indicators", "indicators.ai_use_facility",
+]
 FINANCE_PERMISSIONS = ["payment.view", "settlement.view", "report.export", "organization.view"]
 REPORTING_PERMISSIONS = ["report.export", "organization.view", "unit.view", "user.view"]
 
@@ -22,7 +42,7 @@ ROLE_TEMPLATES = [
         "code": "federal_admin",
         "name": "Federal Admin",
         "organization_type": OrganizationType.FEDERAL_MINISTRY,
-        "permissions": ADMIN_PERMISSIONS + ["organization.suspend", "report.export", "certificate.verify", "certificate.validate"],
+        "permissions": ADMIN_PERMISSIONS + ["organization.suspend", "report.export", "certificate.verify", "certificate.validate"] + FEDERAL_INDICATOR_PERMISSIONS,
     },
     {
         "code": "national_food_safety_programme_officer",
@@ -34,13 +54,13 @@ ROLE_TEMPLATES = [
         "code": "national_me_officer",
         "name": "National M&E Officer",
         "organization_type": OrganizationType.FEDERAL_MINISTRY,
-        "permissions": REPORTING_PERMISSIONS + ["employer.view_compliance"],
+        "permissions": REPORTING_PERMISSIONS + ["employer.view_compliance"] + FEDERAL_INDICATOR_PERMISSIONS,
     },
     {
         "code": "national_policy_officer",
         "name": "National Policy Officer",
         "organization_type": OrganizationType.FEDERAL_MINISTRY,
-        "permissions": ["organization.view", "unit.view", "report.export"],
+        "permissions": ["organization.view", "unit.view", "report.export"] + FEDERAL_INDICATOR_PERMISSIONS,
     },
     {
         "code": "national_finance_officer",
@@ -106,7 +126,7 @@ ROLE_TEMPLATES = [
         "code": "data_analyst",
         "name": "Data Analyst",
         "organization_type": OrganizationType.FEDERAL_MINISTRY,
-        "permissions": ["organization.view", "unit.view", "report.export", "employer.view_compliance"],
+        "permissions": ["organization.view", "unit.view", "report.export", "employer.view_compliance", "indicators.view_federal", "indicators.view_cross_state_results", "indicators.ai_use_federal", "indicators.export_federal_results"],
     },
     {
         "code": "state_coordination_officer",
@@ -155,7 +175,7 @@ ROLE_TEMPLATES = [
             "medical_data.restricted_view",
             "audit_logs.view",
             "report.export",
-        ],
+        ] + STATE_INDICATOR_PERMISSIONS,
     },
     {
         "code": "food_safety_directorate_officer",
@@ -209,7 +229,7 @@ ROLE_TEMPLATES = [
         "code": "facility_admin",
         "name": "Facility Admin",
         "organization_type": OrganizationType.MEDICAL_FACILITY,
-        "permissions": ADMIN_PERMISSIONS + ["facility.manage_department", "facility.invite_staff", "certificate.verify", "report.export"],
+        "permissions": ADMIN_PERMISSIONS + ["facility.manage_department", "facility.invite_staff", "certificate.verify", "report.export"] + FACILITY_INDICATOR_PERMISSIONS,
     },
     {
         "code": "doctor",
@@ -245,7 +265,7 @@ ROLE_TEMPLATES = [
         "code": "employer",
         "name": "Employer Admin / Business Owner",
         "organization_type": OrganizationType.EMPLOYER,
-        "permissions": ADMIN_PERMISSIONS + ["employer.manage_branch", "employer.view_compliance", "certificate.verify", "report.export"],
+        "permissions": ADMIN_PERMISSIONS + ["employer.manage_branch", "employer.view_compliance", "certificate.verify", "report.export"] + EMPLOYER_INDICATOR_PERMISSIONS,
     },
     {
         "code": "compliance_officer",
