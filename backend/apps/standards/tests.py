@@ -2034,3 +2034,46 @@ class VaccinationPolicyParamsTests(APITestCase):
         bump_active_standards_cache_version()
         params = VaccinationRecord.policy_validity_params()
         self.assertEqual(params, {"typhoid_validity_years": 3, "hepatitis_a_second_dose_months": 6})
+
+
+class PolicyVersionReactivateTests(APITestCase):
+    def setUp(self):
+        from apps.standards.models import PolicyVersion, PolicyVersionStatus, PolicyVersionType
+        from apps.standards.services import bump_active_standards_cache_version
+        bump_active_standards_cache_version()
+        self.user = User.objects.create_user(
+            "reactivate-admin", "reactivate-admin@example.com", "StrongPass123!", role=UserRole.FEDERAL_ADMIN,
+        )
+        self.client.force_authenticate(self.user)
+        self.PolicyVersion = PolicyVersion
+        self.PolicyVersionStatus = PolicyVersionStatus
+        self.retired = PolicyVersion.objects.create(
+            version_code="RE-1", title="Retired policy", description="d", version_type=PolicyVersionType.MAJOR,
+            status=PolicyVersionStatus.RETIRED, change_summary="c", requires_state_acknowledgement=False,
+        )
+
+    def test_reactivate_moves_retired_to_active(self):
+        response = self.client.post(f"/api/federal/standards/policy-versions/{self.retired.id}/reactivate/")
+        self.assertEqual(response.status_code, 200, response.data)
+        self.retired.refresh_from_db()
+        self.assertEqual(self.retired.status, self.PolicyVersionStatus.ACTIVE)
+        self.assertIsNone(self.retired.retired_at)
+
+    def test_reactivate_retires_other_active_version(self):
+        active = self.PolicyVersion.objects.create(
+            version_code="RE-ACTIVE", title="Active", description="d", version_type="major",
+            status=self.PolicyVersionStatus.ACTIVE, change_summary="c", requires_state_acknowledgement=False,
+        )
+        self.client.post(f"/api/federal/standards/policy-versions/{self.retired.id}/reactivate/")
+        active.refresh_from_db()
+        self.retired.refresh_from_db()
+        self.assertEqual(self.retired.status, self.PolicyVersionStatus.ACTIVE)
+        self.assertEqual(active.status, self.PolicyVersionStatus.RETIRED)
+
+    def test_cannot_reactivate_non_retired(self):
+        draft = self.PolicyVersion.objects.create(
+            version_code="RE-DRAFT", title="Draft", description="d", version_type="major",
+            status=self.PolicyVersionStatus.DRAFT, change_summary="c",
+        )
+        response = self.client.post(f"/api/federal/standards/policy-versions/{draft.id}/reactivate/")
+        self.assertEqual(response.status_code, 400)

@@ -536,6 +536,52 @@ class PolicyVersionService:
 
     @classmethod
     @transaction.atomic
+    def reactivate(cls, policy_version, user, request=None):
+        if policy_version.status != PolicyVersionStatus.RETIRED:
+            raise ValueError("Only retired versions can be reactivated.")
+
+        # Reactivating makes this the single active national version; retire any other active one.
+        PolicyVersion.objects.filter(
+            status=PolicyVersionStatus.ACTIVE,
+        ).exclude(pk=policy_version.pk).update(
+            status=PolicyVersionStatus.RETIRED,
+            retired_at=timezone.now(),
+            retired_by=user,
+        )
+
+        old_status = policy_version.status
+        policy_version.status = PolicyVersionStatus.ACTIVE
+        policy_version.retired_at = None
+        policy_version.retired_by = None
+        if not policy_version.effective_start_date:
+            policy_version.effective_start_date = timezone.now()
+        policy_version.save()
+
+        if policy_version.requires_state_acknowledgement:
+            cls._create_state_acknowledgements(policy_version)
+            _send_standards_notification(
+                title="Policy version reactivated",
+                message=f"{policy_version.version_code} has been reactivated and is the active national policy.",
+                recipients=_recipients_for_roles(["state_admin"]),
+                action_url=f"/federal/standards-policy/policy-governance/policy-versions/{policy_version.id}",
+                priority=NotificationPriority.HIGH,
+                related_object_id=policy_version.id,
+            )
+        bump_active_standards_cache_version()
+
+        log_action(
+            action=AuditAction.WORKFLOW_TRANSITION,
+            actor=user,
+            target=policy_version,
+            old_value={"status": old_status},
+            new_value={"status": PolicyVersionStatus.ACTIVE},
+            metadata={"event": "policy_version_reactivated"},
+            request=request,
+        )
+        return policy_version
+
+    @classmethod
+    @transaction.atomic
     def clone(cls, source_version, user, new_version_code, new_title, request=None):
         new_version = PolicyVersion.objects.create(
             version_code=new_version_code,

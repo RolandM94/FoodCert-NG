@@ -75,6 +75,11 @@ export async function retirePolicyVersion(id: string) {
   return unwrap(res.data);
 }
 
+export async function reactivatePolicyVersion(id: string) {
+  const res = await apiClient.post<ApiEnvelope<PolicyVersion>>(`${BASE}/policy-versions/${id}/reactivate/`);
+  return unwrap(res.data);
+}
+
 export async function archivePolicyVersion(id: string) {
   const res = await apiClient.post<ApiEnvelope<PolicyVersion>>(`${BASE}/policy-versions/${id}/archive/`);
   return unwrap(res.data);

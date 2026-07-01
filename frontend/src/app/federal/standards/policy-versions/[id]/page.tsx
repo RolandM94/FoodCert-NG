@@ -10,6 +10,7 @@ import {
   approvePolicyVersion,
   publishPolicyVersion,
   retirePolicyVersion,
+  reactivatePolicyVersion,
   archivePolicyVersion,
   returnPolicyVersion,
   listStandardsAuditLogs,
@@ -137,6 +138,12 @@ export default function PolicyVersionDetailPage() {
     onError: (err) => setActionError(getApiErrorMessage(err, "Failed to archive")),
   });
 
+  const reactivateMutation = useMutation({
+    mutationFn: () => reactivatePolicyVersion(id),
+    onSuccess: invalidateKeys,
+    onError: (err) => setActionError(getApiErrorMessage(err, "Failed to reactivate")),
+  });
+
   return (
     <StandardsPolicyWorkspaceShell workspace="policy-governance"
       title="Policy Version Detail"
@@ -254,16 +261,28 @@ export default function PolicyVersionDetailPage() {
                     </button>
                   )}
                   {pv.status === "retired" && (
-                    <button
-                      className="inline-flex h-10 items-center gap-2 rounded-md border border-neutral-200 bg-white px-4 text-sm font-medium text-neutral-700 hover:bg-neutral-50 disabled:opacity-50"
-                      disabled={archiveMutation.isPending}
-                      onClick={() => {
-                        setActionError(null);
-                        archiveMutation.mutate();
-                      }}
-                    >
-                      Archive
-                    </button>
+                    <>
+                      <button
+                        className="inline-flex h-10 items-center gap-2 rounded-md bg-brand-600 px-4 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-50"
+                        disabled={reactivateMutation.isPending}
+                        onClick={() => {
+                          setActionError(null);
+                          reactivateMutation.mutate();
+                        }}
+                      >
+                        Reactivate
+                      </button>
+                      <button
+                        className="inline-flex h-10 items-center gap-2 rounded-md border border-neutral-200 bg-white px-4 text-sm font-medium text-neutral-700 hover:bg-neutral-50 disabled:opacity-50"
+                        disabled={archiveMutation.isPending}
+                        onClick={() => {
+                          setActionError(null);
+                          archiveMutation.mutate();
+                        }}
+                      >
+                        Archive
+                      </button>
+                    </>
                   )}
                 </div>
               </div>

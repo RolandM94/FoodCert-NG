@@ -281,6 +281,17 @@ class PolicyVersionViewSet(viewsets.ModelViewSet):
         return Response(PolicyVersionSerializer(policy_version).data)
 
     @action(detail=True, methods=["post"], permission_classes=[IsAuthenticated, IsActiveUser, CanApprovePolicyVersion])
+    def reactivate(self, request, pk=None):
+        policy_version = self.get_object()
+        try:
+            PolicyVersionService.reactivate(
+                policy_version, request.user, request=request,
+            )
+        except ValueError as e:
+            return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(PolicyVersionSerializer(policy_version).data)
+
+    @action(detail=True, methods=["post"], permission_classes=[IsAuthenticated, IsActiveUser, CanApprovePolicyVersion])
     def archive(self, request, pk=None):
         policy_version = self.get_object()
         try:
