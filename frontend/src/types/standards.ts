@@ -480,10 +480,145 @@ export interface MEIndicator {
   status: StandardStatus;
   qualitative_config?: QualitativeIndicatorConfig | null;
   disaggregations?: IndicatorDisaggregation[];
+  category: string;
+  owner_type: "federal" | "state" | "system" | "employer" | "facility";
+  owner_organization?: string | null;
+  owner_state?: string | null;
+  visibility: string;
+  account_type_scope: string[];
+  lifecycle_status: "draft" | "under_review" | "published" | "active" | "paused" | "deprecated" | "archived";
+  version: string;
+  privacy_classification: string;
+  allow_state_target_override: boolean;
+  allow_state_clone: boolean;
+  dashboard_enabled: boolean;
+  report_enabled: boolean;
+  ai_enabled: boolean;
+  source_indicator?: string | null;
+  published_by?: string | null;
+  published_at?: string | null;
   created_by: string | null;
   created_by_name: string;
   created_at: string;
   updated_at: string;
+}
+
+export type IndicatorScopeType = "national" | "federal" | "state" | "lga" | "employer" | "facility" | "branch" | "custom";
+
+export interface IndicatorTarget {
+  id: string;
+  indicator: string;
+  indicator_code: string;
+  scope_type: IndicatorScopeType;
+  scope_id: string;
+  target_value: string;
+  target_unit: string;
+  effective_start_date: string | null;
+  effective_end_date: string | null;
+  source: string;
+  is_active: boolean;
+  set_by?: string | null;
+  set_by_name: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface IndicatorThreshold {
+  id: string;
+  indicator: string;
+  indicator_code: string;
+  scope_type: IndicatorScopeType;
+  scope_id: string;
+  band_name: string;
+  severity: "good" | "warning" | "critical";
+  min_value: string | null;
+  max_value: string | null;
+  color: string;
+  label: string;
+  action_recommendation: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface IndicatorAdoption {
+  id: string;
+  federal_indicator: string;
+  federal_indicator_code: string;
+  federal_indicator_name: string;
+  state: string;
+  state_name: string;
+  adoption_status: "available" | "adopted" | "cloned" | "declined" | "superseded";
+  adopted_version: string;
+  state_target_override_enabled: boolean;
+  cloned_indicator?: string | null;
+  adopted_by?: string | null;
+  adopted_by_name: string;
+  adopted_at: string | null;
+  last_synced_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface IndicatorManualEntry {
+  id: string;
+  indicator: string;
+  indicator_code: string;
+  scope_type: IndicatorScopeType;
+  scope_id: string;
+  period_start: string;
+  period_end: string;
+  value: string;
+  evidence_file_url: string;
+  comment: string;
+  review_status: "draft" | "submitted" | "approved" | "rejected";
+  review_comment: string;
+  submitted_by_name: string;
+  reviewed_by_name: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PIOverview {
+  cards: {
+    total_active_indicators: number;
+    indicators_below_target: number;
+    indicators_at_risk: number;
+    indicators_meeting_target: number;
+    recent_calculations: number;
+    failed_calculations: number;
+  };
+  top_improving: { indicator_id: string; indicator_code: string; indicator_name: string; change: number }[];
+  top_declining: { indicator_id: string; indicator_code: string; indicator_name: string; change: number }[];
+}
+
+export interface IndicatorAISuggestion {
+  name: string;
+  code: string;
+  category: string;
+  formula_type: string;
+  unit_of_measurement: string;
+  target_direction: string;
+  data_source: string;
+  description: string;
+  requires_review: boolean;
+  reasoning: string[];
+}
+
+export interface IndicatorAIFormula {
+  calculation_type: string;
+  data_source: string;
+  unit_of_measurement: string;
+  target_direction: string;
+  numerator_definition: Record<string, unknown>;
+  denominator_definition: Record<string, unknown>;
+  requires_review: boolean;
+  reasoning: string[];
+}
+
+export interface IndicatorAIExplanation {
+  indicator_code: string;
+  narrative: string;
+  facts: Record<string, string | number | null>;
 }
 
 export interface IndicatorDisaggregation {
@@ -544,6 +679,10 @@ export interface MEIndicatorValue {
   qualitative_value_text: string;
   qualitative_rating: string | number | null;
   qualitative_category: string;
+  target_value: string | number | null;
+  variance_from_target: string | number | null;
+  performance_band: string;
+  performance_severity: "" | "good" | "warning" | "critical";
   value_source: IndicatorValueSource;
   source_reference_id: string;
   approval_status: IndicatorValueApprovalStatus;

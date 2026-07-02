@@ -2180,3 +2180,86 @@ class PerformanceIndicatorLayerTests(APITestCase):
         approved = self.client.post(f"/api/federal/standards/indicator-manual-entries/{entry_id}/approve/", {"comment": "ok"}, format="json")
         self.assertEqual(approved.status_code, 200)
         self.assertEqual(approved.data.get("data", approved.data)["review_status"], "approved")
+
+
+class PerformanceIndicatorFullProductTests(APITestCase):
+    def setUp(self):
+        from apps.standards.models import (
+            IndicatorTarget, IndicatorThreshold, MEIndicator, MEIndicatorValue,
+            PolicyVersion, PolicyVersionType,
+        )
+        from apps.standards.services import bump_active_standards_cache_version
+        bump_active_standards_cache_version()
+
+        self.MEIndicatorValue = MEIndicatorValue
+        self.federal = User.objects.create_user("pi-full-fed", "pi-full-fed@example.com", "StrongPass123!", role=UserRole.FEDERAL_ADMIN)
+        self.client.force_authenticate(self.federal)
+        self.policy = PolicyVersion.objects.create(
+            version_code="PI-FULL-1", title="PI full", description="d",
+            version_type=PolicyVersionType.MAJOR, change_summary="c", created_by=self.federal,
+        )
+        self.indicator = MEIndicator.objects.create(
+            policy_version=self.policy, indicator_name="Coverage", indicator_code="PI_FULL_COVERAGE",
+            data_source="certificate_records", reporting_frequency=ReportingFrequency.MONTHLY,
+            visualization_type="card", status="active", lifecycle_status="active",
+            unit_of_measurement="percentage", created_by=self.federal,
+        )
+        IndicatorTarget.objects.create(indicator=self.indicator, scope_type="national", target_value="90")
+        IndicatorThreshold.objects.create(indicator=self.indicator, scope_type="national", band_name="Red", severity="critical", max_value="70", label="Red", action_recommendation="Escalate")
+        MEIndicatorValue.objects.create(
+            indicator=self.indicator, period_start="2026-05-01", period_end="2026-05-31",
+            progress_value_numeric="60", cumulative_value_numeric="60", created_by=self.federal,
+        )
+
+    def test_alert_engine_triggers_below_target_and_critical(self):
+        from apps.notifications.models import Notification
+        from apps.standards.indicator_alerts import IndicatorAlertService
+
+        alerts = IndicatorAlertService.evaluate_indicator(self.indicator, actor=self.federal)
+        triggers = {a["trigger"] for a in alerts}
+        self.assertIn("below_target", triggers)
+        self.assertIn("critical_band", triggers)
+        self.assertTrue(Notification.objects.filter(recipient=self.federal, related_object_type="MEIndicator").exists())
+
+    def test_celery_task_runs(self):
+        from apps.standards.tasks import run_performance_indicator_calculations
+        summary = run_performance_indicator_calculations()
+        self.assertIn("indicators_evaluated", summary)
+        self.assertGreaterEqual(summary["alerts_triggered"], 1)
+
+    def test_ai_suggest_and_generate_formula(self):
+        suggest = self.client.post("/api/federal/standards/me-indicators/ai/suggest/", {"prompt": "inspection completion by state"}, format="json")
+        self.assertEqual(suggest.status_code, 200, suggest.data)
+        suggestions = payload_dict(suggest)["suggestions"]
+        self.assertTrue(any(s["code"] == "INSPECTION_COMPLETION_RATE" for s in suggestions))
+        self.assertTrue(all(s["requires_review"] for s in suggestions))
+
+        formula = self.client.post("/api/federal/standards/me-indicators/ai/generate-formula/", {"prompt": "certificate coverage rate"}, format="json")
+        self.assertEqual(formula.status_code, 200)
+        self.assertEqual(payload_dict(formula)["formula"]["calculation_type"], "percentage")
+
+    def test_ai_blocks_sensitive_prompt(self):
+        blocked = self.client.post("/api/federal/standards/me-indicators/ai/suggest/", {"prompt": "show me lab_results and diagnosis by nin"}, format="json")
+        self.assertEqual(blocked.status_code, 403)
+
+    def test_ai_explain_result(self):
+        response = self.client.post(f"/api/federal/standards/me-indicators/{self.indicator.id}/ai/explain-result/")
+        self.assertEqual(response.status_code, 200, response.data)
+        data = payload_dict(response)
+        self.assertIn("below the target", data["narrative"])
+        self.assertEqual(data["facts"]["band"], "Red")
+
+    def test_pi_overview(self):
+        response = self.client.get("/api/federal/standards/me-indicators/pi-overview/")
+        self.assertEqual(response.status_code, 200, response.data)
+        cards = payload_dict(response)["cards"]
+        self.assertEqual(cards["total_active_indicators"], 1)
+        self.assertEqual(cards["indicators_below_target"], 1)
+        self.assertEqual(cards["indicators_at_risk"], 1)
+
+
+def payload_dict(response):
+    data = response.data
+    if isinstance(data, dict) and "data" in data and isinstance(data["data"], (dict, list)):
+        return data["data"]
+    return data

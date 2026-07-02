@@ -802,7 +802,7 @@ class MEIndicatorViewSet(StandardsConfigViewSetMixin, viewsets.ModelViewSet):
         adoptions = indicator.adoptions.select_related("state", "adopted_by", "cloned_indicator")
         return Response(IndicatorAdoptionSerializer(adoptions, many=True).data)
 
-    @action(detail=True, methods=["post"])
+    @action(detail=True, methods=["post"], permission_classes=[IsAuthenticated, IsActiveUser, CanAcknowledgePolicy])
     def adopt(self, request, pk=None):
         from .indicator_pi import IndicatorAdoptionService
         from apps.ministries.permissions import effective_state_id
@@ -815,7 +815,7 @@ class MEIndicatorViewSet(StandardsConfigViewSetMixin, viewsets.ModelViewSet):
         adoption = IndicatorAdoptionService.adopt(indicator, state, request.user, request=request)
         return Response(IndicatorAdoptionSerializer(adoption).data, status=status.HTTP_201_CREATED)
 
-    @action(detail=True, methods=["post"])
+    @action(detail=True, methods=["post"], permission_classes=[IsAuthenticated, IsActiveUser, CanAcknowledgePolicy])
     def clone(self, request, pk=None):
         from .indicator_pi import IndicatorAdoptionService
         from apps.ministries.permissions import effective_state_id
@@ -827,6 +827,96 @@ class MEIndicatorViewSet(StandardsConfigViewSetMixin, viewsets.ModelViewSet):
         state = get_object_or_404(State, pk=state_id)
         clone = IndicatorAdoptionService.clone_for_state(indicator, state, request.user, request=request)
         return Response(self.get_serializer(clone).data, status=status.HTTP_201_CREATED)
+
+    @action(detail=False, methods=["post"], url_path="ai/suggest", permission_classes=[IsAuthenticated, IsActiveUser, CanAcknowledgePolicy])
+    def ai_suggest(self, request):
+        from .indicator_ai import assert_indicator_ai_prompt_safe, suggest_indicators
+        prompt = (request.data.get("prompt") or "").strip()
+        if not prompt:
+            return Response({"detail": "A prompt is required."}, status=status.HTTP_400_BAD_REQUEST)
+        assert_indicator_ai_prompt_safe(prompt, actor=request.user, request=request, target=None, context="indicator_ai_suggest")
+        suggestions = suggest_indicators(prompt)
+        log_action(action=AuditAction.CREATE, actor=request.user,
+                   metadata={"event": "indicator_ai_suggest", "prompt": prompt[:200]}, request=request)
+        return Response({"suggestions": suggestions})
+
+    @action(detail=False, methods=["post"], url_path="ai/generate-formula", permission_classes=[IsAuthenticated, IsActiveUser, CanAcknowledgePolicy])
+    def ai_generate_formula(self, request):
+        from .indicator_ai import assert_indicator_ai_prompt_safe, generate_formula
+        prompt = (request.data.get("prompt") or "").strip()
+        if not prompt:
+            return Response({"detail": "A prompt is required."}, status=status.HTTP_400_BAD_REQUEST)
+        assert_indicator_ai_prompt_safe(prompt, actor=request.user, request=request, target=None, context="indicator_ai_generate_formula")
+        formula = generate_formula(prompt)
+        log_action(action=AuditAction.CREATE, actor=request.user,
+                   metadata={"event": "indicator_ai_generate_formula", "prompt": prompt[:200]}, request=request)
+        return Response({"formula": formula})
+
+    @action(detail=True, methods=["post"], url_path="ai/explain-result", permission_classes=[IsAuthenticated, IsActiveUser, CanAcknowledgePolicy])
+    def ai_explain_result(self, request, pk=None):
+        from .indicator_ai import explain_result
+        indicator = self.get_object()
+        explanation = explain_result(indicator)
+        log_action(action=AuditAction.CREATE, actor=request.user, target=indicator,
+                   metadata={"event": "indicator_ai_explain_result"}, request=request)
+        return Response(explanation)
+
+    @action(detail=False, methods=["get"], url_path="pi-overview")
+    def pi_overview(self, request):
+        from .indicator_pi import resolve_effective_target, resolve_performance_band
+        from .models import IndicatorCalculationStatus, KPITargetDirection
+
+        indicators = self.filter_queryset(self.get_queryset()).filter(status="active").prefetch_related("values", "targets", "thresholds")
+        total_active = 0
+        below_target = 0
+        meeting_target = 0
+        at_risk = 0
+        improving = []
+        declining = []
+        for indicator in indicators:
+            total_active += 1
+            values = sorted(indicator.values.all(), key=lambda v: (v.period_end, v.created_at), reverse=True)
+            if not values:
+                continue
+            observed = values[0].cumulative_value_numeric or values[0].progress_value_numeric
+            target = resolve_effective_target(indicator)
+            lower_better = indicator.target_direction == KPITargetDirection.LOWER_BETTER
+            if observed is not None and target is not None:
+                is_below = observed > target if lower_better else observed < target
+                if is_below:
+                    below_target += 1
+                else:
+                    meeting_target += 1
+            band = resolve_performance_band(indicator, observed)
+            if band and band["severity"] in {"warning", "critical"}:
+                at_risk += 1
+            if len(values) >= 2:
+                earlier = values[-1].cumulative_value_numeric or values[-1].progress_value_numeric
+                if observed is not None and earlier is not None and earlier != 0:
+                    delta = float(observed) - float(earlier)
+                    entry = {"indicator_id": str(indicator.id), "indicator_code": indicator.indicator_code,
+                             "indicator_name": indicator.indicator_name, "change": round(delta, 2)}
+                    got_better = delta < 0 if lower_better else delta > 0
+                    (improving if got_better else declining).append(entry)
+        improving.sort(key=lambda item: -abs(item["change"]))
+        declining.sort(key=lambda item: -abs(item["change"]))
+
+        from .models import MEIndicatorCalculationLog
+
+        week_ago = timezone.now() - timezone.timedelta(days=7)
+        recent_calculations = MEIndicatorCalculationLog.objects.filter(created_at__gte=week_ago)
+        return Response({
+            "cards": {
+                "total_active_indicators": total_active,
+                "indicators_below_target": below_target,
+                "indicators_at_risk": at_risk,
+                "indicators_meeting_target": meeting_target,
+                "recent_calculations": recent_calculations.count(),
+                "failed_calculations": recent_calculations.filter(calculation_status=IndicatorCalculationStatus.FAILED).count(),
+            },
+            "top_improving": improving[:5],
+            "top_declining": declining[:5],
+        })
 
     @action(detail=False, methods=["get"], url_path="dashboard-summary")
     def dashboard_summary(self, request):

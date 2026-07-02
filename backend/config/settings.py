@@ -176,6 +176,10 @@ CELERY_BEAT_SCHEDULE = {
         "task": "reports.run_me_indicator_calculations",
         "schedule": crontab(hour=2, minute=15),
     },
+    "standards-run-performance-indicator-calculations-daily": {
+        "task": "standards.run_performance_indicator_calculations",
+        "schedule": crontab(hour=2, minute=45),
+    },
 }
 
 DEFAULT_CERTIFICATE_VALIDITY_MONTHS = env("DEFAULT_CERTIFICATE_VALIDITY_MONTHS")
