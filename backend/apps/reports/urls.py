@@ -4,6 +4,7 @@ from rest_framework.routers import DefaultRouter
 from apps.reports.views import (
     AdminDashboardView,
     AnalyticsDatasetViewSet,
+    KpiCardDefinitionViewSet,
     AnalyticsWidgetViewSet,
     AnalyticsWorksheetViewSet,
     DashboardAlertEventViewSet,
@@ -62,6 +63,7 @@ router.register("reports/generated", GeneratedReportViewSet, basename="generated
 router.register("federal/state-reports", FederalStateReportViewSet, basename="federal-state-reports")
 router.register("dashboard-widgets", DashboardWidgetViewSet, basename="dashboard-widgets")
 router.register("analytics/datasets", AnalyticsDatasetViewSet, basename="analytics-datasets")
+router.register("analytics/kpi-cards", KpiCardDefinitionViewSet, basename="kpi-cards")
 router.register("analytics/worksheets", AnalyticsWorksheetViewSet, basename="analytics-worksheets")
 router.register("analytics/widgets", AnalyticsWidgetViewSet, basename="analytics-widgets")
 router.register("analytics/dashboard-alerts", DashboardAlertRuleViewSet, basename="analytics-dashboard-alerts")

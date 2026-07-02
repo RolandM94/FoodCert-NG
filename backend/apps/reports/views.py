@@ -12,7 +12,7 @@ from django.utils.dateparse import parse_date, parse_datetime
 from drf_spectacular.utils import extend_schema
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
-from rest_framework.exceptions import APIException, NotFound, PermissionDenied
+from rest_framework.exceptions import APIException, NotFound, PermissionDenied, ValidationError
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -26,6 +26,7 @@ from apps.reports.models import (
     AnalyticsDataset,
     AnalyticsWidget,
     AnalyticsWorksheet,
+    KpiCardDefinition,
     DashboardAlertEvent,
     DashboardAlertRule,
     DashboardCanvas,
@@ -58,6 +59,7 @@ from apps.reports.dataset_registry import (
     sync_analytics_datasets,
 )
 from apps.reports.serializers import (
+    KpiCardDefinitionSerializer,
     AIDashboardFullGenerateSerializer,
     AIDashboardGenerateSerializer,
     AIExplainSerializer,
@@ -2742,3 +2744,165 @@ class ScheduledReportViewSet(viewsets.ModelViewSet):
         scheduled.next_run_at = timezone.now() + timezone.timedelta(days=days)
         scheduled.save(update_fields=["last_run_at", "next_run_at", "updated_at"])
         return Response(GeneratedReportSerializer(report).data, status=status.HTTP_201_CREATED)
+
+
+class KpiCardDefinitionViewSet(DashboardArchitectureScopeMixin, viewsets.ModelViewSet):
+    """The shared KPI card library: definitions, resolution, and instantiation."""
+
+    queryset = KpiCardDefinition.objects.order_by("category", "title")
+    serializer_class = KpiCardDefinitionSerializer
+    http_method_names = ["get", "post", "patch", "delete", "head", "options"]
+    filterset_fields = ["category", "source_type", "is_active"]
+
+    def get_queryset(self):
+        if getattr(self, "swagger_fake_view", False):
+            return self.queryset
+        queryset = self.queryset
+        user = self.request.user
+        if self.request.method in ("GET", "HEAD", "OPTIONS"):
+            queryset = queryset.filter(is_active=True)
+        if user.role == UserRole.SUPER_ADMIN:
+            return queryset
+        account_type = self._user_account_type()
+        if account_type:
+            queryset = queryset.filter(
+                models.Q(allowed_account_types=[]) | models.Q(allowed_account_types__contains=[account_type])
+            )
+        search = self.request.query_params.get("search")
+        if search:
+            queryset = queryset.filter(
+                models.Q(title__icontains=search) | models.Q(code__icontains=search) | models.Q(description__icontains=search)
+            )
+        return queryset
+
+    def _assert_can_manage(self):
+        if self.request.user.role not in {UserRole.SUPER_ADMIN, UserRole.FEDERAL_ADMIN}:
+            raise PermissionDenied("Only federal administrators can manage the KPI card library.")
+
+    def perform_create(self, serializer):
+        self._assert_can_manage()
+        instance = serializer.save(created_by=self.request.user)
+        audit_reports_event(action=AuditAction.CREATE, event="kpi_card_created", target=instance, actor=self.request.user, request=self.request)
+
+    def perform_update(self, serializer):
+        self._assert_can_manage()
+        if serializer.instance.is_system and "code" in serializer.validated_data:
+            raise ValidationError("System card codes cannot be changed.")
+        instance = serializer.save()
+        audit_reports_event(action=AuditAction.UPDATE, event="kpi_card_updated", target=instance, actor=self.request.user, request=self.request)
+
+    def perform_destroy(self, instance):
+        self._assert_can_manage()
+        if instance.is_system:
+            raise ValidationError("System cards cannot be deleted; deactivate them instead.")
+        audit_reports_event(action=AuditAction.DELETE, event="kpi_card_deleted", target=instance, actor=self.request.user, request=self.request)
+        instance.delete()
+
+    @action(detail=True, methods=["post"])
+    def resolve(self, request, pk=None):
+        from apps.reports.kpi_cards import resolve_kpi_card
+
+        card = self.get_object()
+        try:
+            result = resolve_kpi_card(card, request.user)
+        except ValueError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({"code": card.code, **result})
+
+    @action(detail=False, methods=["post"], url_path="resolve-config")
+    def resolve_config(self, request):
+        """Resolve an inline (unsaved) config — used to preview drafts and AI output."""
+        from apps.reports.kpi_cards import resolve_kpi_card
+
+        config = request.data.get("config") or {}
+        if not isinstance(config, dict) or not config:
+            return Response({"detail": "A config object is required."}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            result = resolve_kpi_card(config, request.user)
+        except ValueError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(result)
+
+    @action(detail=True, methods=["post"])
+    def instantiate(self, request, pk=None):
+        """Create a worksheet + kpi_card widget from a definition so the card can fill any widget slot."""
+        card = self.get_object()
+        if card.source_type != "dataset":
+            return Response(
+                {"detail": "Snapshot-backed cards mount directly as canvas KPI blocks; widget slots need a dataset-backed card."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        dataset = AnalyticsDataset.objects.filter(code=card.dataset_code, is_active=True).first()
+        if dataset is None:
+            return Response({"detail": f"Dataset '{card.dataset_code}' is not available."}, status=status.HTTP_400_BAD_REQUEST)
+        account_type = self._user_account_type()
+        worksheet = AnalyticsWorksheet.objects.create(
+            owner=request.user,
+            organization_id=request.user.organization_id,
+            state_id=request.user.state_id,
+            account_type=account_type,
+            name=f"{card.title} (KPI card)",
+            description=card.description or card.detail,
+            dataset=dataset,
+            metrics=[{"field": card.metric or "id", "aggregation": card.aggregation, "label": card.title}],
+            dimensions=[],
+            filters=card.filters or [],
+            chart_recommendation="kpi_card",
+        )
+        widget = AnalyticsWidget.objects.create(
+            owner=request.user,
+            organization_id=request.user.organization_id,
+            state_id=request.user.state_id,
+            account_type=account_type,
+            worksheet=worksheet,
+            title=card.title,
+            widget_type="kpi_card",
+            visual_config={"kpi_card_code": card.code, "icon": card.icon, "format": card.format, "target": card.target, "trend": card.trend, "detail": card.detail},
+        )
+        audit_reports_event(action=AuditAction.CREATE, event="kpi_card_instantiated", target=widget, actor=request.user, request=self.request,
+                            metadata={"kpi_card_code": card.code})
+        return Response(
+            {"widget_id": str(widget.id), "worksheet_id": str(worksheet.id), "kpi_card_code": card.code},
+            status=status.HTTP_201_CREATED,
+        )
+
+    @action(detail=False, methods=["post"], url_path="generate")
+    def generate(self, request):
+        """AI-assist: turn a prompt into a valid KpiCard config (optionally saved to the library)."""
+        prompt = (request.data.get("prompt") or "").strip()
+        if not prompt:
+            return Response({"detail": "A prompt is required."}, status=status.HTTP_400_BAD_REQUEST)
+        assert_ai_prompt_safe(prompt, sensitive_fields=None, actor=request.user, request=request, target=None, context="kpi_card_generate")
+        account_type = self._user_account_type()
+        definition, dataset, _examples = resolve_dataset_from_prompt(prompt, account_type)
+        if definition is None or dataset is None:
+            return Response({"detail": "Could not match the prompt to an approved dataset."}, status=status.HTTP_400_BAD_REQUEST)
+        words = {w for w in prompt.lower().split() if w}
+        aggregation = "avg" if words & {"average", "avg", "mean", "score"} else "sum" if words & {"revenue", "amount", "total"} and "amount" in definition.available_fields else "count"
+        metric = "amount" if aggregation == "sum" else "compliance_score" if aggregation == "avg" and "compliance_score" in definition.available_fields else ""
+        config = {
+            "code": f"ai_{dataset.code}_{aggregation}"[:100],
+            "title": prompt[:80].strip().capitalize(),
+            "category": "ai-drafts",
+            "source_type": "dataset",
+            "dataset_code": dataset.code,
+            "metric": metric,
+            "aggregation": aggregation,
+            "filters": [],
+            "format": "currency" if metric == "amount" else "number",
+            "trend": {"compare_to": "prev_period", "window": "30d"},
+            "target": {},
+            "detail": f"AI draft from prompt: {prompt[:120]}",
+            "requires_review": True,
+        }
+        saved = None
+        if request.data.get("save"):
+            self._assert_can_manage()
+            instance, _created = KpiCardDefinition.objects.update_or_create(
+                code=config["code"],
+                defaults={key: value for key, value in config.items() if key not in {"code", "requires_review"}} | {"created_by": request.user, "is_active": True},
+            )
+            saved = KpiCardDefinitionSerializer(instance).data
+        audit_reports_event(action=AuditAction.CREATE, event="kpi_card_ai_generated", actor=request.user, request=request,
+                            metadata={"prompt": prompt[:200], "saved": bool(saved)})
+        return Response({"config": config, "saved": saved})

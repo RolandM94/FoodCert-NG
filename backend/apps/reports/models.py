@@ -105,6 +105,25 @@ class DashboardBlockType(models.TextChoices):
     DATASET_PREVIEW = "dataset_preview", "Dataset Preview Block"
     QUICK_ACTION = "quick_action", "Quick Action Block"
     DIVIDER = "divider", "Divider / Section Header"
+    KPI_CARD = "kpi_card", "KPI Card Block"
+
+
+class KpiCardSourceType(models.TextChoices):
+    DATASET = "dataset", "Dataset Aggregation"
+    SNAPSHOT = "snapshot", "Service Snapshot Key"
+
+
+class KpiCardAggregation(models.TextChoices):
+    COUNT = "count", "Count"
+    SUM = "sum", "Sum"
+    AVG = "avg", "Average"
+    LATEST = "latest", "Latest"
+
+
+class KpiCardFormat(models.TextChoices):
+    NUMBER = "number", "Number"
+    PERCENT = "percent", "Percent"
+    CURRENCY = "currency", "Currency"
 
 
 class DashboardAlertOperator(models.TextChoices):
@@ -262,6 +281,47 @@ class AnalyticsDataset(BaseModel):
 
     def __str__(self) -> str:
         return f"{self.name} ({self.module_source})"
+
+
+class KpiCardDefinition(BaseModel):
+    """A KPI card described as data: what to read, how to aggregate, how to present.
+
+    Cards live in a shared, system-wide library and are instantiated onto
+    dashboards, canvases, or widget slots without shipping code.
+    """
+
+    code = models.CharField(max_length=100, unique=True, db_index=True)
+    title = models.CharField(max_length=255)
+    description = models.TextField(blank=True)
+    category = models.CharField(max_length=100, db_index=True, default="general")
+    icon = models.CharField(max_length=64, blank=True, help_text="lucide-react icon name, e.g. ClipboardCheck")
+    source_type = models.CharField(max_length=16, choices=KpiCardSourceType.choices, default=KpiCardSourceType.DATASET, db_index=True)
+    dataset_code = models.CharField(max_length=100, blank=True, db_index=True)
+    metric = models.CharField(max_length=150, blank=True, help_text="Dataset field the aggregation reads (blank = row count)")
+    aggregation = models.CharField(max_length=16, choices=KpiCardAggregation.choices, default=KpiCardAggregation.COUNT)
+    filters = models.JSONField(default=list, blank=True, help_text="[{field, operator, value}] applied before aggregation")
+    snapshot_key = models.CharField(max_length=150, blank=True, help_text="Cards payload key when source_type=snapshot")
+    format = models.CharField(max_length=16, choices=KpiCardFormat.choices, default=KpiCardFormat.NUMBER)
+    trend = models.JSONField(default=dict, blank=True, help_text='{"compare_to": "prev_period", "window": "30d", "date_field": "created_at"}')
+    target = models.JSONField(default=dict, blank=True, help_text='{"operator": "lte", "warning": 1, "critical": 10} thresholds for status coloring')
+    detail = models.CharField(max_length=255, blank=True, help_text="Supporting caption shown under the value")
+    allowed_account_types = models.JSONField(default=list, blank=True)
+    is_system = models.BooleanField(default=False)
+    is_active = models.BooleanField(default=True, db_index=True)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="created_kpi_cards",
+    )
+
+    class Meta:
+        ordering = ["category", "title"]
+        indexes = [
+            models.Index(fields=["category", "is_active"]),
+            models.Index(fields=["source_type"]),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.title} ({self.code})"
 
 
 class AnalyticsWorksheet(BaseModel):

@@ -3333,3 +3333,122 @@ class DashboardReportingTests(APITestCase):
         self.assertFalse(schedule.is_active)
         self.assertEqual(legacy_schedule.status, "active")
         self.assertEqual(ReportSchedule.objects.count(), 1)
+
+
+class KpiCardLibraryTests(APITestCase):
+    def setUp(self):
+        from django.core.cache import cache
+
+        cache.clear()
+        call_command("seed_analytics_datasets", verbosity=0)
+        call_command("seed_kpi_cards", verbosity=0)
+        self.federal = User.objects.create_user(
+            "kpi-federal", "kpi-federal@example.com", "StrongPass123!", role=UserRole.FEDERAL_ADMIN,
+        )
+        self.client.force_authenticate(self.federal)
+
+    def _payload(self, response):
+        data = response.data
+        if isinstance(data, dict) and "data" in data:
+            return data["data"]
+        return data
+
+    def test_seed_creates_library(self):
+        from apps.reports.models import KpiCardDefinition
+        self.assertGreaterEqual(KpiCardDefinition.objects.count(), 22)
+        self.assertTrue(KpiCardDefinition.objects.filter(code="declaration_risk_flags_total", is_system=True).exists())
+
+    def test_list_supports_category_and_search(self):
+        listed = self.client.get("/api/analytics/kpi-cards/", {"category": "adoption"})
+        self.assertEqual(listed.status_code, 200)
+        rows = self._payload(listed)
+        self.assertTrue(all(row["category"] == "adoption" for row in rows))
+        searched = self.client.get("/api/analytics/kpi-cards/", {"search": "risk"})
+        self.assertTrue(any(row["code"] == "declaration_risk_flags_total" for row in self._payload(searched)))
+
+    def test_resolve_dataset_card_with_filters_and_status(self):
+        from apps.employers.models import Employer, EstablishmentCategory
+        from apps.locations.models import State
+        lagos = State.objects.create(name="Lagos", code="LA")
+        for index in range(3):
+            Employer.objects.create(
+                business_name=f"Biz {index}", establishment_category=EstablishmentCategory.RESTAURANT_CAFE,
+                contact_person_name="A", contact_person_phone="0800", contact_person_email=f"biz{index}@example.com",
+                address="addr", state=lagos, compliance_status="compliant" if index < 2 else "non_compliant",
+            )
+        from apps.reports.models import KpiCardDefinition
+        card = KpiCardDefinition.objects.get(code="employers_compliant")
+        resolved = self.client.post(f"/api/analytics/kpi-cards/{card.id}/resolve/")
+        self.assertEqual(resolved.status_code, 200, resolved.data)
+        data = self._payload(resolved)
+        self.assertEqual(data["value"], 2)
+        self.assertEqual(data["formatted"], "2")
+
+    def test_snapshot_cards_match_legacy_dashboard_payload(self):
+        from apps.reports.models import KpiCardDefinition
+        from apps.reports.services import DashboardService
+        legacy = DashboardService.federal_dashboard(self.federal)
+        for code, key in [
+            ("states_adopted_declaration_template", "states_adopted_federal_declaration_template"),
+            ("states_on_latest_template_version", "states_using_latest_federal_template_version"),
+            ("declarations_submitted_nationally", "declarations_submitted_nationally"),
+        ]:
+            card = KpiCardDefinition.objects.get(code=code)
+            resolved = self._payload(self.client.post(f"/api/analytics/kpi-cards/{card.id}/resolve/"))
+            self.assertEqual(resolved["value"], legacy["cards"][key], code)
+        risk_card = KpiCardDefinition.objects.get(code="declaration_risk_flags_total")
+        resolved = self._payload(self.client.post(f"/api/analytics/kpi-cards/{risk_card.id}/resolve/"))
+        expected = sum(int(row.get("total") or 0) for row in legacy["charts"].get("risk_flag_trends_by_state", []))
+        self.assertEqual(resolved["value"], expected)
+        self.assertIn(resolved["status"], ("good", "warning", "critical"))
+
+    def test_trend_delta_present_for_trend_cards(self):
+        from apps.employers.models import Employer, EstablishmentCategory
+        from apps.locations.models import State
+        kano = State.objects.create(name="Kano", code="KN")
+        Employer.objects.create(
+            business_name="Trend Biz", establishment_category=EstablishmentCategory.RESTAURANT_CAFE,
+            contact_person_name="A", contact_person_phone="0800", contact_person_email="trend@example.com",
+            address="addr", state=kano,
+        )
+        from apps.reports.models import KpiCardDefinition
+        card = KpiCardDefinition.objects.get(code="employers_total")
+        resolved = self._payload(self.client.post(f"/api/analytics/kpi-cards/{card.id}/resolve/"))
+        self.assertIsNotNone(resolved["trend"])
+        self.assertEqual(resolved["trend"]["direction"], "up")
+        self.assertIn("vs prev 30d", resolved["trend"]["label"])
+
+    def test_instantiate_creates_worksheet_and_widget(self):
+        from apps.reports.models import AnalyticsWidget, KpiCardDefinition
+        card = KpiCardDefinition.objects.get(code="employers_total")
+        created = self.client.post(f"/api/analytics/kpi-cards/{card.id}/instantiate/")
+        self.assertEqual(created.status_code, 201, created.data)
+        data = self._payload(created)
+        widget = AnalyticsWidget.objects.get(id=data["widget_id"])
+        self.assertEqual(widget.widget_type, "kpi_card")
+        self.assertEqual(widget.visual_config["kpi_card_code"], "employers_total")
+
+    def test_instantiate_rejects_snapshot_cards(self):
+        from apps.reports.models import KpiCardDefinition
+        card = KpiCardDefinition.objects.get(code="declarations_submitted_nationally")
+        blocked = self.client.post(f"/api/analytics/kpi-cards/{card.id}/instantiate/")
+        self.assertEqual(blocked.status_code, 400)
+
+    def test_ai_generate_returns_reviewable_config_and_blocks_sensitive(self):
+        generated = self.client.post("/api/analytics/kpi-cards/generate/", {"prompt": "total employers registered"}, format="json")
+        self.assertEqual(generated.status_code, 200, generated.data)
+        config = self._payload(generated)["config"]
+        self.assertTrue(config["requires_review"])
+        self.assertEqual(config["source_type"], "dataset")
+        blocked = self.client.post("/api/analytics/kpi-cards/generate/", {"prompt": "show nin and diagnosis"}, format="json")
+        self.assertEqual(blocked.status_code, 403)
+
+    def test_non_federal_cannot_manage_library(self):
+        from apps.locations.models import State
+        oyo = State.objects.create(name="Oyo", code="OY")
+        state_admin = User.objects.create_user(
+            "kpi-state", "kpi-state@example.com", "StrongPass123!", role=UserRole.STATE_ADMIN, state=oyo,
+        )
+        self.client.force_authenticate(state_admin)
+        blocked = self.client.post("/api/analytics/kpi-cards/", {"code": "x", "title": "X", "dataset_code": "employers"}, format="json")
+        self.assertEqual(blocked.status_code, 403)

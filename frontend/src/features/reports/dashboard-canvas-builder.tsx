@@ -40,6 +40,8 @@ import {
   type PublishedDashboard,
 } from "@/lib/api/analytics";
 import { buildWidgetPreviewFromWorksheet, WidgetPreviewSurface } from "@/features/reports/analytics-widget-preview";
+import { KpiCardByCode } from "@/components/kpi/kpi-card";
+import { KpiCardLibrary } from "@/components/kpi/kpi-card-library";
 import {
   applicableWidgetIdsForFilter,
   buildFilterFieldOptions,
@@ -51,7 +53,7 @@ type CanvasBlockDraft = {
   id?: string;
   clientId: string;
   widget?: string | null;
-  block_type: "widget" | "text" | "filter" | "ai_insight";
+  block_type: "widget" | "text" | "filter" | "ai_insight" | "kpi_card";
   title: string;
   content: Record<string, unknown>;
   position: { w: number; h: number };
@@ -289,6 +291,9 @@ function CanvasBlockCard({
               </div>
             </div>
           ) : null}
+          {block.block_type === "kpi_card" ? (
+            <KpiCardByCode code={String(block.content.kpi_card_code ?? "")} />
+          ) : null}
         </div>
       </div>
     </div>
@@ -305,6 +310,7 @@ export function DashboardCanvasBuilder({
   initialModuleSource?: string;
 }) {
   const [selectedCanvasId, setSelectedCanvasId] = useState(initialCanvasId);
+  const [showKpiLibrary, setShowKpiLibrary] = useState(false);
   const [canvasName, setCanvasName] = useState("");
   const [canvasDescription, setCanvasDescription] = useState("");
   const [blocks, setBlocks] = useState<CanvasBlockDraft[]>([]);
@@ -567,6 +573,22 @@ export function DashboardCanvasBuilder({
     ]);
   }, [widgets]);
 
+  const addKpiCardBlock = useCallback((card: { code: string; title: string }) => {
+    setBlocks((current) => [
+      ...current,
+      {
+        clientId: nextClientId(),
+        widget: null,
+        block_type: "kpi_card" as const,
+        title: card.title,
+        content: { kpi_card_code: card.code },
+        position: { w: 3, h: 220 },
+        visibility_rules: {},
+        sort_order: current.length,
+      },
+    ]);
+  }, []);
+
   function applyAiDashboardSuggestion() {
     const suggestion = aiSuggestionMutation.data;
     if (!suggestion) return;
@@ -637,8 +659,20 @@ export function DashboardCanvasBuilder({
               <button type="button" onClick={() => addBlock("text")} className="inline-flex h-10 items-center gap-2 rounded-md border border-neutral-200 px-3 text-sm font-semibold text-neutral-700"><Plus size={14} /> Text block</button>
               <button type="button" onClick={() => addBlock("filter")} className="inline-flex h-10 items-center gap-2 rounded-md border border-neutral-200 px-3 text-sm font-semibold text-neutral-700"><Plus size={14} /> Filter block</button>
               <button type="button" onClick={() => addBlock("ai_insight")} className="inline-flex h-10 items-center gap-2 rounded-md border border-neutral-200 px-3 text-sm font-semibold text-neutral-700"><Plus size={14} /> AI insight block</button>
+              <button type="button" onClick={() => setShowKpiLibrary((value) => !value)} className="inline-flex h-10 items-center gap-2 rounded-md border border-neutral-200 px-3 text-sm font-semibold text-neutral-700"><Plus size={14} /> KPI card</button>
             </div>
           </div>
+
+          {showKpiLibrary ? (
+            <KpiCardLibrary
+              onAddToSurface={(card) => {
+                addKpiCardBlock(card);
+                setShowKpiLibrary(false);
+              }}
+              addLabel="Add to canvas"
+              onClose={() => setShowKpiLibrary(false)}
+            />
+          ) : null}
 
           <button
             type="button"

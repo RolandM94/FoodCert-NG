@@ -2,6 +2,7 @@ from rest_framework import serializers
 
 from apps.reports.models import (
     AnalyticsDataset,
+    KpiCardDefinition,
     DashboardExportJob,
     DashboardAlertEvent,
     DashboardAlertRule,
@@ -853,3 +854,18 @@ class GenerateReportSerializer(serializers.Serializer):
 
 class ReportTypePathSerializer(serializers.Serializer):
     report_type = serializers.ChoiceField(choices=ReportType.choices)
+
+
+class KpiCardDefinitionSerializer(serializers.ModelSerializer):
+    created_by_name = serializers.CharField(source="created_by.get_full_name", read_only=True, default="")
+
+    class Meta:
+        model = KpiCardDefinition
+        fields = (
+            "id", "code", "title", "description", "category", "icon",
+            "source_type", "dataset_code", "metric", "aggregation", "filters",
+            "snapshot_key", "format", "trend", "target", "detail",
+            "allowed_account_types", "is_system", "is_active",
+            "created_by", "created_by_name", "created_at", "updated_at",
+        )
+        read_only_fields = ("id", "is_system", "created_by", "created_by_name", "created_at", "updated_at")

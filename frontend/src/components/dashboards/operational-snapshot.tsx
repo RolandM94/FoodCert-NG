@@ -3,7 +3,9 @@
 import type { LucideIcon } from "lucide-react";
 import { AlertCircle } from "lucide-react";
 
+import { KpiCard } from "@/components/kpi/kpi-card";
 import { DashboardCard } from "@/components/ui/dashboard-card";
+import type { KpiCard as KpiCardConfig } from "@/types/kpi-cards";
 
 type SnapshotCard = {
   label: string;
@@ -15,13 +17,16 @@ type SnapshotCard = {
 export function OperationalSnapshot({
   title,
   description,
-  cards,
+  cards = [],
+  kpiConfigs,
   loading = false,
   error = "",
 }: {
   title: string;
   description: string;
-  cards: SnapshotCard[];
+  cards?: SnapshotCard[];
+  /** Registry-driven mode: render config-driven KPI cards instead of legacy static cards. */
+  kpiConfigs?: KpiCardConfig[];
   loading?: boolean;
   error?: string;
 }) {
@@ -46,15 +51,17 @@ export function OperationalSnapshot({
       </div>
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
-        {cards.map((card) => (
-          <DashboardCard
-            key={card.label}
-            label={card.label}
-            value={card.value}
-            icon={card.icon}
-            detail={card.detail}
-          />
-        ))}
+        {kpiConfigs
+          ? kpiConfigs.map((config) => <KpiCard key={config.code} config={config} />)
+          : cards.map((card) => (
+              <DashboardCard
+                key={card.label}
+                label={card.label}
+                value={card.value}
+                icon={card.icon}
+                detail={card.detail}
+              />
+            ))}
       </div>
     </section>
   );

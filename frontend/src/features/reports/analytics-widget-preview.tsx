@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { KpiCardByCode } from "@/components/kpi/kpi-card";
 
 import { BrainCircuit, MapPinned, PanelTop, Table2 } from "lucide-react";
 import {
@@ -51,7 +52,7 @@ export function buildWidgetPreviewFromWorksheet(widget: AnalyticsWidget, workshe
 
   if (widget.widget_type === "kpi_card") {
     const primary = metrics[0] ?? { label: "Value", value: worksheetPreview.total_rows || 0, aggregation: "count" };
-    return { ...summary, cards: [primary], rows: rows.slice(0, 1) };
+    return { ...summary, cards: [primary], rows: rows.slice(0, 1), visual_config: widget.visual_config };
   }
   if (widget.widget_type === "grouped_kpi") {
     return { ...summary, cards: metrics.slice(0, 4), rows: rows.slice(0, 3) };
@@ -99,6 +100,10 @@ export function WidgetPreviewSurface({ preview }: { preview: AnalyticsWidgetPrev
   }
 
   if (preview.widget_type === "kpi_card") {
+    const registryCode = (preview.visual_config as { kpi_card_code?: string } | undefined)?.kpi_card_code;
+    if (registryCode) {
+      return <KpiCardByCode code={registryCode} />;
+    }
     return (
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         {(preview.cards ?? []).map((card) => (

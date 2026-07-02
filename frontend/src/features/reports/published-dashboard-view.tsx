@@ -7,6 +7,7 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { Copy, Download, ExternalLink, FileSpreadsheet, Filter, ImageDown, Loader2, MessageSquareText, Sparkles } from "lucide-react";
 
 import { WidgetPreviewSurface } from "@/features/reports/analytics-widget-preview";
+import { KpiCardByCode } from "@/components/kpi/kpi-card";
 import {
   applyFiltersToPreview,
   filterOptionsFromPublishedBlocks,
@@ -126,7 +127,7 @@ function ReadOnlyBlock({
   exportPending: boolean;
   registerRef: (element: HTMLDivElement | null) => void;
 }) {
-  const width = Number((block.position as { w?: number } | undefined)?.w ?? (block.block_type === "widget" ? 6 : 12));
+  const width = Number((block.position as { w?: number } | undefined)?.w ?? (block.block_type === "widget" ? 6 : block.block_type === "kpi_card" ? 3 : 12));
   const canExportTable = block.block_type === "widget" && Array.isArray(preview?.rows) && preview.rows.length > 0;
   const canExportPng = block.block_type === "widget";
 
@@ -179,6 +180,7 @@ function ReadOnlyBlock({
       </div>
       <div className="p-4">
         {block.block_type === "widget" ? <WidgetPreviewSurface preview={preview} /> : null}
+        {block.block_type === "kpi_card" ? <KpiCardByCode code={String(block.content.kpi_card_code ?? "")} /> : null}
         {block.block_type === "text" ? (
           <div className="rounded-lg border border-neutral-200 bg-neutral-50 p-5 text-sm text-neutral-700">
             <div className="mb-3 flex items-center gap-2 text-brand-700">
